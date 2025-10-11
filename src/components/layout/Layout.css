@@ -22,7 +22,7 @@
 }
 
 .sidebar-closed {
-  width: 70px;
+  width: 90px;
 }
 
 .sidebar-header {
@@ -135,10 +135,10 @@
 }
 
 .sidebar-closed + .main-content {
-  margin-left: 70px;
+  margin-left: 100px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 800px) {
   .sidebar-open {
     width: 100%;
   }
