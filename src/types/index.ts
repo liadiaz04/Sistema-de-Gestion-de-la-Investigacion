@@ -31,13 +31,13 @@ export interface IPasswordRecoveryData {
 
 export type UserRole =
   | "admin"
-  | "autor"
-  | "lider_proyecto"
+  | "responsable_proyecto"
   | "responsable_grupo"
   | "integrante_proyecto"
-  | "consejo_cientifico"
-  | "usuario"
   | "integrante_grupo"
+  | "consejo_cientifico"
+  | "autor_registro"
+  | "usuario"
 
 export interface IUser {
   id: string
@@ -356,4 +356,49 @@ export interface IReportRequest {
   tipo: "produccion" | "proyectos" | "grupos"
   formato: "pdf" | "xlsx" | "rtf"
   filtros: Record<string, any>
+}
+
+// Audit Log Types for bitácora system
+export interface IAuditLog {
+  id: string
+  usuario: IUser
+  fecha: string
+  hora: string
+  tipoAccion: "crear" | "modificar" | "eliminar" | "consultar"
+  origen: string
+  metodo: "GET" | "POST" | "PUT" | "DELETE"
+  ruta: string
+  codigo: number
+  mensaje: string
+  detalles?: Record<string, any>
+}
+
+// Statistics Types for reports module
+export interface IStatisticsTabular {
+  grupos: {
+    total: number
+    porFacultad: Record<string, number>
+    integrantesPorGrupo: Record<string, number>
+  }
+  registros: {
+    total: number
+    porTipo: Record<RecordType, number>
+    porcentajeAportePorTipo: Record<RecordType, number>
+  }
+  proyectos: {
+    total: number
+    porFacultad: Record<string, number>
+    integrantesPorProyecto: Record<string, number>
+  }
+}
+
+export interface IStatisticsGraphical {
+  gruposTotales: number
+  gruposPorFacultad: IStatisticData[]
+  gruposConMasResultados: IStatisticData[]
+  gruposConMasArticulos: IStatisticData[]
+  gruposConMasProyectos: IStatisticData[]
+  gruposConMasEstudiantes: IStatisticData[]
+  indicadoresRegistrosPorAño: Record<number, Record<RecordType, number>>
+  indicadoresProyectosPorAño: Record<number, number>
 }

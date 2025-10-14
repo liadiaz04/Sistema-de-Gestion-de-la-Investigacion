@@ -1,0 +1,346 @@
+.statistics {
+  padding: 2rem;
+}
+
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  color: var(--primary-green);
+  margin-bottom: 1rem;
+}
+
+.header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 0.5rem;
+  background: var(--gray-light);
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+}
+
+.view-toggle button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.view-toggle button.active {
+  background: white;
+  color: var(--primary-green);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.export-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tabular-view,
+.graphical-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Added summary cards styling */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.summary-card {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  border-radius: 0.75rem;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.summary-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+.grupos-summary {
+  background: linear-gradient(135deg, var(--primary-green) 0%, #00a896 100%);
+  color: white;
+}
+
+.registros-summary {
+  background: linear-gradient(135deg, #00a896 0%, #028090 100%);
+  color: white;
+}
+
+.proyectos-summary {
+  background: linear-gradient(135deg, #028090 0%, #05668d 100%);
+  color: white;
+}
+
+.summary-icon {
+  font-size: 3rem;
+  opacity: 0.9;
+}
+
+.summary-content h3 {
+  font-size: 1rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  opacity: 0.95;
+}
+
+.summary-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.summary-label {
+  font-size: 0.875rem;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stats-card {
+  border-left: 4px solid var(--primary-green);
+}
+
+.grupos-card {
+  border-left-color: var(--primary-green);
+}
+
+.registros-card {
+  border-left-color: #00a896;
+}
+
+.proyectos-card {
+  border-left-color: #028090;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  background: linear-gradient(135deg, var(--light-green) 0%, rgba(0, 131, 83, 0.1) 100%);
+}
+
+.stat-primary {
+  background: linear-gradient(135deg, var(--light-green) 0%, rgba(0, 131, 83, 0.15) 100%);
+}
+
+.stat-success {
+  background: linear-gradient(135deg, rgba(0, 168, 150, 0.1) 0%, rgba(0, 168, 150, 0.2) 100%);
+}
+
+.stat-info {
+  background: linear-gradient(135deg, rgba(2, 128, 144, 0.1) 0%, rgba(2, 128, 144, 0.2) 100%);
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--primary-green);
+}
+
+/* Enhanced visual charts styling */
+.visual-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: 0.5rem;
+}
+
+.visual-chart.large {
+  gap: 1.25rem;
+  padding: 1.5rem;
+}
+
+.chart-bar-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.chart-label {
+  min-width: 180px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.chart-bar-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.chart-bar {
+  height: 2.5rem;
+  background: var(--primary-green);
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 1rem;
+  transition: all 0.4s ease;
+  box-shadow: 0 2px 8px rgba(0, 131, 83, 0.2);
+  min-width: 60px;
+}
+
+.chart-bar:hover {
+  transform: scaleX(1.02);
+  box-shadow: 0 4px 12px rgba(0, 131, 83, 0.3);
+}
+
+.grupos-bar {
+  background: linear-gradient(90deg, var(--primary-green) 0%, #00a896 100%);
+}
+
+.registros-bar {
+  background: linear-gradient(90deg, #00a896 0%, #028090 100%);
+}
+
+.proyectos-bar {
+  background: linear-gradient(90deg, #028090 0%, #05668d 100%);
+}
+
+.chart-value {
+  color: white;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.chart-percentage {
+  min-width: 60px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.stats-table th {
+  background: var(--light-green);
+  color: var(--primary-green);
+  font-weight: 600;
+}
+
+.year-selector {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: 0.5rem;
+}
+
+.year-selector label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.year-selector select {
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 1rem;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.year-selector select:focus {
+  outline: none;
+  border-color: var(--primary-green);
+}
+
+.chart-card {
+  border-left: 4px solid var(--primary-green);
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 1.5rem;
+}
+
+.number-cell {
+  font-weight: 600;
+  color: var(--primary-green);
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-label {
+    min-width: 120px;
+    font-size: 0.8rem;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

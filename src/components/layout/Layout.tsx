@@ -3,7 +3,7 @@
 import React from "react"
 import { Outlet, useNavigate } from "react-router-dom"
 import { useAuthStore } from "../../stores/authStore"
-import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3 } from "lucide-react"
+import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3, UserCog, ClipboardList, PieChart } from "lucide-react"
 import "./Layout.css"
 
 export const Layout: React.FC = () => {
@@ -21,20 +21,25 @@ export const Layout: React.FC = () => {
     { icon: Users, label: "Grupos", path: "/groups" },
     { icon: FolderKanban, label: "Proyectos", path: "/projects" },
     { icon: FileText, label: "Registros", path: "/records" },
+    { icon: PieChart, label: "Estadísticas", path: "/statistics" },
+    { icon: UserCog, label: "Usuarios", path: "/users", adminOnly: true },
+    { icon: ClipboardList, label: "Bitácora", path: "/audit", adminOnly: true },
   ]
+
+  const visibleMenuItems = menuItems.filter((item) => !item.adminOnly || user?.roles.includes("admin"))
 
   return (
     <div className="layout">
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
         <div className="sidebar-header">
-          {sidebarOpen && <h2>SGI</h2>}
+          <h2>SGI</h2>
           <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
             <Menu size={20} />
           </button>
         </div>
 
         <nav className="sidebar-nav">
-          {menuItems.map((item) => (
+          {visibleMenuItems.map((item) => (
             <button key={item.path} className="sidebar-nav-item" onClick={() => navigate(item.path)}>
               <item.icon size={20} />
               {sidebarOpen && <span>{item.label}</span>}
