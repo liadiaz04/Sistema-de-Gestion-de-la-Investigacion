@@ -9,7 +9,7 @@ export const mockUsers: IUser[] = [
     numeroIdentidad: "85010112345",
     correoElectronico: "juan.perez@cujae.edu.cu",
     nombreUsuario: "jperez",
-    roles: ["admin", "responsable_grupo", "autor"],
+    roles: ["admin", "responsable_grupo", "autor_registro"],
     categoriaDocente: "titular",
     categoriaCientifica: "doctor",
     clasificacionGeneral: "profesor",
@@ -27,7 +27,7 @@ export const mockUsers: IUser[] = [
     numeroIdentidad: "90050298765",
     correoElectronico: "maria.gonzalez@cujae.edu.cu",
     nombreUsuario: "mgonzalez",
-    roles: ["lider_proyecto", "autor"],
+    roles: ["responsable_proyecto", "autor_registro"],
     categoriaDocente: "asistente",
     categoriaCientifica: "master",
     clasificacionGeneral: "profesor",
@@ -46,7 +46,7 @@ export const mockUsers: IUser[] = [
     numeroIdentidad: "88030345678",
     correoElectronico: "carlos.rodriguez@cujae.edu.cu",
     nombreUsuario: "crodriguez",
-    roles: ["integrante_proyecto", "autor"],
+    roles: ["integrante_proyecto", "autor_registro"],
     categoriaDocente: "instructor",
     clasificacionGeneral: "profesor",
     facultad: "Mecánica",
@@ -84,6 +84,53 @@ export const mockGroups: IGroup[] = [
     totalIntegrantes: 12,
   },
 ]
+
+export const mockGroupMembers: Record<string, any[]> = {
+  "1": [
+    {
+      id: "gm1",
+      usuario: mockUsers[0],
+      rol: "responsable_grupo",
+      evaluacion: "excelente",
+      descripcionEvaluacion: "Excelente liderazgo y coordinación del grupo",
+      cargo: "Responsable",
+      dedicacion: "Tiempo completo",
+      fechaIngreso: "2020-01-15",
+    },
+    {
+      id: "gm2",
+      usuario: mockUsers[2],
+      rol: "integrante_grupo",
+      evaluacion: "bien",
+      descripcionEvaluacion: "Buen desempeño en las investigaciones",
+      cargo: "Investigador",
+      dedicacion: "Medio tiempo",
+      fechaIngreso: "2021-03-10",
+    },
+  ],
+  "2": [
+    {
+      id: "gm3",
+      usuario: mockUsers[1],
+      rol: "responsable_grupo",
+      evaluacion: "excelente",
+      descripcionEvaluacion: "Excelente gestión del grupo",
+      cargo: "Responsable",
+      dedicacion: "Tiempo completo",
+      fechaIngreso: "2019-09-01",
+    },
+  ],
+}
+
+export const mockGroupProjects: Record<string, string[]> = {
+  "1": ["1"], // Grupo IA tiene proyecto de reconocimiento facial
+  "2": ["2"], // Grupo Estructuras tiene proyecto de hormigón
+}
+
+export const mockGroupRecords: Record<string, string[]> = {
+  "1": ["1"], // Grupo IA tiene artículo de deep learning
+  "2": [],
+}
 
 // Mock Projects
 export const mockProjects: IProject[] = [
