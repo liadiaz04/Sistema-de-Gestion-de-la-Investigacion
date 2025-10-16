@@ -4,11 +4,11 @@ import type { IUser, IGroup, IProject, IArticle } from "../types"
 export const mockUsers: IUser[] = [
   {
     id: "1",
-    nombre: "Juan",
-    apellidos: "Pérez García",
+    nombre: "Lia",
+    apellidos: "Díaz Suárez",
     numeroIdentidad: "85010112345",
-    correoElectronico: "juan.perez@cujae.edu.cu",
-    nombreUsuario: "jperez",
+    correoElectronico: "lia.diaz@cujae.edu.cu",
+    nombreUsuario: "ldiaz",
     roles: ["admin", "responsable_grupo", "autor_registro"],
     categoriaDocente: "titular",
     categoriaCientifica: "doctor",
@@ -17,7 +17,7 @@ export const mockUsers: IUser[] = [
     departamento: "Ingeniería de Software",
     esExterno: false,
     esAdministrador: true,
-    telefono: "+53 7 266 3333",
+    telefono: "+53 56056947",
     pais: "Cuba",
   },
   {
@@ -176,8 +176,8 @@ export const mockRecords: IArticle[] = [
       {
         id: "a1",
         usuario: mockUsers[0],
-        nombre: "Juan",
-        apellidos: "Pérez García",
+        nombre: "Lia",
+        apellidos: "Díaz Suárez",
         esExterno: false,
         esPrincipal: true,
         orden: 1,

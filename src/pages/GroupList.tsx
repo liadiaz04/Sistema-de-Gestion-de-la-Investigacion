@@ -10,7 +10,7 @@ import { Modal } from "../components/common/Modal"
 import "./GroupForm.css"
 import { mockUsers, mockProjects, mockRecords } from "../services/mockData"
 
-export const GroupForm = () => {
+export const GroupList = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const isViewMode = window.location.pathname.includes("/view")
