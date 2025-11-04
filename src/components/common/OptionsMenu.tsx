@@ -8,9 +8,14 @@ interface OptionsMenuProps {
   onView?: () => void
   onEdit?: () => void
   onDelete?: () => void
+  options?: Array<{
+    label: string
+    onClick: () => void
+    className?: string
+  }>
 }
 
-export const OptionsMenu: React.FC<OptionsMenuProps> = ({ onView, onEdit, onDelete }) => {
+export const OptionsMenu: React.FC<OptionsMenuProps> = ({ onView, onEdit, onDelete, options }) => {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -37,41 +42,59 @@ export const OptionsMenu: React.FC<OptionsMenuProps> = ({ onView, onEdit, onDele
       </button>
       {isOpen && (
         <div className="options-menu-dropdown">
-          {onView && (
-            <button
-              type="button"
-              className="options-menu-item"
-              onClick={() => {
-                onView()
-                setIsOpen(false)
-              }}
-            >
-              Ver detalles
-            </button>
-          )}
-          {onEdit && (
-            <button
-              type="button"
-              className="options-menu-item"
-              onClick={() => {
-                onEdit()
-                setIsOpen(false)
-              }}
-            >
-              Modificar
-            </button>
-          )}
-          {onDelete && (
-            <button
-              type="button"
-              className="options-menu-item delete"
-              onClick={() => {
-                onDelete()
-                setIsOpen(false)
-              }}
-            >
-              Eliminar
-            </button>
+          {options && options.length > 0 ? (
+            options.map((option, index) => (
+              <button
+                key={index}
+                type="button"
+                className={`options-menu-item ${option.className || ""}`}
+                onClick={() => {
+                  option.onClick()
+                  setIsOpen(false)
+                }}
+              >
+                {option.label}
+              </button>
+            ))
+          ) : (
+            <>
+              {onView && (
+                <button
+                  type="button"
+                  className="options-menu-item"
+                  onClick={() => {
+                    onView()
+                    setIsOpen(false)
+                  }}
+                >
+                  Ver detalles
+                </button>
+              )}
+              {onEdit && (
+                <button
+                  type="button"
+                  className="options-menu-item"
+                  onClick={() => {
+                    onEdit()
+                    setIsOpen(false)
+                  }}
+                >
+                  Modificar
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  className="options-menu-item delete"
+                  onClick={() => {
+                    onDelete()
+                    setIsOpen(false)
+                  }}
+                >
+                  Eliminar
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

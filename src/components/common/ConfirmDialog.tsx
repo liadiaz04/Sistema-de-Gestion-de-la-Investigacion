@@ -5,6 +5,7 @@ import { Button } from "./Button"
 import "./ConfirmDialog.css"
 
 interface ConfirmDialogProps {
+  isOpen: boolean
   title: string
   message: string
   onConfirm: () => void
@@ -15,6 +16,7 @@ interface ConfirmDialogProps {
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
+  isOpen,
   title,
   message,
   onConfirm,
@@ -23,6 +25,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   cancelText = "Cancelar",
   confirmVariant = "primary",
 }) => {
+  if (!isOpen) return null
+
   return (
     <div className="confirm-overlay" onClick={onCancel}>
       <div className="confirm-content" onClick={(e) => e.stopPropagation()}>

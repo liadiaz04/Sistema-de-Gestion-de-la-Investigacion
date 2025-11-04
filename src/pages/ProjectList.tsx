@@ -7,6 +7,8 @@ import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
 import { Input } from "../components/common/Input"
 import { Table } from "../components/common/Table"
+import { OptionsMenu } from "../components/common/OptionsMenu"
+import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { Plus, Search } from "lucide-react"
 import { mockProjects } from "../services/mockData"
 import type { IProject } from "../types"
@@ -14,13 +16,22 @@ import type { IProject } from "../types"
 export const ProjectList: React.FC = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState("")
-  const [projects] = useState<IProject[]>(mockProjects)
+  const [projects, setProjects] = useState<IProject[]>(mockProjects)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; projectId: string | null }>({
+    show: false,
+    projectId: null,
+  })
 
   const filteredProjects = projects.filter(
     (project) =>
       project.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       project.responsable.nombre.toLowerCase().includes(searchTerm.toLowerCase()),
   )
+
+  const handleDelete = (projectId: string) => {
+    setProjects(projects.filter((p) => p.id !== projectId))
+    setDeleteConfirm({ show: false, projectId: null })
+  }
 
   const columns = [
     { key: "nombre", header: "Nombre" },
@@ -49,18 +60,11 @@ export const ProjectList: React.FC = () => {
       key: "actions",
       header: "Opciones",
       render: (project: IProject) => (
-        <div className="table-actions">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={(e) => {
-              e.stopPropagation()
-              navigate(`/projects/${project.id}`)
-            }}
-          >
-            Ver
-          </Button>
-        </div>
+        <OptionsMenu
+          onView={() => navigate(`/projects/${project.id}`)}
+          onEdit={() => navigate(`/projects/${project.id}/edit`)}
+          onDelete={() => setDeleteConfirm({ show: true, projectId: project.id })}
+        />
       ),
     },
   ]
@@ -91,12 +95,16 @@ export const ProjectList: React.FC = () => {
           </div>
         </div>
 
-        <Table
-          data={filteredProjects}
-          columns={columns}
-          onRowClick={(project) => navigate(`/projects/${project.id}`)}
-        />
+        <Table data={filteredProjects} columns={columns} />
       </Card>
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.show}
+        title="Eliminar Proyecto"
+        message="¿Está seguro que desea eliminar este proyecto de investigación? Esta acción no se puede deshacer."
+        onConfirm={() => deleteConfirm.projectId && handleDelete(deleteConfirm.projectId)}
+        onCancel={() => setDeleteConfirm({ show: false, projectId: null })}
+      />
     </div>
   )
 }
