@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
@@ -9,14 +9,16 @@ import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import "./GroupForm.css"
-import { mockUsers, mockProjects, mockRecords } from "../services/mockData"
+import { mockUsers, mockRecords, mockGroups } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
+import type { IGroup } from "../types/index"
 
 export const GroupForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const { user: currentUser } = useAuthStore()
   const isViewMode = window.location.pathname.includes("/view")
+  const isEditMode = window.location.pathname.includes("/edit")
   const [isSaved, setIsSaved] = useState(!!id)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
@@ -26,12 +28,12 @@ export const GroupForm = () => {
     nombre: "",
     descripcion: "",
     facultad: "",
+    area: "",
     departamento: "",
     tematicas: "",
   })
 
   const [members, setMembers] = useState<any[]>([])
-  const [projects, setProjects] = useState<any[]>([])
   const [records, setRecords] = useState<any[]>([])
   const [evaluations, setEvaluations] = useState<Record<string, { evaluacion: string; descripcion: string }>>({})
   const [showModifyMemberModal, setShowModifyMemberModal] = useState(false)
@@ -39,8 +41,6 @@ export const GroupForm = () => {
 
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
-  const [showProjectModal, setShowProjectModal] = useState(false)
-  const [showSuggestedProjectsModal, setShowSuggestedProjectsModal] = useState(false)
   const [showRecordModal, setShowRecordModal] = useState(false)
   const [showSuggestedRecordsModal, setShowSuggestedRecordsModal] = useState(false)
 
@@ -51,7 +51,6 @@ export const GroupForm = () => {
     entidad: "",
   })
 
-  const [projectSearch, setProjectSearch] = useState("")
   const [recordSearch, setRecordSearch] = useState("")
   const [selectedRecordType, setSelectedRecordType] = useState("articulo")
 
@@ -67,17 +66,37 @@ export const GroupForm = () => {
     { value: "norma", label: "Normas" },
   ]
 
+  useEffect(() => {
+    if (id && (isViewMode || isEditMode)) {
+      const group = mockGroups.find((g) => g.id === id)
+      if (group) {
+        setFormData({
+          nombre: group.nombre,
+          descripcion: group.descripcion || "",
+          facultad: group.facultad || "",
+          area: group.area || "",
+          departamento: group.departamento || "",
+          tematicas: group.tematicas.join(", ") || "",
+        })
+        setIsSaved(true)
+      }
+    }
+  }, [id, isViewMode, isEditMode])
+
   const handleSaveInitialData = (e: React.FormEvent) => {
     e.preventDefault()
-    console.log("[v0] Saving group with responsable:", currentUser?.id, "Date:", new Date().toISOString())
-    setSuccessMessage("Grupo guardado con éxito")
+    setIsSaved(true)
+    setActiveTab("integrantes")
+    setSuccessMessage(id ? "Datos iniciales actualizados" : "Datos iniciales guardados")
     setShowSuccessDialog(true)
   }
 
   const handleSuccessAccept = () => {
     setShowSuccessDialog(false)
-    setIsSaved(true)
-    setActiveTab("integrantes")
+    if (!id) {
+      setIsSaved(true)
+      setActiveTab("integrantes")
+    }
   }
 
   const handleAddFromDirectory = (user: any) => {
@@ -135,16 +154,6 @@ export const GroupForm = () => {
     setMembers(members.filter((m) => m.id !== memberId))
   }
 
-  const handleAssociateProject = (project: any) => {
-    if (!projects.find((p) => p.id === project.id)) {
-      setProjects([...projects, project])
-      setShowProjectModal(false)
-      setShowSuggestedProjectsModal(false)
-      setSuccessMessage("Proyecto asociado con éxito")
-      setShowSuccessDialog(true)
-    }
-  }
-
   const handleAssociateRecord = (record: any) => {
     if (!records.find((r) => r.id === record.id)) {
       setRecords([...records, record])
@@ -160,18 +169,42 @@ export const GroupForm = () => {
   }
 
   const handleSaveAllEvaluations = () => {
-    setSuccessMessage("Grupo completado y guardado con éxito")
+    if (!currentUser) {
+      setSuccessMessage("Error: Usuario no autenticado")
+      return
+    }
+
+    const newGroup: IGroup = {
+      id: id || `grupo-${Date.now()}`,
+      nombre: formData.nombre,
+      descripcion: formData.descripcion,
+      facultad: formData.facultad,
+      area: formData.area,
+      departamento: formData.departamento,
+      tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+      responsable: currentUser,
+      fechaCreacion: id
+        ? mockGroups.find((g) => g.id === id)?.fechaCreacion || new Date().toISOString()
+        : new Date().toISOString(),
+      fechaActualizacion: new Date().toISOString(),
+      totalIntegrantes: members.length,
+    }
+
+    if (id && isEditMode) {
+      const index = mockGroups.findIndex((g) => g.id === id)
+      if (index !== -1) {
+        mockGroups[index] = newGroup
+      }
+    } else {
+      mockGroups.push(newGroup)
+    }
+
+    setSuccessMessage(id ? "Grupo actualizado con éxito" : "Grupo completado y guardado con éxito")
     setShowSuccessDialog(true)
     setTimeout(() => {
       navigate("/groups")
     }, 1500)
   }
-
-  const filteredProjects = mockProjects.filter(
-    (p) =>
-      p.nombre.toLowerCase().includes(projectSearch.toLowerCase()) ||
-      p.descripcion.toLowerCase().includes(projectSearch.toLowerCase()),
-  )
 
   const filteredRecords = mockRecords.filter(
     (r) =>
@@ -180,12 +213,8 @@ export const GroupForm = () => {
         r.descripcion.toLowerCase().includes(recordSearch.toLowerCase())),
   )
 
-  const suggestedProjects = mockProjects.filter((project) => {
-    return members.some((member) => project.responsable.id === member.usuario?.id)
-  })
-
   const suggestedRecords = mockRecords.filter((record) => {
-    return projects.some((project) => record.autores.some((autor) => autor.usuario?.id === project.responsable.id))
+    return members.some((member) => record.autores.some((autor) => autor.usuario?.id === member.usuario.id))
   })
 
   return (
@@ -326,60 +355,6 @@ export const GroupForm = () => {
         )}
       </Modal>
 
-      <Modal isOpen={showProjectModal} onClose={() => setShowProjectModal(false)} title="Asociar Proyecto">
-        <div className="modal-content">
-          <div className="form-group">
-            <Input
-              placeholder="Buscar proyecto..."
-              value={projectSearch}
-              onChange={(e) => setProjectSearch(e.target.value)}
-            />
-          </div>
-          <div className="project-list">
-            {filteredProjects.map((project) => (
-              <div key={project.id} className="project-item">
-                <div className="project-item-info">
-                  <strong>{project.nombre}</strong>
-                  <span>{project.descripcion}</span>
-                  <span>Responsable: {`${project.responsable.nombre} ${project.responsable.apellidos}`}</span>
-                </div>
-                <Button size="sm" onClick={() => handleAssociateProject(project)}>
-                  Asociar
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={showSuggestedProjectsModal}
-        onClose={() => setShowSuggestedProjectsModal(false)}
-        title="Proyectos Posibles a Asociar"
-      >
-        <div className="modal-content">
-          <p className="modal-description">Proyectos sugeridos basados en los integrantes del grupo</p>
-          <div className="project-list">
-            {suggestedProjects.length === 0 ? (
-              <p className="empty-state">No hay proyectos sugeridos</p>
-            ) : (
-              suggestedProjects.map((project) => (
-                <div key={project.id} className="project-item">
-                  <div className="project-item-info">
-                    <strong>{project.nombre}</strong>
-                    <span>{project.descripcion}</span>
-                    <span>Responsable: {`${project.responsable.nombre} ${project.responsable.apellidos}`}</span>
-                  </div>
-                  <Button size="sm" onClick={() => handleAssociateProject(project)}>
-                    Asociar
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </Modal>
-
       <Modal isOpen={showRecordModal} onClose={() => setShowRecordModal(false)} title="Asociar Registro">
         <div className="modal-content">
           <div className="form-group">
@@ -452,11 +427,17 @@ export const GroupForm = () => {
         <h1>
           {isViewMode
             ? "Detalles del Grupo"
-            : id
+            : isEditMode
               ? "Editar Grupo de Investigación"
               : "Adicionar Grupo de Investigación"}
         </h1>
-        <p>{isViewMode ? "Visualización de información del grupo" : "Complete la información del grupo"}</p>
+        <p>
+          {isViewMode
+            ? "Visualización de información del grupo"
+            : isEditMode
+              ? "Modifique la información del grupo"
+              : "Complete la información del grupo"}
+        </p>
       </div>
 
       {!isSaved && (
@@ -492,6 +473,15 @@ export const GroupForm = () => {
               />
             </div>
             <div className="form-group">
+              <label>Área</label>
+              <Input
+                name="area"
+                value={formData.area}
+                onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                placeholder="Área"
+              />
+            </div>
+            <div className="form-group">
               <label>Departamento</label>
               <Input
                 name="departamento"
@@ -509,7 +499,12 @@ export const GroupForm = () => {
                 placeholder="Ej: IA, Machine Learning, NLP"
               />
             </div>
-            <Button type="submit">Guardar Grupo</Button>
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
+                Cancelar
+              </Button>
+              <Button type="submit">Guardar Grupo</Button>
+            </div>
           </form>
         </Card>
       )}
@@ -543,7 +538,7 @@ export const GroupForm = () => {
         </div>
       )}
 
-      {activeTab === "datos" && isSaved && (
+      {isSaved && activeTab === "datos" && (
         <Card>
           <div className="tab-content">
             <div className="initial-data-section">
@@ -565,6 +560,10 @@ export const GroupForm = () => {
                   <p className="data-value">{formData.facultad || "No especificada"}</p>
                 </div>
                 <div className="data-item">
+                  <label>Área</label>
+                  <p className="data-value">{formData.area || "No especificada"}</p>
+                </div>
+                <div className="data-item">
                   <label>Departamento</label>
                   <p className="data-value">{formData.departamento || "No especificado"}</p>
                 </div>
@@ -573,6 +572,11 @@ export const GroupForm = () => {
                   <p className="data-value">{formData.tematicas || "No especificadas"}</p>
                 </div>
               </div>
+              {isViewMode && (
+                <div className="form-actions">
+                  <Button onClick={() => navigate("/groups")}>Volver a la Lista</Button>
+                </div>
+              )}
             </div>
           </div>
         </Card>
