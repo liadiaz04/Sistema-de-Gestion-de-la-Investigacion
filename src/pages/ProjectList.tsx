@@ -13,7 +13,7 @@ import { Plus, Search } from "lucide-react"
 import { mockProjects } from "../services/mockData"
 import type { IProject } from "../types"
 
-export const ProjectList: React.FC = () => {
+const ProjectList: React.FC = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState("")
   const [projects, setProjects] = useState<IProject[]>(mockProjects)
@@ -108,3 +108,6 @@ export const ProjectList: React.FC = () => {
     </div>
   )
 }
+
+export { ProjectList }
+export default ProjectList

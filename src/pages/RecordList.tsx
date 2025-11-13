@@ -7,16 +7,28 @@ import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
 import { Input } from "../components/common/Input"
 import { Table } from "../components/common/Table"
+import { OptionsMenu } from "../components/common/OptionsMenu"
+import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { Plus, Search } from "lucide-react"
 import { mockRecords } from "../services/mockData"
 import type { IRecord } from "../types"
+import "./GroupList.css"
 
-export const RecordList: React.FC = () => {
+const RecordList: React.FC = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState("")
-  const [records] = useState<IRecord[]>(mockRecords)
+  const [records, setRecords] = useState<IRecord[]>(mockRecords)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; recordId: string | null }>({
+    show: false,
+    recordId: null,
+  })
 
   const filteredRecords = records.filter((record) => record.titulo.toLowerCase().includes(searchTerm.toLowerCase()))
+
+  const handleDelete = (recordId: string) => {
+    setRecords(records.filter((r) => r.id !== recordId))
+    setDeleteConfirm({ show: false, recordId: null })
+  }
 
   const columns = [
     { key: "titulo", header: "Título" },
@@ -35,18 +47,11 @@ export const RecordList: React.FC = () => {
       key: "actions",
       header: "Opciones",
       render: (record: IRecord) => (
-        <div className="table-actions">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={(e) => {
-              e.stopPropagation()
-              navigate(`/records/${record.id}`)
-            }}
-          >
-            Ver
-          </Button>
-        </div>
+        <OptionsMenu
+          onView={() => navigate(`/records/${record.id}`)}
+          onEdit={() => navigate(`/records/${record.id}/edit`)}
+          onDelete={() => setDeleteConfirm({ show: true, recordId: record.id })}
+        />
       ),
     },
   ]
@@ -77,8 +82,19 @@ export const RecordList: React.FC = () => {
           </div>
         </div>
 
-        <Table data={filteredRecords} columns={columns} onRowClick={(record) => navigate(`/records/${record.id}`)} />
+        <Table data={filteredRecords} columns={columns} />
       </Card>
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.show}
+        title="Eliminar Registro"
+        message="¿Está seguro que desea eliminar este registro científico? Esta acción no se puede deshacer."
+        onConfirm={() => deleteConfirm.recordId && handleDelete(deleteConfirm.recordId)}
+        onCancel={() => setDeleteConfirm({ show: false, recordId: null })}
+      />
     </div>
   )
 }
+
+export { RecordList }
+export default RecordList

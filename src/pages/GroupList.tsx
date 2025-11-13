@@ -53,7 +53,7 @@ export const GroupList: React.FC = () => {
       header: "Opciones",
       render: (group: IGroup) => (
         <OptionsMenu
-          onView={() => navigate(`/groups/${group.id}/view`)}
+          onView={() => navigate(`/groups/${group.id}`)}
           onEdit={() => navigate(`/groups/${group.id}/edit`)}
           onDelete={() => setDeleteConfirm({ show: true, groupId: group.id })}
         />

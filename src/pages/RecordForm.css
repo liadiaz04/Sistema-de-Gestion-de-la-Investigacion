@@ -30,7 +30,7 @@
   border-bottom: 2px solid var(--light-green);
 }
 
-/* Record types in single horizontal line with better contrast */
+/* Updated record type menu styling for better contrast when selected */
 .record-type-menu {
   display: flex;
   flex-wrap: wrap;
@@ -55,18 +55,26 @@
   white-space: nowrap;
 }
 
-.type-menu-item:hover {
+.type-menu-item:hover:not(.selected):not(:disabled) {
   border-color: var(--primary-green);
   background: var(--light-green);
+  color: var(--text-primary);
   transform: translateY(-2px);
 }
 
+/* New styling for selected state with better text contrast */
 .type-menu-item.selected {
   border-color: var(--primary-green);
-  background: var(--primary-green);
-  color: white;
-  box-shadow: 0 4px 12px rgba(0, 131, 83, 0.3);
+  background: linear-gradient(135deg, var(--primary-green) 0%, #00a85a 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 131, 83, 0.4);
   font-weight: 600;
+  transform: translateY(-2px);
+}
+
+.type-menu-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .form-tabs {
