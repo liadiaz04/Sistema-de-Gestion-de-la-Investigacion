@@ -36,6 +36,7 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="groups" element={<GroupList />} />
           <Route path="groups/new" element={<GroupForm />} />
+          <Route path="groups/:id/edit" element={<GroupForm />} />
           <Route path="groups/:id" element={<GroupForm />} />
           <Route path="projects" element={<ProjectList />} />
           <Route path="projects/new" element={<ProjectForm />} />

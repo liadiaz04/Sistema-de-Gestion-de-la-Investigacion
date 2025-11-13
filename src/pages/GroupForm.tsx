@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
 import { Input } from "../components/common/Input"
@@ -16,10 +16,14 @@ import type { IGroup } from "../types/index"
 export const GroupForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
+  const location = useLocation()
   const { user: currentUser } = useAuthStore()
-  const isViewMode = window.location.pathname.includes("/view")
-  const isEditMode = window.location.pathname.includes("/edit")
-  const [isSaved, setIsSaved] = useState(!!id)
+
+  const isViewMode = id && !location.pathname.includes("/edit")
+  const isEditMode = id && location.pathname.includes("/edit")
+  const isNewMode = !id
+
+  const [isSaved, setIsSaved] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
   const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "registros" | "evaluaciones">("datos")
@@ -36,9 +40,9 @@ export const GroupForm = () => {
   const [members, setMembers] = useState<any[]>([])
   const [records, setRecords] = useState<any[]>([])
   const [evaluations, setEvaluations] = useState<Record<string, { evaluacion: string; descripcion: string }>>({})
-  const [showModifyMemberModal, setShowModifyMemberModal] = useState(false)
   const [selectedMember, setSelectedMember] = useState<any>(null)
 
+  const [showModifyMemberModal, setShowModifyMemberModal] = useState(false)
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
   const [showRecordModal, setShowRecordModal] = useState(false)
@@ -67,36 +71,52 @@ export const GroupForm = () => {
   ]
 
   useEffect(() => {
-    if (id && (isViewMode || isEditMode)) {
+    if (id) {
       const group = mockGroups.find((g) => g.id === id)
       if (group) {
         setFormData({
           nombre: group.nombre,
-          descripcion: group.descripcion || "",
-          facultad: group.facultad || "",
+          descripcion: group.descripcion,
+          facultad: group.facultad,
           area: group.area || "",
-          departamento: group.departamento || "",
-          tematicas: group.tematicas.join(", ") || "",
+          departamento: group.departamento || "", 
+          tematicas: group.tematicas?.join(",") || "", 
         })
         setIsSaved(true)
       }
     }
-  }, [id, isViewMode, isEditMode])
+  }, [id])
 
   const handleSaveInitialData = (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (isEditMode && id) {
+      const groupIndex = mockGroups.findIndex((g) => g.id === id)
+      if (groupIndex !== -1) {
+        mockGroups[groupIndex] = {
+          ...mockGroups[groupIndex],
+          nombre: formData.nombre,
+          descripcion: formData.descripcion,
+          facultad: formData.facultad,
+          area: formData.area,
+          departamento: formData.departamento,
+          tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+          fechaActualizacion: new Date().toISOString(),
+        }
+        setSuccessMessage("Grupo actualizado con éxito")
+        setShowSuccessDialog(true)
+        setTimeout(() => {
+          navigate("/groups")
+        }, 1500)
+      }
+      return
+    }
+
+    // New group mode
     setIsSaved(true)
     setActiveTab("integrantes")
-    setSuccessMessage(id ? "Datos iniciales actualizados" : "Datos iniciales guardados")
+    setSuccessMessage("Datos iniciales guardados")
     setShowSuccessDialog(true)
-  }
-
-  const handleSuccessAccept = () => {
-    setShowSuccessDialog(false)
-    if (!id) {
-      setIsSaved(true)
-      setActiveTab("integrantes")
-    }
   }
 
   const handleAddFromDirectory = (user: any) => {
@@ -175,7 +195,7 @@ export const GroupForm = () => {
     }
 
     const newGroup: IGroup = {
-      id: id || `grupo-${Date.now()}`,
+      id: `grupo-${Date.now()}`,
       nombre: formData.nombre,
       descripcion: formData.descripcion,
       facultad: formData.facultad,
@@ -183,23 +203,14 @@ export const GroupForm = () => {
       departamento: formData.departamento,
       tematicas: formData.tematicas.split(",").map((t) => t.trim()),
       responsable: currentUser,
-      fechaCreacion: id
-        ? mockGroups.find((g) => g.id === id)?.fechaCreacion || new Date().toISOString()
-        : new Date().toISOString(),
+      fechaCreacion: new Date().toISOString(),
       fechaActualizacion: new Date().toISOString(),
       totalIntegrantes: members.length,
     }
 
-    if (id && isEditMode) {
-      const index = mockGroups.findIndex((g) => g.id === id)
-      if (index !== -1) {
-        mockGroups[index] = newGroup
-      }
-    } else {
-      mockGroups.push(newGroup)
-    }
+    mockGroups.push(newGroup)
 
-    setSuccessMessage(id ? "Grupo actualizado con éxito" : "Grupo completado y guardado con éxito")
+    setSuccessMessage("Grupo completado y guardado con éxito")
     setShowSuccessDialog(true)
     setTimeout(() => {
       navigate("/groups")
@@ -217,6 +228,12 @@ export const GroupForm = () => {
     return members.some((member) => record.autores.some((autor) => autor.usuario?.id === member.usuario.id))
   })
 
+  const pageTitle = isViewMode
+    ? "Ver Grupo de Investigación"
+    : isEditMode
+      ? "Editar Grupo de Investigación"
+      : "Adicionar Grupo de Investigación"
+
   return (
     <div className="group-form">
       {showSuccessDialog && (
@@ -224,8 +241,7 @@ export const GroupForm = () => {
           <div className="success-dialog">
             <div className="success-icon">✓</div>
             <h2>{successMessage}</h2>
-            {!isSaved && <p>El grupo ha sido creado correctamente. Ahora puede agregar integrantes y registros.</p>}
-            <Button onClick={handleSuccessAccept}>Aceptar</Button>
+            <Button onClick={() => setShowSuccessDialog(false)}>Aceptar</Button>
           </div>
         </div>
       )}
@@ -424,23 +440,190 @@ export const GroupForm = () => {
       </Modal>
 
       <div className="form-header">
-        <h1>
-          {isViewMode
-            ? "Detalles del Grupo"
-            : isEditMode
-              ? "Editar Grupo de Investigación"
-              : "Adicionar Grupo de Investigación"}
-        </h1>
-        <p>
-          {isViewMode
-            ? "Visualización de información del grupo"
-            : isEditMode
-              ? "Modifique la información del grupo"
-              : "Complete la información del grupo"}
-        </p>
+        <h1>{pageTitle}</h1>
+        <p>{isViewMode ? "Detalles del grupo de investigación" : "Complete la información del grupo"}</p>
       </div>
 
-      {!isSaved && (
+      {isViewMode && (
+        <>
+          <div className="form-tabs">
+            <button
+              className={`tab-button ${activeTab === "datos" ? "active" : ""}`}
+              onClick={() => setActiveTab("datos")}
+            >
+              Datos Iniciales
+            </button>
+            <button
+              className={`tab-button ${activeTab === "integrantes" ? "active" : ""}`}
+              onClick={() => setActiveTab("integrantes")}
+            >
+              Integrantes
+            </button>
+            <button
+              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
+              onClick={() => setActiveTab("registros")}
+            >
+              Registros
+            </button>
+            <button
+              className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
+              onClick={() => setActiveTab("evaluaciones")}
+            >
+              Evaluaciones
+            </button>
+          </div>
+
+          {activeTab === "datos" && (
+            <Card>
+              <div className="tab-content">
+                <div className="initial-data-section">
+                  <div className="data-header">
+                    <h2>Datos Iniciales del Grupo</h2>
+                    <p>Información básica del grupo de investigación</p>
+                  </div>
+                  <div className="data-display">
+                    <div className="data-item">
+                      <label>Nombre del Grupo</label>
+                      <p className="data-value">{formData.nombre}</p>
+                    </div>
+                    <div className="data-item full-width">
+                      <label>Descripción</label>
+                      <p className="data-value">{formData.descripcion || "No especificada"}</p>
+                    </div>
+                    <div className="data-item">
+                      <label>Facultad</label>
+                      <p className="data-value">{formData.facultad || "No especificada"}</p>
+                    </div>
+                    <div className="data-item">
+                      <label>Área</label>
+                      <p className="data-value">{formData.area || "No especificada"}</p>
+                    </div>
+                    <div className="data-item">
+                      <label>Departamento</label>
+                      <p className="data-value">{formData.departamento || "No especificado"}</p>
+                    </div>
+                    <div className="data-item full-width">
+                      <label>Temáticas</label>
+                      <p className="data-value">{formData.tematicas || "No especificadas"}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === "integrantes" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Integrantes del Grupo</h2>
+                </div>
+                <p className="empty-state">No hay integrantes asociados a este grupo.</p>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === "registros" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Registros Científicos</h2>
+                </div>
+                <p className="empty-state">No hay registros asociados a este grupo.</p>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === "evaluaciones" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Evaluaciones de Integrantes</h2>
+                </div>
+                <p className="empty-state">No hay evaluaciones registradas.</p>
+              </div>
+            </Card>
+          )}
+
+          <Card>
+            <div className="form-actions">
+              <Button onClick={() => navigate("/groups")}>Volver a Grupos</Button>
+              <Button onClick={() => navigate(`/groups/${id}/edit`)}>Editar Grupo</Button>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {isEditMode && (
+        <Card>
+          <form onSubmit={handleSaveInitialData}>
+            <div className="form-group">
+              <label>Nombre del Grupo *</label>
+              <Input
+                name="nombre"
+                value={formData.nombre}
+                onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                placeholder="Ej: Grupo de Investigación en IA"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Descripción</label>
+              <textarea
+                name="descripcion"
+                value={formData.descripcion}
+                onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                placeholder="Describa el enfoque y objetivos del grupo"
+                className="form-textarea"
+              />
+            </div>
+            <div className="form-group">
+              <label>Facultad</label>
+              <Input
+                name="facultad"
+                value={formData.facultad}
+                onChange={(e) => setFormData({ ...formData, facultad: e.target.value })}
+                placeholder="Facultad"
+              />
+            </div>
+            <div className="form-group">
+              <label>Área</label>
+              <Input
+                name="area"
+                value={formData.area}
+                onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                placeholder="Área"
+              />
+            </div>
+            <div className="form-group">
+              <label>Departamento</label>
+              <Input
+                name="departamento"
+                value={formData.departamento}
+                onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
+                placeholder="Departamento"
+              />
+            </div>
+            <div className="form-group">
+              <label>Temáticas</label>
+              <Input
+                name="tematicas"
+                value={formData.tematicas}
+                onChange={(e) => setFormData({ ...formData, tematicas: e.target.value })}
+                placeholder="Ej: IA, Machine Learning, NLP"
+              />
+            </div>
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
+                Cancelar
+              </Button>
+              <Button type="submit">Actualizar Grupo</Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      {isNewMode && !isSaved && (
         <Card>
           <form onSubmit={handleSaveInitialData}>
             <div className="form-group">
@@ -509,297 +692,283 @@ export const GroupForm = () => {
         </Card>
       )}
 
-      {isSaved && (
-        <div className="form-tabs">
-          <button
-            className={`tab-button ${activeTab === "datos" ? "active" : ""}`}
-            onClick={() => setActiveTab("datos")}
-          >
-            Datos Iniciales
-          </button>
-          <button
-            className={`tab-button ${activeTab === "integrantes" ? "active" : ""}`}
-            onClick={() => setActiveTab("integrantes")}
-          >
-            Integrantes
-          </button>
-          <button
-            className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
-            onClick={() => setActiveTab("registros")}
-          >
-            Registros
-          </button>
-          <button
-            className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
-            onClick={() => setActiveTab("evaluaciones")}
-          >
-            Evaluaciones
-          </button>
-        </div>
-      )}
+      {isNewMode && isSaved && (
+        <>
+          <div className="form-tabs">
+            <button
+              className={`tab-button ${activeTab === "datos" ? "active" : ""}`}
+              onClick={() => setActiveTab("datos")}
+            >
+              Datos Iniciales
+            </button>
+            <button
+              className={`tab-button ${activeTab === "integrantes" ? "active" : ""}`}
+              onClick={() => setActiveTab("integrantes")}
+            >
+              Integrantes
+            </button>
+            <button
+              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
+              onClick={() => setActiveTab("registros")}
+            >
+              Registros
+            </button>
+            <button
+              className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
+              onClick={() => setActiveTab("evaluaciones")}
+            >
+              Evaluaciones
+            </button>
+          </div>
 
-      {isSaved && activeTab === "datos" && (
-        <Card>
-          <div className="tab-content">
-            <div className="initial-data-section">
-              <div className="data-header">
-                <h2>Datos Iniciales del Grupo</h2>
-                <p>Información básica del grupo de investigación</p>
+          {activeTab === "datos" && (
+            <Card>
+              <div className="tab-content">
+                <div className="initial-data-section">
+                  <div className="data-header">
+                    <h2>Datos Iniciales del Grupo</h2>
+                    <p>Información básica del grupo de investigación</p>
+                  </div>
+                  <div className="data-display">
+                    <div className="data-item">
+                      <label>Nombre del Grupo</label>
+                      <p className="data-value">{formData.nombre}</p>
+                    </div>
+                    <div className="data-item full-width">
+                      <label>Descripción</label>
+                      <p className="data-value">{formData.descripcion || "No especificada"}</p>
+                    </div>
+                    <div className="data-item">
+                      <label>Facultad</label>
+                      <p className="data-value">{formData.facultad || "No especificada"}</p>
+                    </div>
+                    <div className="data-item">
+                      <label>Área</label>
+                      <p className="data-value">{formData.area || "No especificada"}</p>
+                    </div>
+                    <div className="data-item">
+                      <label>Departamento</label>
+                      <p className="data-value">{formData.departamento || "No especificado"}</p>
+                    </div>
+                    <div className="data-item full-width">
+                      <label>Temáticas</label>
+                      <p className="data-value">{formData.tematicas || "No especificadas"}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="data-display">
-                <div className="data-item">
-                  <label>Nombre del Grupo</label>
-                  <p className="data-value">{formData.nombre}</p>
-                </div>
-                <div className="data-item full-width">
-                  <label>Descripción</label>
-                  <p className="data-value">{formData.descripcion || "No especificada"}</p>
-                </div>
-                <div className="data-item">
-                  <label>Facultad</label>
-                  <p className="data-value">{formData.facultad || "No especificada"}</p>
-                </div>
-                <div className="data-item">
-                  <label>Área</label>
-                  <p className="data-value">{formData.area || "No especificada"}</p>
-                </div>
-                <div className="data-item">
-                  <label>Departamento</label>
-                  <p className="data-value">{formData.departamento || "No especificado"}</p>
-                </div>
-                <div className="data-item full-width">
-                  <label>Temáticas</label>
-                  <p className="data-value">{formData.tematicas || "No especificadas"}</p>
-                </div>
-              </div>
-              {isViewMode && (
-                <div className="form-actions">
-                  <Button onClick={() => navigate("/groups")}>Volver a la Lista</Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </Card>
-      )}
+            </Card>
+          )}
 
-      {activeTab === "integrantes" && isSaved && (
-        <Card>
-          <div className="tab-content">
-            <div className="tab-header">
-              <h2>Gestión de Integrantes</h2>
-              {!isViewMode && (
-                <div className="tab-actions">
-                  <Button variant="secondary" onClick={() => setShowDirectoryModal(true)}>
-                    Agregar integrante (Directorio CUJAE)
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowExternalModal(true)}>
-                    Agregar integrante (Externo de la CUJAE)
-                  </Button>
+          {activeTab === "integrantes" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Gestión de Integrantes</h2>
+                  <div className="tab-actions">
+                    <Button variant="secondary" onClick={() => setShowDirectoryModal(true)}>
+                      Agregar integrante (Directorio CUJAE)
+                    </Button>
+                    <Button variant="secondary" onClick={() => setShowExternalModal(true)}>
+                      Agregar integrante (Externo de la CUJAE)
+                    </Button>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            <div className="members-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Rol</th>
-                    <th>Tipo</th>
-                    {!isViewMode && <th>Opciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.length === 0 ? (
-                    <tr>
-                      <td colSpan={isViewMode ? 3 : 4} className="empty-state">
-                        No hay integrantes asociados.{" "}
-                        {!isViewMode && 'Haga clic en "Agregar integrante" para comenzar.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    members.map((member) => (
-                      <tr key={member.id}>
-                        <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
-                        <td>{member.rol.replace(/_/g, " ")}</td>
-                        <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
-                        {!isViewMode && (
-                          <td>
-                            <OptionsMenu
-                              options={[
-                                {
-                                  label: "Ver detalles",
-                                  onClick: () => console.log("Ver detalles", member.id),
-                                },
-                                {
-                                  label: "Modificar",
-                                  onClick: () => handleModifyMember(member),
-                                },
-                                {
-                                  label: "Eliminar integrante",
-                                  onClick: () => handleRemoveMember(member.id),
-                                },
-                              ]}
-                            />
-                          </td>
-                        )}
+                <div className="members-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Rol</th>
+                        <th>Tipo</th>
+                        <th>Opciones</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {activeTab === "registros" && isSaved && (
-        <Card>
-          <div className="tab-content">
-            <div className="tab-header">
-              <h2>Registros Científicos Asociados</h2>
-              {!isViewMode && (
-                <div className="tab-actions">
-                  <Button variant="secondary" onClick={() => setShowRecordModal(true)}>
-                    Asociar registro primario
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowSuggestedRecordsModal(true)}>
-                    Mostrar registros posibles a asociar
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            <div className="records-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Título</th>
-                    <th>Tipo</th>
-                    <th>Año</th>
-                    {!isViewMode && <th>Opciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.length === 0 ? (
-                    <tr>
-                      <td colSpan={isViewMode ? 3 : 4} className="empty-state">
-                        No hay registros asociados. {!isViewMode && 'Haga clic en "Asociar registro" para comenzar.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    records.map((record) => (
-                      <tr key={record.id}>
-                        <td>{record.titulo}</td>
-                        <td>{record.tipo}</td>
-                        <td>{record.año}</td>
-                        {!isViewMode && (
-                          <td>
-                            <OptionsMenu
-                              options={[
-                                {
-                                  label: "Ver detalles",
-                                  onClick: () => console.log("Ver detalles", record.id),
-                                },
-                                {
-                                  label: "Desasociar",
-                                  onClick: () => handleDisassociateRecord(record.id),
-                                },
-                              ]}
-                            />
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {activeTab === "evaluaciones" && isSaved && (
-        <Card>
-          <div className="tab-content">
-            <div className="tab-header">
-              <h2>Evaluaciones de Integrantes</h2>
-              <p>Evalúe el desempeño de los integrantes del grupo</p>
-            </div>
-
-            <div className="evaluations-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Integrante</th>
-                    <th>Evaluación</th>
-                    <th>Descripción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="empty-state">
-                        No hay integrantes para evaluar. Agregue integrantes primero.
-                      </td>
-                    </tr>
-                  ) : (
-                    members.map((member) => {
-                      const evaluation = evaluations[member.id] || { evaluacion: "no_evaluado", descripcion: "" }
-                      return (
-                        <tr key={member.id}>
-                          <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
-                          <td>
-                            <select
-                              className="form-select"
-                              value={evaluation.evaluacion}
-                              onChange={(e) =>
-                                setEvaluations({
-                                  ...evaluations,
-                                  [member.id]: { ...evaluation, evaluacion: e.target.value },
-                                })
-                              }
-                              disabled={isViewMode}
-                            >
-                              <option value="no_evaluado">No evaluado</option>
-                              <option value="mal">Mal</option>
-                              <option value="regular">Regular</option>
-                              <option value="bien">Bien</option>
-                              <option value="excelente">Excelente</option>
-                            </select>
-                          </td>
-                          <td>
-                            <Input
-                              type="text"
-                              placeholder="Descripción de la evaluación"
-                              value={evaluation.descripcion}
-                              onChange={(e) =>
-                                setEvaluations({
-                                  ...evaluations,
-                                  [member.id]: { ...evaluation, descripcion: e.target.value },
-                                })
-                              }
-                              disabled={isViewMode}
-                            />
+                    </thead>
+                    <tbody>
+                      {members.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="empty-state">
+                            No hay integrantes asociados. Haga clic en "Agregar integrante" para comenzar.
                           </td>
                         </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {!isViewMode && members.length > 0 && (
-              <div className="tab-footer">
-                <Button onClick={handleSaveAllEvaluations}>Guardar Evaluaciones</Button>
+                      ) : (
+                        members.map((member) => (
+                          <tr key={member.id}>
+                            <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
+                            <td>{member.rol.replace(/_/g, " ")}</td>
+                            <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
+                            <td>
+                              <OptionsMenu
+                                options={[
+                                  {
+                                    label: "Ver detalles",
+                                    onClick: () => alert(`Ver detalles de ${member.usuario.nombre}`),
+                                  },
+                                  {
+                                    label: "Modificar",
+                                    onClick: () => handleModifyMember(member),
+                                  },
+                                  {
+                                    label: "Eliminar integrante",
+                                    onClick: () => handleRemoveMember(member.id),
+                                  },
+                                ]}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            )}
-          </div>
-        </Card>
+            </Card>
+          )}
+
+          {activeTab === "registros" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Registros Científicos Asociados</h2>
+                  <div className="tab-actions">
+                    <Button variant="secondary" onClick={() => setShowRecordModal(true)}>
+                      Asociar registro primario
+                    </Button>
+                    <Button variant="secondary" onClick={() => setShowSuggestedRecordsModal(true)}>
+                      Mostrar registros posibles a asociar
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="records-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Título</th>
+                        <th>Tipo</th>
+                        <th>Año</th>
+                        <th>Opciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {records.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="empty-state">
+                            No hay registros asociados. Haga clic en "Asociar registro" para comenzar.
+                          </td>
+                        </tr>
+                      ) : (
+                        records.map((record) => (
+                          <tr key={record.id}>
+                            <td>{record.titulo}</td>
+                            <td>{record.tipo}</td>
+                            <td>{record.año}</td>
+                            <td>
+                              <OptionsMenu
+                                options={[
+                                  {
+                                    label: "Ver detalles",
+                                    onClick: () => alert(`Ver detalles de ${record.titulo}`),
+                                  },
+                                  {
+                                    label: "Desasociar",
+                                    onClick: () => handleDisassociateRecord(record.id),
+                                  },
+                                ]}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === "evaluaciones" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Evaluaciones de Integrantes</h2>
+                  <p>Evalúe el desempeño de los integrantes del grupo</p>
+                </div>
+
+                <div className="evaluations-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Integrante</th>
+                        <th>Evaluación</th>
+                        <th>Descripción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="empty-state">
+                            No hay integrantes para evaluar. Agregue integrantes primero.
+                          </td>
+                        </tr>
+                      ) : (
+                        members.map((member) => {
+                          const evaluation = evaluations[member.id] || { evaluacion: "no_evaluado", descripcion: "" }
+                          return (
+                            <tr key={member.id}>
+                              <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
+                              <td>
+                                <select
+                                  className="form-select"
+                                  value={evaluation.evaluacion}
+                                  onChange={(e) =>
+                                    setEvaluations({
+                                      ...evaluations,
+                                      [member.id]: { ...evaluation, evaluacion: e.target.value },
+                                    })
+                                  }
+                                >
+                                  <option value="no_evaluado">No evaluado</option>
+                                  <option value="mal">Mal</option>
+                                  <option value="regular">Regular</option>
+                                  <option value="bien">Bien</option>
+                                  <option value="excelente">Excelente</option>
+                                </select>
+                              </td>
+                              <td>
+                                <Input
+                                  type="text"
+                                  placeholder="Descripción de la evaluación"
+                                  value={evaluation.descripcion}
+                                  onChange={(e) =>
+                                    setEvaluations({
+                                      ...evaluations,
+                                      [member.id]: { ...evaluation, descripcion: e.target.value },
+                                    })
+                                  }
+                                />
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {members.length > 0 && (
+                  <div className="tab-footer">
+                    <Button onClick={handleSaveAllEvaluations}>Guardar Evaluaciones</Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+        </>
       )}
 
-      {!isSaved && (
+      {isNewMode && !isSaved && (
         <div className="form-info">
           <p>
             <strong>Nota:</strong> Después de guardar el grupo, podrá agregar integrantes, asociar registros científicos
