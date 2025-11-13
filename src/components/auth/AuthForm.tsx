@@ -7,7 +7,7 @@ import { Input } from "../common/Input"
 import { Button } from "../common/Button"
 import { Card } from "../common/Card"
 import { useAuthStore } from "../../stores/authStore"
-import { authService } from "../../services/authService"
+import { authService } from "../../services/auth/authService"
 import "./AuthForm.css"
 
 export const AuthForm: React.FC = () => {
@@ -24,8 +24,9 @@ export const AuthForm: React.FC = () => {
     setLoading(true)
 
     try {
-      const response = await authService.login({ username, password })
-      login(response.user, response.token)
+      console.log(username)
+      const response = await authService.login({ email: username, password })
+      login( response.token)
       navigate("/dashboard")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión")
