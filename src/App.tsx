@@ -40,9 +40,11 @@ function App() {
           <Route path="groups/:id" element={<GroupForm />} />
           <Route path="projects" element={<ProjectList />} />
           <Route path="projects/new" element={<ProjectForm />} />
+          <Route path="projects/:id/edit" element={<ProjectForm />} />
           <Route path="projects/:id" element={<ProjectForm />} />
           <Route path="records" element={<RecordList />} />
           <Route path="records/new" element={<RecordForm />} />
+          <Route path="records/:id/edit" element={<RecordForm />} />
           <Route path="records/:id" element={<RecordForm />} />
           <Route path="users" element={<UserManagement />} />
           <Route path="audit" element={<AuditLog />} />

@@ -21,7 +21,8 @@ export const GroupForm = () => {
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
-  const isNewMode = !id
+
+
 
   const [isSaved, setIsSaved] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
@@ -72,16 +73,21 @@ export const GroupForm = () => {
 
   useEffect(() => {
     if (id) {
+      console.log("[v0] GroupForm - Loading group with id:", id)
       const group = mockGroups.find((g) => g.id === id)
+      console.log("[v0] GroupForm - Found group:", group)
       if (group) {
         setFormData({
-          nombre: group.nombre,
-          descripcion: group.descripcion,
-          facultad: group.facultad,
+          nombre: group.nombre || "",
+          descripcion: group.descripcion || "",
+          facultad: group.facultad || "",
           area: group.area || "",
-          departamento: group.departamento || "", 
-          tematicas: group.tematicas?.join(",") || "", 
+          departamento: group.departamento || "",
+          tematicas: group.tematicas?.join(", ") || "",
         })
+        // Members and records are maintained only in component state
+        setMembers([])
+        setRecords([])
         setIsSaved(true)
       }
     }
@@ -103,11 +109,8 @@ export const GroupForm = () => {
           tematicas: formData.tematicas.split(",").map((t) => t.trim()),
           fechaActualizacion: new Date().toISOString(),
         }
-        setSuccessMessage("Grupo actualizado con éxito")
+        setSuccessMessage("Datos iniciales actualizados con éxito")
         setShowSuccessDialog(true)
-        setTimeout(() => {
-          navigate("/groups")
-        }, 1500)
       }
       return
     }
@@ -188,33 +191,33 @@ export const GroupForm = () => {
     setRecords(records.filter((r) => r.id !== recordId))
   }
 
-  const handleSaveAllEvaluations = () => {
-    if (!currentUser) {
-      setSuccessMessage("Error: Usuario no autenticado")
-      return
+  // </CHANGE> Removed unused handleSaveAllEvaluations function as it wasn't being called
+
+  const handleSaveAllUpdates = () => {
+    if (!id) return
+
+    const groupIndex = mockGroups.findIndex((g) => g.id === id)
+    if (groupIndex !== -1) {
+      mockGroups[groupIndex] = {
+        ...mockGroups[groupIndex],
+        nombre: formData.nombre,
+        descripcion: formData.descripcion,
+        facultad: formData.facultad,
+        area: formData.area,
+        departamento: formData.departamento,
+        tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+        fechaActualizacion: new Date().toISOString(),
+        totalIntegrantes: members.length,
+        // In a real app, you would also save members and records here
+        // For mock data, we assume they are managed directly in state for now
+      }
+
+      setSuccessMessage("Grupo actualizado con éxito")
+      setShowSuccessDialog(true)
+      setTimeout(() => {
+        navigate("/groups")
+      }, 1500)
     }
-
-    const newGroup: IGroup = {
-      id: `grupo-${Date.now()}`,
-      nombre: formData.nombre,
-      descripcion: formData.descripcion,
-      facultad: formData.facultad,
-      area: formData.area,
-      departamento: formData.departamento,
-      tematicas: formData.tematicas.split(",").map((t) => t.trim()),
-      responsable: currentUser,
-      fechaCreacion: new Date().toISOString(),
-      fechaActualizacion: new Date().toISOString(),
-      totalIntegrantes: members.length,
-    }
-
-    mockGroups.push(newGroup)
-
-    setSuccessMessage("Grupo completado y guardado con éxito")
-    setShowSuccessDialog(true)
-    setTimeout(() => {
-      navigate("/groups")
-    }, 1500)
   }
 
   const filteredRecords = mockRecords.filter(
@@ -444,6 +447,380 @@ export const GroupForm = () => {
         <p>{isViewMode ? "Detalles del grupo de investigación" : "Complete la información del grupo"}</p>
       </div>
 
+      {!isViewMode && !isEditMode && !isSaved && (
+        <>
+          <Card>
+            <form onSubmit={handleSaveInitialData}>
+              <div className="form-section">
+                <h3>Datos Iniciales</h3>
+                <div className="form-group">
+                  <label>Nombre del Grupo *</label>
+                  <Input
+                    name="nombre"
+                    value={formData.nombre}
+                    onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                    placeholder="Ej: Grupo de Investigación en IA"
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Descripción</label>
+                  <textarea
+                    name="descripcion"
+                    value={formData.descripcion}
+                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                    placeholder="Describa el enfoque y objetivos del grupo"
+                    className="form-textarea"
+                    rows={4}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Facultad</label>
+                  <Input
+                    name="facultad"
+                    value={formData.facultad}
+                    onChange={(e) => setFormData({ ...formData, facultad: e.target.value })}
+                    placeholder="Facultad"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Área</label>
+                  <Input
+                    name="area"
+                    value={formData.area}
+                    onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                    placeholder="Área"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Departamento</label>
+                  <Input
+                    name="departamento"
+                    value={formData.departamento}
+                    onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
+                    placeholder="Departamento"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Temáticas (separadas por comas)</label>
+                  <Input
+                    name="tematicas"
+                    value={formData.tematicas}
+                    onChange={(e) => setFormData({ ...formData, tematicas: e.target.value })}
+                    placeholder="Ej: IA, Machine Learning, NLP"
+                  />
+                </div>
+                <div className="form-actions">
+                  <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit">Guardar Datos Iniciales</Button>
+                </div>
+              </div>
+            </form>
+          </Card>
+
+          <div className="form-info">
+            <p>
+              <strong>Nota:</strong> Después de guardar el grupo, podrá agregar integrantes, asociar registros
+              científicos y gestionar evaluaciones.
+            </p>
+          </div>
+        </>
+      )}
+
+      {!isViewMode && !isEditMode && isSaved && (
+        <>
+          <div className="form-tabs">
+            <button
+              className={`tab-button ${activeTab === "datos" ? "active" : ""}`}
+              onClick={() => setActiveTab("datos")}
+            >
+              Datos Iniciales
+            </button>
+            <button
+              className={`tab-button ${activeTab === "integrantes" ? "active" : ""}`}
+              onClick={() => setActiveTab("integrantes")}
+            >
+              Integrantes
+            </button>
+            <button
+              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
+              onClick={() => setActiveTab("registros")}
+            >
+              Registros
+            </button>
+            <button
+              className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
+              onClick={() => setActiveTab("evaluaciones")}
+            >
+              Evaluaciones
+            </button>
+          </div>
+
+          {activeTab === "datos" && (
+            <Card>
+              <div className="initial-data-section">
+                <div className="data-header">
+                  <h2>Datos Iniciales del Grupo</h2>
+                  <p>Información básica guardada</p>
+                </div>
+                <div className="data-display">
+                  <div className="data-item">
+                    <label>Nombre del Grupo</label>
+                    <p className="data-value">{formData.nombre}</p>
+                  </div>
+                  <div className="data-item full-width">
+                    <label>Descripción</label>
+                    <p className="data-value">{formData.descripcion || "No especificada"}</p>
+                  </div>
+                  <div className="data-item">
+                    <label>Facultad</label>
+                    <p className="data-value">{formData.facultad || "No especificada"}</p>
+                  </div>
+                  <div className="data-item">
+                    <label>Área</label>
+                    <p className="data-value">{formData.area || "No especificada"}</p>
+                  </div>
+                  <div className="data-item">
+                    <label>Departamento</label>
+                    <p className="data-value">{formData.departamento || "No especificado"}</p>
+                  </div>
+                  <div className="data-item full-width">
+                    <label>Temáticas</label>
+                    <p className="data-value">{formData.tematicas || "No especificadas"}</p>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === "integrantes" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Gestión de Integrantes</h2>
+                  <div className="tab-actions">
+                    <Button variant="secondary" onClick={() => setShowDirectoryModal(true)}>
+                      Agregar integrante (Directorio CUJAE)
+                    </Button>
+                    <Button variant="secondary" onClick={() => setShowExternalModal(true)}>
+                      Agregar integrante (Externo de la CUJAE)
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="members-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Rol</th>
+                        <th>Tipo</th>
+                        <th>Opciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="empty-state">
+                            No hay integrantes asociados. Haga clic en "Agregar integrante" para comenzar.
+                          </td>
+                        </tr>
+                      ) : (
+                        members.map((member) => (
+                          <tr key={member.id}>
+                            <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
+                            <td>{member.rol.replace(/_/g, " ")}</td>
+                            <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
+                            <td>
+                              <OptionsMenu
+                                options={[
+                                  {
+                                    label: "Modificar",
+                                    onClick: () => handleModifyMember(member),
+                                  },
+                                  {
+                                    label: "Eliminar integrante",
+                                    onClick: () => handleRemoveMember(member.id),
+                                  },
+                                ]}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === "registros" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Registros Científicos Asociados</h2>
+                  <div className="tab-actions">
+                    <Button variant="secondary" onClick={() => setShowRecordModal(true)}>
+                      Asociar registro primario
+                    </Button>
+                    <Button variant="secondary" onClick={() => setShowSuggestedRecordsModal(true)}>
+                      Mostrar registros posibles a asociar
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="records-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Título</th>
+                        <th>Tipo</th>
+                        <th>Año</th>
+                        <th>Opciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {records.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="empty-state">
+                            No hay registros asociados. Haga clic en "Asociar registro" para comenzar.
+                          </td>
+                        </tr>
+                      ) : (
+                        records.map((record) => (
+                          <tr key={record.id}>
+                            <td>{record.titulo}</td>
+                            <td>{record.tipo}</td>
+                            <td>{record.año}</td>
+                            <td>
+                              <OptionsMenu
+                                options={[
+                                  {
+                                    label: "Desasociar",
+                                    onClick: () => handleDisassociateRecord(record.id),
+                                  },
+                                ]}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === "evaluaciones" && (
+            <Card>
+              <div className="tab-content">
+                <div className="tab-header">
+                  <h2>Evaluaciones de Integrantes</h2>
+                  <p>Evalúe el desempeño de los integrantes del grupo</p>
+                </div>
+
+                <div className="evaluations-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Integrante</th>
+                        <th>Evaluación</th>
+                        <th>Descripción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="empty-state">
+                            No hay integrantes para evaluar. Agregue integrantes primero.
+                          </td>
+                        </tr>
+                      ) : (
+                        members.map((member) => {
+                          const evaluation = evaluations[member.id] || { evaluacion: "no_evaluado", descripcion: "" }
+                          return (
+                            <tr key={member.id}>
+                              <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
+                              <td>
+                                <select
+                                  className="form-select"
+                                  value={evaluation.evaluacion}
+                                  onChange={(e) =>
+                                    setEvaluations({
+                                      ...evaluations,
+                                      [member.id]: { ...evaluation, evaluacion: e.target.value },
+                                    })
+                                  }
+                                >
+                                  <option value="no_evaluado">No evaluado</option>
+                                  <option value="mal">Mal</option>
+                                  <option value="regular">Regular</option>
+                                  <option value="bien">Bien</option>
+                                  <option value="excelente">Excelente</option>
+                                </select>
+                              </td>
+                              <td>
+                                <Input
+                                  type="text"
+                                  placeholder="Descripción de la evaluación"
+                                  value={evaluation.descripcion}
+                                  onChange={(e) =>
+                                    setEvaluations({
+                                      ...evaluations,
+                                      [member.id]: { ...evaluation, descripcion: e.target.value },
+                                    })
+                                  }
+                                />
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          <Card>
+            <div className="form-actions">
+              <Button
+                type="button"
+                onClick={() => {
+                  if (!currentUser) return
+                  const newGroup: IGroup = {
+                    id: `group-${Date.now()}`,
+                    nombre: formData.nombre,
+                    descripcion: formData.descripcion,
+                    facultad: formData.facultad,
+                    area: formData.area,
+                    departamento: formData.departamento,
+                    tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+                    responsable: currentUser,
+                    fechaCreacion: new Date().toISOString(),
+                    fechaActualizacion: new Date().toISOString(),
+                    totalIntegrantes: members.length,
+                  }
+                  mockGroups.push(newGroup)
+                  setSuccessMessage("Grupo completado y guardado con éxito")
+                  setShowSuccessDialog(true)
+                  setTimeout(() => {
+                    navigate("/groups")
+                  }, 1500)
+                }}
+              >
+                Guardar Grupo Completo
+              </Button>
+            </div>
+          </Card>
+        </>
+      )}
+
       {isViewMode && (
         <>
           <div className="form-tabs">
@@ -518,7 +895,41 @@ export const GroupForm = () => {
                 <div className="tab-header">
                   <h2>Integrantes del Grupo</h2>
                 </div>
-                <p className="empty-state">No hay integrantes asociados a este grupo.</p>
+                {members.length === 0 ? (
+                  <p className="empty-state">No hay integrantes asociados a este grupo.</p>
+                ) : (
+                  <div className="members-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Rol</th>
+                          <th>Tipo</th>
+                          <th>Opciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {members.map((member) => (
+                          <tr key={member.id}>
+                            <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
+                            <td>{member.rol.replace(/_/g, " ")}</td>
+                            <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
+                            <td>
+                              <OptionsMenu
+                                options={[
+                                  {
+                                    label: "Ver detalles",
+                                    onClick: () => alert(`Ver detalles de ${member.usuario.nombre}`),
+                                  },
+                                ]}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </Card>
           )}
@@ -529,7 +940,30 @@ export const GroupForm = () => {
                 <div className="tab-header">
                   <h2>Registros Científicos</h2>
                 </div>
-                <p className="empty-state">No hay registros asociados a este grupo.</p>
+                {records.length === 0 ? (
+                  <p className="empty-state">No hay registros asociados a este grupo.</p>
+                ) : (
+                  <div className="records-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Título</th>
+                          <th>Tipo</th>
+                          <th>Año</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {records.map((record) => (
+                          <tr key={record.id}>
+                            <td>{record.titulo}</td>
+                            <td>{record.tipo}</td>
+                            <td>{record.año}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </Card>
           )}
@@ -540,7 +974,33 @@ export const GroupForm = () => {
                 <div className="tab-header">
                   <h2>Evaluaciones de Integrantes</h2>
                 </div>
-                <p className="empty-state">No hay evaluaciones registradas.</p>
+                {members.length === 0 ? (
+                  <p className="empty-state">No hay integrantes para mostrar evaluaciones.</p>
+                ) : (
+                  <div className="evaluations-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Integrante</th>
+                          <th>Evaluación</th>
+                          <th>Descripción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {members.map((member) => {
+                          const evaluation = evaluations[member.id] || { evaluacion: "no_evaluado", descripcion: "" }
+                          return (
+                            <tr key={member.id}>
+                              <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
+                              <td>{evaluation.evaluacion.replace(/_/g, " ")}</td>
+                              <td>{evaluation.descripcion || "Sin descripción"}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </Card>
           )}
@@ -555,144 +1015,6 @@ export const GroupForm = () => {
       )}
 
       {isEditMode && (
-        <Card>
-          <form onSubmit={handleSaveInitialData}>
-            <div className="form-group">
-              <label>Nombre del Grupo *</label>
-              <Input
-                name="nombre"
-                value={formData.nombre}
-                onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                placeholder="Ej: Grupo de Investigación en IA"
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Descripción</label>
-              <textarea
-                name="descripcion"
-                value={formData.descripcion}
-                onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                placeholder="Describa el enfoque y objetivos del grupo"
-                className="form-textarea"
-              />
-            </div>
-            <div className="form-group">
-              <label>Facultad</label>
-              <Input
-                name="facultad"
-                value={formData.facultad}
-                onChange={(e) => setFormData({ ...formData, facultad: e.target.value })}
-                placeholder="Facultad"
-              />
-            </div>
-            <div className="form-group">
-              <label>Área</label>
-              <Input
-                name="area"
-                value={formData.area}
-                onChange={(e) => setFormData({ ...formData, area: e.target.value })}
-                placeholder="Área"
-              />
-            </div>
-            <div className="form-group">
-              <label>Departamento</label>
-              <Input
-                name="departamento"
-                value={formData.departamento}
-                onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
-                placeholder="Departamento"
-              />
-            </div>
-            <div className="form-group">
-              <label>Temáticas</label>
-              <Input
-                name="tematicas"
-                value={formData.tematicas}
-                onChange={(e) => setFormData({ ...formData, tematicas: e.target.value })}
-                placeholder="Ej: IA, Machine Learning, NLP"
-              />
-            </div>
-            <div className="form-actions">
-              <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
-                Cancelar
-              </Button>
-              <Button type="submit">Actualizar Grupo</Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {isNewMode && !isSaved && (
-        <Card>
-          <form onSubmit={handleSaveInitialData}>
-            <div className="form-group">
-              <label>Nombre del Grupo *</label>
-              <Input
-                name="nombre"
-                value={formData.nombre}
-                onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                placeholder="Ej: Grupo de Investigación en IA"
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Descripción</label>
-              <textarea
-                name="descripcion"
-                value={formData.descripcion}
-                onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                placeholder="Describa el enfoque y objetivos del grupo"
-                className="form-textarea"
-              />
-            </div>
-            <div className="form-group">
-              <label>Facultad</label>
-              <Input
-                name="facultad"
-                value={formData.facultad}
-                onChange={(e) => setFormData({ ...formData, facultad: e.target.value })}
-                placeholder="Facultad"
-              />
-            </div>
-            <div className="form-group">
-              <label>Área</label>
-              <Input
-                name="area"
-                value={formData.area}
-                onChange={(e) => setFormData({ ...formData, area: e.target.value })}
-                placeholder="Área"
-              />
-            </div>
-            <div className="form-group">
-              <label>Departamento</label>
-              <Input
-                name="departamento"
-                value={formData.departamento}
-                onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
-                placeholder="Departamento"
-              />
-            </div>
-            <div className="form-group">
-              <label>Temáticas</label>
-              <Input
-                name="tematicas"
-                value={formData.tematicas}
-                onChange={(e) => setFormData({ ...formData, tematicas: e.target.value })}
-                placeholder="Ej: IA, Machine Learning, NLP"
-              />
-            </div>
-            <div className="form-actions">
-              <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
-                Cancelar
-              </Button>
-              <Button type="submit">Guardar Grupo</Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {isNewMode && isSaved && (
         <>
           <div className="form-tabs">
             <button
@@ -723,40 +1045,65 @@ export const GroupForm = () => {
 
           {activeTab === "datos" && (
             <Card>
-              <div className="tab-content">
-                <div className="initial-data-section">
-                  <div className="data-header">
-                    <h2>Datos Iniciales del Grupo</h2>
-                    <p>Información básica del grupo de investigación</p>
-                  </div>
-                  <div className="data-display">
-                    <div className="data-item">
-                      <label>Nombre del Grupo</label>
-                      <p className="data-value">{formData.nombre}</p>
-                    </div>
-                    <div className="data-item full-width">
-                      <label>Descripción</label>
-                      <p className="data-value">{formData.descripcion || "No especificada"}</p>
-                    </div>
-                    <div className="data-item">
-                      <label>Facultad</label>
-                      <p className="data-value">{formData.facultad || "No especificada"}</p>
-                    </div>
-                    <div className="data-item">
-                      <label>Área</label>
-                      <p className="data-value">{formData.area || "No especificada"}</p>
-                    </div>
-                    <div className="data-item">
-                      <label>Departamento</label>
-                      <p className="data-value">{formData.departamento || "No especificado"}</p>
-                    </div>
-                    <div className="data-item full-width">
-                      <label>Temáticas</label>
-                      <p className="data-value">{formData.tematicas || "No especificadas"}</p>
-                    </div>
-                  </div>
+              <form onSubmit={handleSaveInitialData}>
+                <div className="form-group">
+                  <label>Nombre del Grupo *</label>
+                  <Input
+                    name="nombre"
+                    value={formData.nombre}
+                    onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                    placeholder="Ej: Grupo de Investigación en IA"
+                    required
+                  />
                 </div>
-              </div>
+                <div className="form-group">
+                  <label>Descripción</label>
+                  <textarea
+                    name="descripcion"
+                    value={formData.descripcion}
+                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                    placeholder="Describa el enfoque y objetivos del grupo"
+                    className="form-textarea"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Facultad</label>
+                  <Input
+                    name="facultad"
+                    value={formData.facultad}
+                    onChange={(e) => setFormData({ ...formData, facultad: e.target.value })}
+                    placeholder="Facultad"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Área</label>
+                  <Input
+                    name="area"
+                    value={formData.area}
+                    onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                    placeholder="Área"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Departamento</label>
+                  <Input
+                    name="departamento"
+                    value={formData.departamento}
+                    onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
+                    placeholder="Departamento"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Temáticas</label>
+                  <Input
+                    name="tematicas"
+                    value={formData.tematicas}
+                    onChange={(e) => setFormData({ ...formData, tematicas: e.target.value })}
+                    placeholder="Ej: IA, Machine Learning, NLP"
+                  />
+                </div>
+                {/* Only "Actualizar Grupo" button remains at the end of the form */}
+              </form>
             </Card>
           )}
 
@@ -956,26 +1303,24 @@ export const GroupForm = () => {
                     </tbody>
                   </table>
                 </div>
-
-                {members.length > 0 && (
-                  <div className="tab-footer">
-                    <Button onClick={handleSaveAllEvaluations}>Guardar Evaluaciones</Button>
-                  </div>
-                )}
               </div>
             </Card>
           )}
+
+          <Card>
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={handleSaveAllUpdates}>
+                Actualizar Grupo
+              </Button>
+            </div>
+          </Card>
         </>
       )}
 
-      {isNewMode && !isSaved && (
-        <div className="form-info">
-          <p>
-            <strong>Nota:</strong> Después de guardar el grupo, podrá agregar integrantes, asociar registros científicos
-            y gestionar evaluaciones.
-          </p>
-        </div>
-      )}
+      {/* The note now only appears once in the form-info div above when isNewMode && !isSaved */}
     </div>
   )
 }
