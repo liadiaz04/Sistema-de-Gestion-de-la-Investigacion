@@ -6,6 +6,7 @@ import { auditService } from "../services/auditService"
 import { Card } from "../components/common/Card"
 import { Input } from "../components/common/Input"
 import { Button } from "../components/common/Button"
+import { Table } from "../components/common/Table"
 import "./AuditLog.css"
 
 export const AuditLog = () => {
@@ -35,6 +36,35 @@ export const AuditLog = () => {
   const handleFilter = () => {
     loadLogs()
   }
+
+  const columns = [
+    { key: "fecha", header: "Fecha" },
+    { key: "hora", header: "Hora" },
+    {
+      key: "usuario",
+      header: "Usuario",
+      render: (log: IAuditLog) => log.usuario.nombreUsuario,
+    },
+    {
+      key: "tipoAccion",
+      header: "Acción",
+      render: (log: IAuditLog) => <span className={`action-badge action-${log.tipoAccion}`}>{log.tipoAccion}</span>,
+    },
+    {
+      key: "metodo",
+      header: "Método",
+      render: (log: IAuditLog) => <span className={`method-badge method-${log.metodo}`}>{log.metodo}</span>,
+    },
+    { key: "ruta", header: "Ruta" },
+    {
+      key: "codigo",
+      header: "Código",
+      render: (log: IAuditLog) => (
+        <span className={`code-badge code-${Math.floor(log.codigo / 100)}`}>{log.codigo}</span>
+      ),
+    },
+    { key: "mensaje", header: "Mensaje" },
+  ]
 
   if (loading) return <div className="loading">Cargando bitácora...</div>
 
@@ -82,50 +112,7 @@ export const AuditLog = () => {
       </Card>
 
       <Card>
-        <div className="table-container">
-          <table className="data-table audit-table">
-            <thead>
-              <tr>
-                <th className="date-col">Fecha</th>
-                <th className="time-col">Hora</th>
-                <th className="user-col">Usuario</th>
-                <th className="action-col">Acción</th>
-                <th className="method-col">Método</th>
-                <th className="route-col">Ruta</th>
-                <th className="code-col">Código</th>
-                <th className="message-col">Mensaje</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.length === 0 ? (
-                <tr>
-                  <td colSpan={8} style={{ textAlign: "center" }}>
-                    No hay registros en la bitácora
-                  </td>
-                </tr>
-              ) : (
-                logs.map((log) => (
-                  <tr key={log.id}>
-                    <td className="date-col">{log.fecha}</td>
-                    <td className="time-col">{log.hora}</td>
-                    <td className="user-col">{log.usuario.nombreUsuario}</td>
-                    <td className="action-col">
-                      <span className={`action-badge action-${log.tipoAccion}`}>{log.tipoAccion}</span>
-                    </td>
-                    <td className="method-col">
-                      <span className={`method-badge method-${log.metodo}`}>{log.metodo}</span>
-                    </td>
-                    <td className="route-col">{log.ruta}</td>
-                    <td className="code-col">
-                      <span className={`code-badge code-${Math.floor(log.codigo / 100)}`}>{log.codigo}</span>
-                    </td>
-                    <td className="message-col">{log.mensaje}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <Table data={logs} columns={columns} />
       </Card>
     </div>
   )

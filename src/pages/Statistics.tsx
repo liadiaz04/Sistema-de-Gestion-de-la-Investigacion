@@ -31,28 +31,8 @@ export const Statistics = () => {
   const [graphicalData, setGraphicalData] = useState<IStatisticsGraphical | null>(null)
   const [selectedYear, setSelectedYear] = useState(2024)
   const [loading, setLoading] = useState(true)
-  const [selectedFacultad, setSelectedFacultad] = useState<string>("todas")
   const [groupVisualizationType, setGroupVisualizationType] = useState<GroupVisualizationType>("porFacultad")
   const [projectVisualizationType, setProjectVisualizationType] = useState<ProjectVisualizationType>("porFacultad")
-
-  const facultades = [
-    "Industrial",
-    "Eléctrica",
-    "Civil",
-    "Mecánica",
-    "Arquitectura",
-    "Informática",
-    "Química",
-    "CREA",
-    "DEDER",
-    "CETA",
-    "Defensa",
-    "Extensión",
-    "Economía",
-    "Otra",
-    "CEMAT",
-    "DML",
-  ]
 
   useEffect(() => {
     loadStatistics()
@@ -93,14 +73,6 @@ export const Statistics = () => {
     a.href = url
     a.download = `estadisticas-${category}-${view}-${Date.now()}.xlsx`
     a.click()
-  }
-
-  const toggleFacultad = (facultad: string) => {
-    if (selectedFacultad === facultad) {
-      setSelectedFacultad("todas")
-    } else {
-      setSelectedFacultad(facultad)
-    }
   }
 
   if (loading) return <div className="loading">Cargando estadísticas...</div>
@@ -336,31 +308,6 @@ export const Statistics = () => {
                 <option value={2024}>2024</option>
               </select>
             </div>
-
-            {category === "registros" && (
-              <div className="facultad-selector">
-                <label>Facultad:</label>
-                <select value={selectedFacultad} onChange={(e) => setSelectedFacultad(e.target.value)}>
-                  <option value="todas">Todas las facultades</option>
-                  <option value="Industrial">Industrial</option>
-                  <option value="Eléctrica">Eléctrica</option>
-                  <option value="Civil">Civil</option>
-                  <option value="Mecánica">Mecánica</option>
-                  <option value="Arquitectura">Arquitectura</option>
-                  <option value="Informática">Informática</option>
-                  <option value="Química">Química</option>
-                  <option value="CREA">CREA</option>
-                  <option value="DEDER">DEDER</option>
-                  <option value="CETA">CETA</option>
-                  <option value="Defensa">Defensa</option>
-                  <option value="Extensión">Extensión</option>
-                  <option value="Economía">Economía</option>
-                  <option value="Otra">Otra</option>
-                  <option value="CEMAT">CEMAT</option>
-                  <option value="DML">DML</option>
-                </select>
-              </div>
-            )}
 
             {category === "grupos" && (
               <div className="group-visualization-selector">
