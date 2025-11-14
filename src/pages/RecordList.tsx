@@ -121,10 +121,12 @@ const RecordList: React.FC = () => {
           <h1>Producción Científica</h1>
           <p>Gestión de registros científicos (Códice)</p>
         </div>
-        <Button onClick={() => navigate("/records/new")}>
-          <Plus size={20} />
-          Adicionar Registro
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => navigate("/records/new")}>
+            <Plus size={20} />
+            Adicionar Registro
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -143,13 +145,15 @@ const RecordList: React.FC = () => {
         <Table data={filteredRecords} columns={columns} />
       </Card>
 
-      <ConfirmDialog
-        isOpen={deleteConfirm.show}
-        title="Eliminar Registro"
-        message="¿Está seguro que desea eliminar este registro científico? Esta acción no se puede deshacer."
-        onConfirm={() => deleteConfirm.recordId && handleDelete(deleteConfirm.recordId)}
-        onCancel={() => setDeleteConfirm({ show: false, recordId: null })}
-      />
+      {isAdmin && (
+        <ConfirmDialog
+          isOpen={deleteConfirm.show}
+          title="Eliminar Registro"
+          message="¿Está seguro que desea eliminar este registro científico? Esta acción no se puede deshacer."
+          onConfirm={() => deleteConfirm.recordId && handleDelete(deleteConfirm.recordId)}
+          onCancel={() => setDeleteConfirm({ show: false, recordId: null })}
+        />
+      )}
     </div>
   );
 };

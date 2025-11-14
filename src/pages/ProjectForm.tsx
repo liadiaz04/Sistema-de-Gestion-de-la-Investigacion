@@ -17,6 +17,8 @@ export const ProjectForm = () => {
   const { id } = useParams()
   const { user: currentUser } = useAuthStore()
 
+  const isAdmin = currentUser?.roles?.includes("admin") || false
+
   console.log("[v0] ProjectForm - id:", id)
   console.log("[v0] ProjectForm - location.pathname:", location.pathname)
 
@@ -762,9 +764,11 @@ export const ProjectForm = () => {
               <Button type="button" onClick={() => navigate("/projects")}>
                 Volver a Proyectos
               </Button>
-              <Button type="button" variant="secondary" onClick={() => navigate(`/projects/${id}/edit`)}>
-                Editar Proyecto
-              </Button>
+              {isAdmin && (
+                <Button type="button" variant="secondary" onClick={() => navigate(`/projects/${id}/edit`)}>
+                  Editar Proyecto
+                </Button>
+              )}
             </div>
           )}
         </form>

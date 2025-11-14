@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
 import { mockGroups } from "../services/mockData"
+import { useAuthStore } from "../stores/authStore"
 import type { IGroup } from "../types/index"
 import "./GroupForm.css"
 
@@ -12,6 +13,8 @@ export const GroupDetails = () => {
   const { id } = useParams()
   const [group, setGroup] = useState<IGroup | null>(null)
   const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "registros" | "evaluaciones">("datos")
+  const { user } = useAuthStore()
+  const isAdmin = user?.roles?.includes('admin') || false
 
   useEffect(() => {
     if (id) {
@@ -121,7 +124,9 @@ export const GroupDetails = () => {
                 <Button variant="secondary" onClick={() => navigate("/groups")}>
                   Volver a la Lista
                 </Button>
-                <Button onClick={() => navigate(`/groups/${id}/edit`)}>Editar Grupo</Button>
+                {isAdmin && (
+                  <Button onClick={() => navigate(`/groups/${id}/edit`)}>Editar Grupo</Button>
+                )}
               </div>
             </div>
           </div>
