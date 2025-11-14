@@ -741,14 +741,8 @@ export const RecordForm = () => {
       </Modal>
 
       <div className="form-header">
-        <h1>
-          {isViewMode
-            ? "Detalles del Registro Científico"
-            : isEditMode
-              ? "Editar Registro Científico"
-              : "Adicionar Registro Científico"}
-        </h1>
-        <p>{isViewMode ? "Información del registro" : "Complete la información del registro"}</p>
+        <h1>{id ? "Editar Registro Científico" : "Adicionar Registro Científico"}</h1>
+        <p>Complete la información del registro</p>
       </div>
 
       <div className="record-type-menu">
