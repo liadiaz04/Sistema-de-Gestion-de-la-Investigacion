@@ -3,13 +3,15 @@
 import React from "react"
 import { Outlet, useNavigate } from "react-router-dom"
 import { useAuthStore } from "../../stores/authStore"
-import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3, UserCog, ClipboardList, PieChart } from "lucide-react"
+import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3, UserCog, ClipboardList, PieChart } from 'lucide-react'
 import "./Layout.css"
 
 export const Layout: React.FC = () => {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
+
+  const isAdmin = user?.roles?.includes('admin') || false
 
   const handleLogout = () => {
     logout()
@@ -21,12 +23,12 @@ export const Layout: React.FC = () => {
     { icon: Users, label: "Grupos", path: "/groups" },
     { icon: FolderKanban, label: "Proyectos", path: "/projects" },
     { icon: FileText, label: "Registros", path: "/records" },
-    { icon: PieChart, label: "Estadísticas", path: "/statistics" },
-    { icon: UserCog, label: "Usuarios", path: "/users", adminOnly: true },
-    { icon: ClipboardList, label: "Bitácora", path: "/audit", adminOnly: true },
+    ...(isAdmin ? [
+      { icon: PieChart, label: "Estadísticas", path: "/statistics" },
+      { icon: UserCog, label: "Usuarios", path: "/users" },
+      { icon: ClipboardList, label: "Bitácora", path: "/audit" },
+    ] : []),
   ]
-
-  const visibleMenuItems = menuItems.filter((item) => !item.adminOnly || user?.roles.includes("admin"))
 
   return (
     <div className="layout">
@@ -39,7 +41,7 @@ export const Layout: React.FC = () => {
         </div>
 
         <nav className="sidebar-nav">
-          {visibleMenuItems.map((item) => (
+          {menuItems.map((item) => (
             <button key={item.path} className="sidebar-nav-item" onClick={() => navigate(item.path)}>
               <item.icon size={20} />
               {sidebarOpen && <span>{item.label}</span>}

@@ -9,13 +9,17 @@ import { Input } from "../components/common/Input"
 import { Table } from "../components/common/Table"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
-import { Plus, Search } from "lucide-react"
+import { Plus, Search } from 'lucide-react'
 import { mockGroups } from "../services/mockData"
 import type { IGroup } from "../types"
+import { useAuthStore } from "../stores/authStore"
 import "./GroupList.css"
 
 export const GroupList: React.FC = () => {
   const navigate = useNavigate()
+  const { user } = useAuthStore()
+  const isAdmin = user?.roles?.includes('admin') || false
+  
   const [searchTerm, setSearchTerm] = useState("")
   const [groups, setGroups] = useState<IGroup[]>(() => [...mockGroups])
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; groupId: string | null }>({
@@ -52,11 +56,17 @@ export const GroupList: React.FC = () => {
       key: "actions",
       header: "Opciones",
       render: (group: IGroup) => (
-        <OptionsMenu
-          onView={() => navigate(`/groups/${group.id}`)}
-          onEdit={() => navigate(`/groups/${group.id}/edit`)}
-          onDelete={() => setDeleteConfirm({ show: true, groupId: group.id })}
-        />
+        isAdmin ? (
+          <OptionsMenu
+            onView={() => navigate(`/groups/${group.id}`)}
+            onEdit={() => navigate(`/groups/${group.id}/edit`)}
+            onDelete={() => setDeleteConfirm({ show: true, groupId: group.id })}
+          />
+        ) : (
+          <Button variant="outline" onClick={() => navigate(`/groups/${group.id}`)}>
+            Ver detalles
+          </Button>
+        )
       ),
     },
   ]
@@ -68,10 +78,12 @@ export const GroupList: React.FC = () => {
           <h1>Grupos de Investigación</h1>
           <p>Gestión de grupos de investigación (Quorum)</p>
         </div>
-        <Button onClick={() => navigate("/groups/new")}>
-          <Plus size={20} />
-          Adicionar Grupo
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => navigate("/groups/new")}>
+            <Plus size={20} />
+            Adicionar Grupo
+          </Button>
+        )}
       </div>
 
       <Card>

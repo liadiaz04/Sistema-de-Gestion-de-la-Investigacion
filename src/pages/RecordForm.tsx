@@ -11,11 +11,15 @@ import { OptionsMenu } from "../components/common/OptionsMenu"
 import type { RecordType } from "../types"
 import { mockRecords, mockUsers, mockProjects } from "../services/mockData"
 import "./RecordForm.css"
+import { useAuthStore } from "../stores/authStore"
 
 export const RecordForm = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { id } = useParams()
+  
+  const { user: currentUser } = useAuthStore()
+  const isAdmin = currentUser?.roles?.includes("admin") || false
 
   const isEditMode = id && location.pathname.includes("/edit")
   const isViewMode = id && !location.pathname.includes("/edit")
@@ -1168,9 +1172,11 @@ export const RecordForm = () => {
             <Button type="button" onClick={() => navigate("/records")}>
               Volver a Registros
             </Button>
-            <Button type="button" onClick={() => navigate(`/records/${id}/edit`)}>
-              Editar Registro
-            </Button>
+            {isAdmin && (
+              <Button type="button" onClick={() => navigate(`/records/${id}/edit`)}>
+                Editar Registro
+              </Button>
+            )}
           </div>
         </Card>
       )}

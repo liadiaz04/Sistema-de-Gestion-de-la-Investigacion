@@ -9,19 +9,23 @@ import { Input } from "../components/common/Input"
 import { Table } from "../components/common/Table"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
-import { Plus, Search } from "lucide-react"
+import { Plus, Search } from 'lucide-react'
 import { mockRecords } from "../services/mockData"
 import type { IRecord } from "../types"
+import { useAuthStore } from "../stores/authStore"
 import "./GroupList.css"
 
 const RecordList: React.FC = () => {
   const navigate = useNavigate()
+  const { user } = useAuthStore()
   const [searchTerm, setSearchTerm] = useState("")
   const [records, setRecords] = useState<IRecord[]>(mockRecords)
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; recordId: string | null }>({
     show: false,
     recordId: null,
   })
+
+  const isAdmin = user?.roles?.includes('admin') || false
 
   const filteredRecords = records.filter((record) => record.titulo.toLowerCase().includes(searchTerm.toLowerCase()))
 
@@ -47,11 +51,17 @@ const RecordList: React.FC = () => {
       key: "actions",
       header: "Opciones",
       render: (record: IRecord) => (
-        <OptionsMenu
-          onView={() => navigate(`/records/${record.id}`)}
-          onEdit={() => navigate(`/records/${record.id}/edit`)}
-          onDelete={() => setDeleteConfirm({ show: true, recordId: record.id })}
-        />
+        isAdmin ? (
+          <OptionsMenu
+            onView={() => navigate(`/records/${record.id}`)}
+            onEdit={() => navigate(`/records/${record.id}/edit`)}
+            onDelete={() => setDeleteConfirm({ show: true, recordId: record.id })}
+          />
+        ) : (
+          <Button variant="outline" onClick={() => navigate(`/records/${record.id}`)}>
+            Ver detalles
+          </Button>
+        )
       ),
     },
   ]
@@ -63,10 +73,12 @@ const RecordList: React.FC = () => {
           <h1>Producción Científica</h1>
           <p>Gestión de registros científicos (Códice)</p>
         </div>
-        <Button onClick={() => navigate("/records/new")}>
-          <Plus size={20} />
-          Adicionar Registro
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => navigate("/records/new")}>
+            <Plus size={20} />
+            Adicionar Registro
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -85,13 +97,15 @@ const RecordList: React.FC = () => {
         <Table data={filteredRecords} columns={columns} />
       </Card>
 
-      <ConfirmDialog
-        isOpen={deleteConfirm.show}
-        title="Eliminar Registro"
-        message="¿Está seguro que desea eliminar este registro científico? Esta acción no se puede deshacer."
-        onConfirm={() => deleteConfirm.recordId && handleDelete(deleteConfirm.recordId)}
-        onCancel={() => setDeleteConfirm({ show: false, recordId: null })}
-      />
+      {isAdmin && (
+        <ConfirmDialog
+          isOpen={deleteConfirm.show}
+          title="Eliminar Registro"
+          message="¿Está seguro que desea eliminar este registro científico? Esta acción no se puede deshacer."
+          onConfirm={() => deleteConfirm.recordId && handleDelete(deleteConfirm.recordId)}
+          onCancel={() => setDeleteConfirm({ show: false, recordId: null })}
+        />
+      )}
     </div>
   )
 }

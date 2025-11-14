@@ -9,8 +9,9 @@ import { Input } from "../components/common/Input"
 import { Table } from "../components/common/Table"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
-import { Plus, Search } from "lucide-react"
+import { Plus, Search } from 'lucide-react'
 import { mockProjects } from "../services/mockData"
+import { useAuthStore } from "../stores/authStore"
 import type { IProject } from "../types"
 
 const ProjectList: React.FC = () => {
@@ -21,6 +22,9 @@ const ProjectList: React.FC = () => {
     show: false,
     projectId: null,
   })
+  const { user } = useAuthStore()
+  const isAdmin = user?.roles?.includes('admin') || false
+
 
   const filteredProjects = projects.filter(
     (project) =>
@@ -56,7 +60,7 @@ const ProjectList: React.FC = () => {
       header: "Estado",
       render: (project: IProject) => <span className={`badge badge-${project.estado}`}>{project.estado}</span>,
     },
-    {
+    ...(isAdmin ? [{
       key: "actions",
       header: "Opciones",
       render: (project: IProject) => (
@@ -66,7 +70,15 @@ const ProjectList: React.FC = () => {
           onDelete={() => setDeleteConfirm({ show: true, projectId: project.id })}
         />
       ),
-    },
+    }] : [{
+      key: "actions",
+      header: "Opciones",
+      render: (project: IProject) => (
+        <Button variant="outline" onClick={() => navigate(`/projects/${project.id}`)}>
+          Ver detalles
+        </Button>
+      ),
+    }]),
   ]
 
   return (
@@ -76,10 +88,12 @@ const ProjectList: React.FC = () => {
           <h1>Proyectos de Investigación</h1>
           <p>Gestión de proyectos de investigación (Copérnico)</p>
         </div>
-        <Button onClick={() => navigate("/projects/new")}>
-          <Plus size={20} />
-          Adicionar Proyecto
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => navigate("/projects/new")}>
+            <Plus size={20} />
+            Adicionar Proyecto
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -98,13 +112,15 @@ const ProjectList: React.FC = () => {
         <Table data={filteredProjects} columns={columns} />
       </Card>
 
-      <ConfirmDialog
-        isOpen={deleteConfirm.show}
-        title="Eliminar Proyecto"
-        message="¿Está seguro que desea eliminar este proyecto de investigación? Esta acción no se puede deshacer."
-        onConfirm={() => deleteConfirm.projectId && handleDelete(deleteConfirm.projectId)}
-        onCancel={() => setDeleteConfirm({ show: false, projectId: null })}
-      />
+      {isAdmin && (
+        <ConfirmDialog
+          isOpen={deleteConfirm.show}
+          title="Eliminar Proyecto"
+          message="¿Está seguro que desea eliminar este proyecto de investigación? Esta acción no se puede deshacer."
+          onConfirm={() => deleteConfirm.projectId && handleDelete(deleteConfirm.projectId)}
+          onCancel={() => setDeleteConfirm({ show: false, projectId: null })}
+        />
+      )}
     </div>
   )
 }
