@@ -49,6 +49,7 @@ export const RecordForm = () => {
     resumen: "",
     palabrasClave: "",
     pais: "Cuba",
+    // Artículo
     revista: "",
     baseDatos: "",
     issn: "",
@@ -56,15 +57,21 @@ export const RecordForm = () => {
     numero: "",
     paginas: "",
     doi: "",
+    // Libro
     editorial: "",
     isbn: "",
+    // Tesis
     tipoTesis: "",
+    // Patente
     numeroRegistro: "",
     estado: "",
+    // Software
     registroCENDA: "",
+    // Evento
     nombreEvento: "",
     organizador: "",
     tipoEvento: "",
+    // Premio
     tipoPremio: "",
     institucion: "",
   })
@@ -141,7 +148,7 @@ export const RecordForm = () => {
         setShowSuccessDialog(true)
       }
     } else {
-      setIsSaved(true)
+    setIsSaved(true)
       setActiveTab("autores")
       setSuccessMessage("Datos básicos guardados con éxito. Por favor, complete los autores y proyectos asociados.")
       setShowSuccessDialog(true)
@@ -442,19 +449,19 @@ export const RecordForm = () => {
                 disabled={true}
               />
             ) : (
-              <select
-                id="tipoTesis"
-                name="tipoTesis"
-                value={formData.tipoTesis}
-                onChange={handleChange}
-                required
-                className="form-select"
-              >
-                <option value="">Seleccione tipo</option>
-                <option value="licenciatura">Licenciatura</option>
-                <option value="maestria">Maestría</option>
-                <option value="doctorado">Doctorado</option>
-              </select>
+            <select
+              id="tipoTesis"
+              name="tipoTesis"
+              value={formData.tipoTesis}
+              onChange={handleChange}
+              required
+              className="form-select"
+            >
+              <option value="">Seleccione tipo</option>
+              <option value="licenciatura">Licenciatura</option>
+              <option value="maestria">Maestría</option>
+              <option value="doctorado">Doctorado</option>
+            </select>
             )}
           </div>
         )
@@ -491,10 +498,10 @@ export const RecordForm = () => {
                   onChange={handleChange}
                   className="form-select"
                 >
-                  <option value="">Seleccione estado</option>
-                  <option value="tramite">En trámite</option>
-                  <option value="concedida">Concedida</option>
-                </select>
+                <option value="">Seleccione estado</option>
+                <option value="tramite">En trámite</option>
+                <option value="concedida">Concedida</option>
+              </select>
               )}
             </div>
           </>
@@ -532,11 +539,11 @@ export const RecordForm = () => {
                   onChange={handleChange}
                   className="form-select"
                 >
-                  <option value="">Seleccione estado</option>
-                  <option value="desarrollo">En desarrollo</option>
-                  <option value="terminado">Terminado</option>
-                  <option value="registrado">Registrado</option>
-                </select>
+                <option value="">Seleccione estado</option>
+                <option value="desarrollo">En desarrollo</option>
+                <option value="terminado">Terminado</option>
+                <option value="registrado">Registrado</option>
+              </select>
               )}
             </div>
           </>
@@ -840,20 +847,20 @@ export const RecordForm = () => {
                         disabled={true}
                       />
                     ) : (
-                      <select id="mes" name="mes" value={formData.mes} onChange={handleChange} className="form-select">
-                        <option value="1">Enero</option>
-                        <option value="2">Febrero</option>
-                        <option value="3">Marzo</option>
-                        <option value="4">Abril</option>
-                        <option value="5">Mayo</option>
-                        <option value="6">Junio</option>
-                        <option value="7">Julio</option>
-                        <option value="8">Agosto</option>
-                        <option value="9">Septiembre</option>
-                        <option value="10">Octubre</option>
-                        <option value="11">Noviembre</option>
-                        <option value="12">Diciembre</option>
-                      </select>
+                    <select id="mes" name="mes" value={formData.mes} onChange={handleChange} className="form-select">
+                      <option value="1">Enero</option>
+                      <option value="2">Febrero</option>
+                      <option value="3">Marzo</option>
+                      <option value="4">Abril</option>
+                      <option value="5">Mayo</option>
+                      <option value="6">Junio</option>
+                      <option value="7">Julio</option>
+                      <option value="8">Agosto</option>
+                      <option value="9">Septiembre</option>
+                      <option value="10">Octubre</option>
+                      <option value="11">Noviembre</option>
+                      <option value="12">Diciembre</option>
+                    </select>
                     )}
                   </div>
 
@@ -923,7 +930,7 @@ export const RecordForm = () => {
           {(isSaved || isViewMode || isEditMode) && activeTab === "autores" && (
             <div className="form-section">
               <div className="tab-header">
-                <h3>Autores del Registro</h3>
+              <h3>Autores del Registro</h3>
                 {!isViewMode && (
                   <div className="tab-actions">
                     <Button
@@ -939,8 +946,8 @@ export const RecordForm = () => {
                         setShowDirectoryModal(true)
                       }}
                     >
-                      Agregar Autor del Directorio CUJAE
-                    </Button>
+                  Agregar Autor del Directorio CUJAE
+                </Button>
                     <Button
                       type="button"
                       variant="secondary"
@@ -949,13 +956,13 @@ export const RecordForm = () => {
                         setShowExternalModal(true)
                       }}
                     >
-                      Agregar Autor Externo
-                    </Button>
-                  </div>
+                  Agregar Autor Externo
+                </Button>
+              </div>
                 )}
               </div>
               {authors.length === 0 ? (
-                <p className="empty-state">No hay autores agregados aún</p>
+              <p className="empty-state">No hay autores agregados aún</p>
               ) : (
                 <div className="members-table">
                   <table>
@@ -997,7 +1004,7 @@ export const RecordForm = () => {
           {(isSaved || isViewMode || isEditMode) && activeTab === "tutores" && recordType === "tesis" && (
             <div className="form-section">
               <div className="tab-header">
-                <h3>Tutores de la Tesis</h3>
+              <h3>Tutores de la Tesis</h3>
                 {!isViewMode && (
                   <div className="tab-actions">
                     <Button
@@ -1013,8 +1020,8 @@ export const RecordForm = () => {
                         setShowDirectoryModal(true)
                       }}
                     >
-                      Agregar Tutor del Directorio CUJAE
-                    </Button>
+                  Agregar Tutor del Directorio CUJAE
+                </Button>
                     <Button
                       type="button"
                       variant="secondary"
@@ -1023,13 +1030,13 @@ export const RecordForm = () => {
                         setShowExternalModal(true)
                       }}
                     >
-                      Agregar Tutor Externo
-                    </Button>
-                  </div>
+                  Agregar Tutor Externo
+                </Button>
+              </div>
                 )}
               </div>
               {tutors.length === 0 ? (
-                <p className="empty-state">No hay tutores agregados aún</p>
+              <p className="empty-state">No hay tutores agregados aún</p>
               ) : (
                 <div className="members-table">
                   <table>
@@ -1071,7 +1078,7 @@ export const RecordForm = () => {
           {(isSaved || isViewMode || isEditMode) && activeTab === "proyectos" && (
             <div className="form-section">
               <div className="tab-header">
-                <h3>Proyectos de Investigación Asociados</h3>
+              <h3>Proyectos de Investigación Asociados</h3>
                 {!isViewMode && (
                   <div className="tab-actions">
                     <Button
@@ -1086,13 +1093,13 @@ export const RecordForm = () => {
                         setShowProjectModal(true)
                       }}
                     >
-                      Asociar Proyecto de Investigación
-                    </Button>
-                  </div>
+                  Asociar Proyecto de Investigación
+                </Button>
+              </div>
                 )}
               </div>
               {associatedProjects.length === 0 ? (
-                <p className="empty-state">No hay proyectos asociados aún</p>
+              <p className="empty-state">No hay proyectos asociados aún</p>
               ) : (
                 <div className="records-table">
                   <table>
@@ -1126,8 +1133,8 @@ export const RecordForm = () => {
                       ))}
                     </tbody>
                   </table>
-                </div>
-              )}
+            </div>
+          )}
             </div>
           )}
         </form>
@@ -1145,28 +1152,28 @@ export const RecordForm = () => {
 
       {isEditMode && (
         <Card>
-          <div className="form-actions">
-            <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
-              Cancelar
-            </Button>
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
+                Cancelar
+              </Button>
             <Button type="button" onClick={handleUpdateRecord}>
               Actualizar Registro
             </Button>
-          </div>
+            </div>
         </Card>
-      )}
+          )}
 
       {isViewMode && (
         <Card>
-          <div className="form-actions">
-            <Button type="button" onClick={() => navigate("/records")}>
-              Volver a Registros
-            </Button>
+            <div className="form-actions">
+              <Button type="button" onClick={() => navigate("/records")}>
+                Volver a Registros
+              </Button>
             <Button type="button" onClick={() => navigate(`/records/${id}/edit`)}>
               Editar Registro
             </Button>
-          </div>
-        </Card>
+            </div>
+      </Card>
       )}
     </div>
   )

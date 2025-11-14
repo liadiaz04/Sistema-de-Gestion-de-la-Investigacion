@@ -11,9 +11,10 @@ import type { AxiosResponse } from 'axios';
 /**
  * Transforma la respuesta del servidor al modelo de dominio
  */
-const transformAuthResponse = (response: AxiosResponse): { token: string } => {
+const transformAuthResponse = (response: AxiosResponse): { token: string , user_id:string} => {
   return {
     token: response.data.access_token,
+    user_id: response.data.user_id
   };
 };
 
@@ -36,6 +37,7 @@ export const authService = {
     
     // Guardar token en localStorage
     localStorage.setItem('auth_token', transformed.token);
+    localStorage.setItem('user_id', transformed.user_id);
     
     return transformed;
   },
