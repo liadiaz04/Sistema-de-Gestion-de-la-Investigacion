@@ -51,7 +51,7 @@ export const ProjectForm = () => {
     descripcion: "",
     tematica: "",
     programa: "",
-    esPriorizado: false,
+    tipoProyecto: "", // Added tipoProyecto field
     estado: "propuesta" as "propuesta" | "activo" | "finalizado" | "cancelado",
     objetivos: "",
     tareas: "",
@@ -71,7 +71,7 @@ export const ProjectForm = () => {
           descripcion: project.descripcion,
           tematica: project.tematica,
           programa: project.programa,
-          esPriorizado: project.esPriorizado,
+          tipoProyecto: project.tipoProyecto || "", // Load tipoProyecto
           estado: project.estado,
           objetivos: project.objetivos || "",
           tareas: project.tareas || "",
@@ -97,7 +97,7 @@ export const ProjectForm = () => {
           descripcion: formData.descripcion,
           tematica: formData.tematica,
           programa: formData.programa,
-          esPriorizado: formData.esPriorizado,
+          tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
           estado: formData.estado,
         }
       }
@@ -196,7 +196,8 @@ export const ProjectForm = () => {
       responsable: currentUser || mockUsers[0],
       tematica: formData.tematica,
       programa: formData.programa,
-      esPriorizado: formData.esPriorizado,
+      tipoProyecto: formData.tipoProyecto, // Include tipoProyecto
+      esPriorizado: false, // Removed from form, set default false
       estaAprobado: false,
       estado: formData.estado,
       fechaInicio: new Date().toISOString(),
@@ -227,7 +228,7 @@ export const ProjectForm = () => {
         descripcion: formData.descripcion,
         tematica: formData.tematica,
         programa: formData.programa,
-        esPriorizado: formData.esPriorizado,
+        tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
         estado: formData.estado,
         objetivos: formData.objetivos,
         tareas: formData.tareas,
@@ -257,7 +258,6 @@ export const ProjectForm = () => {
     { id: "objetivos-tareas", label: "Objetivos y Tareas" },
     { id: "integrantes", label: "Integrantes" },
     { id: "criterio-consejo", label: "Criterio del Consejo" },
-    { id: "produccion-cientifica", label: "Producción Científica" },
   ]
 
   console.log(
@@ -494,6 +494,37 @@ export const ProjectForm = () => {
                 </div>
 
                 <div className="form-group">
+                  <label htmlFor="tipoProyecto">
+                    Tipo de Proyecto <span className="required">*</span>
+                  </label>
+                  {isViewMode ? (
+                    <Input
+                      type="text"
+                      id="tipoProyecto"
+                      name="tipoProyecto"
+                      value={formData.tipoProyecto}
+                      disabled={true}
+                    />
+                  ) : (
+                    <select
+                      id="tipoProyecto"
+                      name="tipoProyecto"
+                      value={formData.tipoProyecto}
+                      onChange={handleChange}
+                      required
+                      className="form-select"
+                    >
+                      <option value="">Seleccione un tipo</option>
+                      <option value="investigacion">Investigación</option>
+                      <option value="desarrollo">Desarrollo</option>
+                      <option value="innovacion">Innovación</option>
+                      <option value="extension">Extensión</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                  )}
+                </div>
+
+                <div className="form-group">
                   <label htmlFor="estado">
                     Estado <span className="required">*</span>
                   </label>
@@ -523,19 +554,6 @@ export const ProjectForm = () => {
                   )}
                 </div>
 
-                <div className="form-group">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      name="esPriorizado"
-                      checked={formData.esPriorizado}
-                      onChange={handleChange}
-                      className="form-checkbox"
-                      disabled={isViewMode ? true : false}
-                    />
-                    <span>Proyecto Priorizado</span>
-                  </label>
-                </div>
               </div>
 
               {!isSaved && !isEditMode && !isViewMode && (
@@ -690,51 +708,6 @@ export const ProjectForm = () => {
                   />
                 </div>
               </div>
-            </div>
-          )}
-
-          {(isSaved || isViewMode || isEditMode) && activeTab === "produccion-cientifica" && (
-            <div className="form-section">
-              <h3>Producción Científica</h3>
-              {!isViewMode && (
-                <div className="section-actions">
-                  <Button type="button" variant="secondary" onClick={handleOpenRecordModal}>
-                    Asociar Registro Científico
-                  </Button>
-                </div>
-              )}
-              {records.length === 0 ? (
-                <p className="empty-state">No hay registros asociados aún</p>
-              ) : (
-                <div className="records-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Título</th>
-                        <th>Tipo</th>
-                        <th>Año</th>
-                        {!isViewMode && <th>Acciones</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.map((record) => (
-                        <tr key={record.id}>
-                          <td>{record.titulo}</td>
-                          <td>{record.tipo}</td>
-                          <td>{record.año}</td>
-                          {!isViewMode && (
-                            <td>
-                              <Button size="sm" variant="secondary" onClick={() => handleDisassociateRecord(record.id)}>
-                                Desasociar
-                              </Button>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </div>
           )}
 

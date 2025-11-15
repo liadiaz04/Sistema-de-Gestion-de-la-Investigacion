@@ -47,15 +47,6 @@ const ProjectList: React.FC = () => {
     { key: "tematica", header: "Temática" },
     { key: "programa", header: "Programa" },
     {
-      key: "esPriorizado",
-      header: "Priorizado",
-      render: (project: IProject) => (
-        <span className={project.esPriorizado ? "badge badge-success" : "badge badge-secondary"}>
-          {project.esPriorizado ? "Sí" : "No"}
-        </span>
-      ),
-    },
-    {
       key: "estado",
       header: "Estado",
       render: (project: IProject) => <span className={`badge badge-${project.estado}`}>{project.estado}</span>,

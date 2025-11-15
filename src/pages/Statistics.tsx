@@ -21,8 +21,8 @@ import {
 import "./Statistics.css"
 
 type StatisticsCategory = "registros" | "grupos" | "proyectos"
-type GroupVisualizationType = "porFacultad" | "masResultados" | "masProyectos" | "masIntegrantes"
-type ProjectVisualizationType = "porFacultad" | "masResultados" | "masIntegrantes" | "porEstado"
+type GroupVisualizationType = "porFacultad" | "masIntegrantes"
+type ProjectVisualizationType = "porFacultad" | "porEstado"
 
 export const Statistics = () => {
   const [view, setView] = useState<"tabular" | "graphical">("tabular")
@@ -30,9 +30,12 @@ export const Statistics = () => {
   const [tabularData, setTabularData] = useState<IStatisticsTabular | null>(null)
   const [graphicalData, setGraphicalData] = useState<IStatisticsGraphical | null>(null)
   const [selectedYear, setSelectedYear] = useState(2024)
+  const [selectedFacultad, setSelectedFacultad] = useState<string>("Todas")
   const [loading, setLoading] = useState(true)
   const [groupVisualizationType, setGroupVisualizationType] = useState<GroupVisualizationType>("porFacultad")
   const [projectVisualizationType, setProjectVisualizationType] = useState<ProjectVisualizationType>("porFacultad")
+
+  const facultades = ["Todas", "Industrial", "Eléctrica", "Civil", "Mecánica", "Arquitectura", "Informática", "Química"]
 
   useEffect(() => {
     loadStatistics()
@@ -122,33 +125,47 @@ export const Statistics = () => {
               <Card className="stats-card registros-card">
                 <h2>Estadísticas de Registros Científicos</h2>
                 <p className="stats-description">
-                  Vista tabular que muestra los totales de cada tipo de registro, los subtotales propios del usuario
-                  autenticado y el aporte que estos representan para el Centro.
+                  Vista tabular que muestra los totales de cada tipo de registro del Centro, los subtotales de la facultad
+                  seleccionada y el porcentaje de aporte que esta representa para el Centro.
                 </p>
+
+                <div className="filters-container" style={{ marginBottom: "1rem" }}>
+                  <div className="facultad-selector">
+                    <label>Filtrar por Facultad:</label>
+                    <select value={selectedFacultad} onChange={(e) => setSelectedFacultad(e.target.value)}>
+                      {facultades.map((fac) => (
+                        <option key={fac} value={fac}>
+                          {fac}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
                 <div className="stats-table-container">
                   <table className="stats-table">
                     <thead>
                       <tr>
-                        <th>Tipo de Registro</th>
-                        <th>Total Centro</th>
-                        <th>Mis Registros</th>
-                        <th>% Aporte</th>
+                        <th>Tipo de Artículo</th>
+                        <th>Total del Centro</th>
+                        <th>Total de la Facultad</th>
+                        <th>% Aporte de la Facultad al Centro</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(tabularData.registros.porTipo).map(([tipo, total]) => {
-                        const misRegistros = Math.floor(total * 0.15) // Mock user contribution
-                        const aporte =
-                          tabularData.registros.porcentajeAportePorTipo[
-                            tipo as keyof typeof tabularData.registros.porcentajeAportePorTipo
-                          ]
+                        const totalFacultad = selectedFacultad === "Todas" 
+                          ? total 
+                          : Math.floor(total * 0.15) // Mock: 15% para facultad seleccionada
+                        const aporte = selectedFacultad === "Todas"
+                          ? 100
+                          : (totalFacultad / total) * 100
                         return (
                           <tr key={tipo}>
                             <td className="tipo-label">{tipo}</td>
                             <td className="total-value">{total}</td>
-                            <td className="user-value">{misRegistros}</td>
-                            <td className="aporte-value">{aporte?.toFixed(1)}%</td>
+                            <td className="user-value">{totalFacultad}</td>
+                            <td className="aporte-value">{aporte.toFixed(1)}%</td>
                           </tr>
                         )
                       })}
@@ -160,10 +177,14 @@ export const Statistics = () => {
                           <strong>{tabularData.registros.total}</strong>
                         </td>
                         <td>
-                          <strong>{Math.floor(tabularData.registros.total * 0.15)}</strong>
+                          <strong>
+                            {selectedFacultad === "Todas"
+                              ? tabularData.registros.total
+                              : Math.floor(tabularData.registros.total * 0.15)}
+                          </strong>
                         </td>
                         <td>
-                          <strong>15.0%</strong>
+                          <strong>{selectedFacultad === "Todas" ? "100.0" : "15.0"}%</strong>
                         </td>
                       </tr>
                     </tbody>
@@ -189,19 +210,16 @@ export const Statistics = () => {
                         <th>Facultad</th>
                         <th>Cantidad de Grupos</th>
                         <th>Total de Integrantes</th>
-                        <th>Promedio Int./Grupo</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(tabularData.grupos.porFacultad).map(([facultad, cantidad]) => {
                         const integrantes = tabularData.grupos.integrantesPorGrupo[facultad] || 0
-                        const promedio = cantidad > 0 ? (integrantes / cantidad).toFixed(1) : "0"
                         return (
                           <tr key={facultad}>
                             <td className="facultad-label">{facultad}</td>
                             <td className="grupos-value">{cantidad}</td>
                             <td className="integrantes-value">{integrantes}</td>
-                            <td className="promedio-value">{promedio}</td>
                           </tr>
                         )
                       })}
@@ -215,14 +233,6 @@ export const Statistics = () => {
                         <td>
                           <strong>
                             {Object.values(tabularData.grupos.integrantesPorGrupo).reduce((a, b) => a + b, 0)}
-                          </strong>
-                        </td>
-                        <td>
-                          <strong>
-                            {(
-                              Object.values(tabularData.grupos.integrantesPorGrupo).reduce((a, b) => a + b, 0) /
-                              tabularData.grupos.total
-                            ).toFixed(1)}
                           </strong>
                         </td>
                       </tr>
@@ -249,19 +259,16 @@ export const Statistics = () => {
                         <th>Facultad</th>
                         <th>Cantidad de Proyectos</th>
                         <th>Total de Integrantes</th>
-                        <th>Promedio Int./Proyecto</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(tabularData.proyectos.porFacultad).map(([facultad, cantidad]) => {
                         const integrantes = tabularData.proyectos.integrantesPorProyecto[facultad] || 0
-                        const promedio = cantidad > 0 ? (integrantes / cantidad).toFixed(1) : "0"
                         return (
                           <tr key={facultad}>
                             <td className="facultad-label">{facultad}</td>
                             <td className="proyectos-value">{cantidad}</td>
                             <td className="integrantes-value">{integrantes}</td>
-                            <td className="promedio-value">{promedio}</td>
                           </tr>
                         )
                       })}
@@ -275,14 +282,6 @@ export const Statistics = () => {
                         <td>
                           <strong>
                             {Object.values(tabularData.proyectos.integrantesPorProyecto).reduce((a, b) => a + b, 0)}
-                          </strong>
-                        </td>
-                        <td>
-                          <strong>
-                            {(
-                              Object.values(tabularData.proyectos.integrantesPorProyecto).reduce((a, b) => a + b, 0) /
-                              tabularData.proyectos.total
-                            ).toFixed(1)}
                           </strong>
                         </td>
                       </tr>
@@ -317,8 +316,6 @@ export const Statistics = () => {
                   onChange={(e) => setGroupVisualizationType(e.target.value as GroupVisualizationType)}
                 >
                   <option value="porFacultad">Grupos por facultad</option>
-                  <option value="masResultados">Grupos con más resultados científicos</option>
-                  <option value="masProyectos">Grupos con más proyectos</option>
                   <option value="masIntegrantes">Grupos con más integrantes</option>
                 </select>
               </div>
@@ -332,8 +329,6 @@ export const Statistics = () => {
                   onChange={(e) => setProjectVisualizationType(e.target.value as ProjectVisualizationType)}
                 >
                   <option value="porFacultad">Proyectos por facultad</option>
-                  <option value="masResultados">Proyectos con más resultados científicos</option>
-                  <option value="masIntegrantes">Proyectos con más integrantes</option>
                   <option value="porEstado">Proyectos por estado</option>
                 </select>
               </div>
@@ -392,8 +387,6 @@ export const Statistics = () => {
             <Card className="chart-card">
               <h2>
                 {groupVisualizationType === "porFacultad" && "Cantidad de Grupos por Facultad"}
-                {groupVisualizationType === "masResultados" && "Grupos con Más Resultados Científicos"}
-                {groupVisualizationType === "masProyectos" && "Grupos con Más Proyectos"}
                 {groupVisualizationType === "masIntegrantes" && "Grupos con Más Integrantes"}
               </h2>
               <p className="chart-description">
@@ -401,46 +394,32 @@ export const Statistics = () => {
                 informaciones relevantes, ancladas a los resultados de estos grupos, sus proyectos e integrantes.
               </p>
 
-              <ResponsiveContainer width="100%" height={400}>
-                {groupVisualizationType === "porFacultad" ? (
-                  <BarChart
-                    data={graphicalData.gruposPorFacultad}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                    <XAxis dataKey="label" angle={-45} textAnchor="end" height={100} />
-                    <YAxis label={{ value: "Cantidad de Grupos", angle: -90, position: "insideLeft" }} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="value" name="Grupos" fill="#7BA05B" />
-                  </BarChart>
-                ) : groupVisualizationType === "masResultados" ? (
-                  <BarChart data={graphicalData.gruposConMasResultados} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" label={{ value: "Resultados Científicos", position: "insideBottom" }} />
-                    <YAxis dataKey="label" type="category" width={200} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#9C6B6B" name="Resultados" />
-                  </BarChart>
-                ) : groupVisualizationType === "masProyectos" ? (
-                  <BarChart data={graphicalData.gruposConMasProyectos} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" label={{ value: "Proyectos", position: "insideBottom" }} />
-                    <YAxis dataKey="label" type="category" width={200} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#B8860B" name="Proyectos" />
-                  </BarChart>
-                ) : (
-                  <BarChart data={graphicalData.gruposConMasEstudiantes} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" label={{ value: "Integrantes", position: "insideBottom" }} />
-                    <YAxis dataKey="label" type="category" width={200} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="value" fill="#7D6B91" name="Integrantes" />
-                  </BarChart>
-                )}
-              </ResponsiveContainer>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <ResponsiveContainer width={groupVisualizationType === "porFacultad" ? "100%" : 600} height={400} minWidth={groupVisualizationType === "porFacultad" ? 600 : undefined}>
+                  {groupVisualizationType === "porFacultad" ? (
+                    <BarChart
+                      data={graphicalData.gruposPorFacultad}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                      <XAxis dataKey="label" angle={-45} textAnchor="end" height={100} />
+                      <YAxis label={{ value: "Cantidad de Grupos", angle: -90, position: "insideLeft" }} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="value" name="Grupos" fill="#7BA05B" />
+                    </BarChart>
+                  ) : (
+                    <BarChart data={graphicalData.gruposConMasEstudiantes} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" label={{ value: "Integrantes", position: "insideBottom" }} />
+                      <YAxis dataKey="label" type="category" width={200} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="value" fill="#7D6B91" name="Integrantes" />
+                    </BarChart>
+                  )}
+                </ResponsiveContainer>
+              </div>
             </Card>
           )}
 
@@ -449,8 +428,6 @@ export const Statistics = () => {
               <Card className="chart-card">
                 <h2>
                   {projectVisualizationType === "porFacultad" && `Proyectos por Facultad - Año ${selectedYear}`}
-                  {projectVisualizationType === "masResultados" && "Proyectos con Más Resultados Científicos"}
-                  {projectVisualizationType === "masIntegrantes" && "Proyectos con Más Integrantes"}
                   {projectVisualizationType === "porEstado" && "Proyectos por Estado"}
                 </h2>
                 <p className="chart-description">
@@ -458,174 +435,78 @@ export const Statistics = () => {
                   informaciones relevantes sobre su distribución, resultados e integrantes.
                 </p>
 
-                <ResponsiveContainer width="100%" height={400}>
-                  {projectVisualizationType === "porFacultad" ? (
-                    <BarChart
-                      data={graphicalData.gruposPorFacultad}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                      <XAxis
-                        dataKey="label"
-                        angle={-45}
-                        textAnchor="end"
-                        height={100}
-                        style={{ fontSize: "0.85rem", fontWeight: 500 }}
-                      />
-                      <YAxis
-                        label={{
-                          value: "Cantidad de Proyectos",
-                          angle: -90,
-                          position: "insideLeft",
-                          style: { fontSize: "0.9rem", fontWeight: 600 },
-                        }}
-                        style={{ fontSize: "0.85rem", fontWeight: 500 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          fontSize: "0.875rem",
-                          fontWeight: 500,
-                          borderRadius: "0.5rem",
-                          border: "1px solid #e0e0e0",
-                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: "0.9rem", fontWeight: 600 }} />
-                      <Bar dataKey="value" name="Proyectos" fill="#6B8FA3" />
-                    </BarChart>
-                  ) : projectVisualizationType === "masResultados" ? (
-                    <BarChart
-                      data={[
-                        { label: "Proyecto IA Salud", value: 45 },
-                        { label: "Proyecto Energías Renovables", value: 38 },
-                        { label: "Proyecto Construcción Sostenible", value: 32 },
-                        { label: "Proyecto Automatización Industrial", value: 28 },
-                        { label: "Proyecto Química Aplicada", value: 24 },
-                      ]}
-                      layout="vertical"
-                      margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        type="number"
-                        label={{
-                          value: "Resultados Científicos",
-                          position: "insideBottom",
-                          style: { fontSize: "0.9rem", fontWeight: 600 },
-                        }}
-                        style={{ fontSize: "0.85rem", fontWeight: 500 }}
-                      />
-                      <YAxis
-                        dataKey="label"
-                        type="category"
-                        width={250}
-                        style={{ fontSize: "0.85rem", fontWeight: 500 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          fontSize: "0.875rem",
-                          fontWeight: 500,
-                          borderRadius: "0.5rem",
-                          border: "1px solid #e0e0e0",
-                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                        }}
-                      />
-                      <Bar dataKey="value" fill="#9C6B6B" name="Resultados" />
-                    </BarChart>
-                  ) : projectVisualizationType === "masIntegrantes" ? (
-                    <BarChart
-                      data={[
-                        { label: "Proyecto IA Salud", value: 15 },
-                        { label: "Proyecto Construcción Sostenible", value: 13 },
-                        { label: "Proyecto Energías Renovables", value: 12 },
-                        { label: "Proyecto Automatización Industrial", value: 10 },
-                        { label: "Proyecto Química Aplicada", value: 9 },
-                      ]}
-                      layout="vertical"
-                      margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        type="number"
-                        label={{
-                          value: "Integrantes",
-                          position: "insideBottom",
-                          style: { fontSize: "0.9rem", fontWeight: 600 },
-                        }}
-                        style={{ fontSize: "0.85rem", fontWeight: 500 }}
-                      />
-                      <YAxis
-                        dataKey="label"
-                        type="category"
-                        width={250}
-                        style={{ fontSize: "0.85rem", fontWeight: 500 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          fontSize: "0.875rem",
-                          fontWeight: 500,
-                          borderRadius: "0.5rem",
-                          border: "1px solid #e0e0e0",
-                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                        }}
-                      />
-                      <Bar dataKey="value" fill="#7D6B91" name="Integrantes" />
-                    </BarChart>
-                  ) : (
-                    <BarChart
-                      data={[
-                        { label: "Activos", value: 28 },
-                        { label: "Finalizados", value: 15 },
-                        { label: "En Pausa", value: 5 },
-                        { label: "Cancelados", value: 2 },
-                      ]}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                      <XAxis dataKey="label" style={{ fontSize: "0.85rem", fontWeight: 500 }} />
-                      <YAxis
-                        label={{
-                          value: "Cantidad de Proyectos",
-                          angle: -90,
-                          position: "insideLeft",
-                          style: { fontSize: "0.9rem", fontWeight: 600 },
-                        }}
-                        style={{ fontSize: "0.85rem", fontWeight: 500 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          fontSize: "0.875rem",
-                          fontWeight: 500,
-                          borderRadius: "0.5rem",
-                          border: "1px solid #e0e0e0",
-                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: "0.9rem", fontWeight: 600 }} />
-                      <Bar dataKey="value" name="Proyectos" fill="#6B8FA3" />
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
-              </Card>
-
-              <Card className="chart-card">
-                <h2>Indicadores de Proyectos por Año</h2>
-                <ResponsiveContainer width="100%" height={400}>
-                  <LineChart
-                    data={Object.entries(graphicalData.indicadoresProyectosPorAño).map(([year, count]) => ({
-                      año: year,
-                      proyectos: count,
-                    }))}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                    <XAxis dataKey="año" />
-                    <YAxis label={{ value: "Cantidad de Proyectos", angle: -90, position: "insideLeft" }} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="proyectos" stroke="#6B9B7C" strokeWidth={3} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div style={{ width: "100%", overflowX: "auto" }}>
+                  <ResponsiveContainer width={projectVisualizationType === "porFacultad" ? "100%" : 600} height={400} minWidth={projectVisualizationType === "porFacultad" ? 600 : undefined}>
+                    {projectVisualizationType === "porFacultad" ? (
+                      <BarChart
+                        data={graphicalData.gruposPorFacultad}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                        <XAxis
+                          dataKey="label"
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
+                          style={{ fontSize: "0.85rem", fontWeight: 500 }}
+                        />
+                        <YAxis
+                          label={{
+                            value: "Cantidad de Proyectos",
+                            angle: -90,
+                            position: "insideLeft",
+                            style: { fontSize: "0.9rem", fontWeight: 600 },
+                          }}
+                          style={{ fontSize: "0.85rem", fontWeight: 500 }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            fontSize: "0.875rem",
+                            fontWeight: 500,
+                            borderRadius: "0.5rem",
+                            border: "1px solid #e0e0e0",
+                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: "0.9rem", fontWeight: 600 }} />
+                        <Bar dataKey="value" name="Proyectos" fill="#6B8FA3" />
+                      </BarChart>
+                    ) : (
+                      <BarChart
+                        data={[
+                          { label: "Activos", value: 28 },
+                          { label: "Finalizados", value: 15 },
+                          { label: "En Pausa", value: 5 },
+                          { label: "Cancelados", value: 2 },
+                        ]}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                        <XAxis dataKey="label" style={{ fontSize: "0.85rem", fontWeight: 500 }} />
+                        <YAxis
+                          label={{
+                            value: "Cantidad de Proyectos",
+                            angle: -90,
+                            position: "insideLeft",
+                            style: { fontSize: "0.9rem", fontWeight: 600 },
+                          }}
+                          style={{ fontSize: "0.85rem", fontWeight: 500 }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            fontSize: "0.875rem",
+                            fontWeight: 500,
+                            borderRadius: "0.5rem",
+                            border: "1px solid #e0e0e0",
+                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: "0.9rem", fontWeight: 600 }} />
+                        <Bar dataKey="value" name="Proyectos" fill="#6B8FA3" />
+                      </BarChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
               </Card>
             </>
           )}

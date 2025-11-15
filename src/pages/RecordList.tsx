@@ -20,14 +20,39 @@ const RecordList: React.FC = () => {
   const { user } = useAuthStore()
   const [searchTerm, setSearchTerm] = useState("")
   const [records, setRecords] = useState<IRecord[]>(mockRecords)
+  const [recordFilter, setRecordFilter] = useState<"all" | "mine">("all")
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; recordId: string | null }>({
     show: false,
     recordId: null,
   })
 
   const isAdmin = user?.roles?.includes('admin') || false
+  const isAutorRegistro = user?.roles?.includes('autor_registro') || false
 
-  const filteredRecords = records.filter((record) => record.titulo.toLowerCase().includes(searchTerm.toLowerCase()))
+  const isAuthor = (record: IRecord): boolean => {
+    return record.autores.some(autor => autor.usuario?.id === user?.id)
+  }
+
+  const canEdit = (record: IRecord): boolean => {
+    if (isAdmin) return true
+    if (isAutorRegistro && recordFilter === "mine") return isAuthor(record)
+    return false
+  }
+
+  const canDelete = (record: IRecord): boolean => {
+    if (isAdmin) return true
+    if (isAutorRegistro && recordFilter === "mine") return isAuthor(record)
+    return false
+  }
+
+  const filteredRecords = records
+    .filter((record) => {
+      const matchesSearch = record.titulo.toLowerCase().includes(searchTerm.toLowerCase())
+      if (recordFilter === "mine") {
+        return matchesSearch && isAuthor(record)
+      }
+      return matchesSearch
+    })
 
   const handleDelete = (recordId: string) => {
     setRecords(records.filter((r) => r.id !== recordId))
@@ -51,11 +76,11 @@ const RecordList: React.FC = () => {
       key: "actions",
       header: "Opciones",
       render: (record: IRecord) => (
-        isAdmin ? (
+        canEdit(record) || canDelete(record) ? (
           <OptionsMenu
             onView={() => navigate(`/records/${record.id}`)}
-            onEdit={() => navigate(`/records/${record.id}/edit`)}
-            onDelete={() => setDeleteConfirm({ show: true, recordId: record.id })}
+            onEdit={canEdit(record) ? () => navigate(`/records/${record.id}/edit`) : undefined}
+            onDelete={canDelete(record) ? () => setDeleteConfirm({ show: true, recordId: record.id }) : undefined}
           />
         ) : (
           <Button variant="outline" onClick={() => navigate(`/records/${record.id}`)}>
@@ -73,7 +98,7 @@ const RecordList: React.FC = () => {
           <h1>Producción Científica</h1>
           <p>Gestión de registros científicos (Códice)</p>
         </div>
-        {isAdmin && (
+        {(isAdmin || isAutorRegistro) && (
           <Button onClick={() => navigate("/records/new")}>
             <Plus size={20} />
             Adicionar Registro
@@ -92,12 +117,24 @@ const RecordList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {isAutorRegistro && (
+            <div className="filter-group">
+              <select
+                value={recordFilter}
+                onChange={(e) => setRecordFilter(e.target.value as "all" | "mine")}
+                className="form-select"
+              >
+                <option value="all">Todos los registros</option>
+                <option value="mine">Mis registros</option>
+              </select>
+            </div>
+          )}
         </div>
 
         <Table data={filteredRecords} columns={columns} />
       </Card>
 
-      {isAdmin && (
+      {deleteConfirm.recordId && (
         <ConfirmDialog
           isOpen={deleteConfirm.show}
           title="Eliminar Registro"

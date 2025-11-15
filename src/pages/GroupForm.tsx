@@ -21,13 +21,12 @@ export const GroupForm = () => {
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
-
-
+  const isNewMode = !id
 
   const [isSaved, setIsSaved] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
-  const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "registros" | "evaluaciones">("datos")
+  const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "evaluaciones">("datos")
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -39,15 +38,12 @@ export const GroupForm = () => {
   })
 
   const [members, setMembers] = useState<any[]>([])
-  const [records, setRecords] = useState<any[]>([])
   const [evaluations, setEvaluations] = useState<Record<string, { evaluacion: string; descripcion: string }>>({})
   const [selectedMember, setSelectedMember] = useState<any>(null)
 
   const [showModifyMemberModal, setShowModifyMemberModal] = useState(false)
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
-  const [showRecordModal, setShowRecordModal] = useState(false)
-  const [showSuggestedRecordsModal, setShowSuggestedRecordsModal] = useState(false)
 
   const [externalMember, setExternalMember] = useState({
     nombre: "",
@@ -55,9 +51,6 @@ export const GroupForm = () => {
     numeroIdentidad: "",
     entidad: "",
   })
-
-  const [recordSearch, setRecordSearch] = useState("")
-  const [selectedRecordType, setSelectedRecordType] = useState("articulo")
 
   const recordTypes = [
     { value: "articulo", label: "Artículos" },
@@ -85,9 +78,7 @@ export const GroupForm = () => {
           departamento: group.departamento || "",
           tematicas: group.tematicas?.join(", ") || "",
         })
-        // Members and records are maintained only in component state
         setMembers([])
-        setRecords([])
         setIsSaved(true)
       }
     }
@@ -115,7 +106,6 @@ export const GroupForm = () => {
       return
     }
 
-    // New group mode
     setIsSaved(true)
     setActiveTab("integrantes")
     setSuccessMessage("Datos iniciales guardados")
@@ -177,22 +167,6 @@ export const GroupForm = () => {
     setMembers(members.filter((m) => m.id !== memberId))
   }
 
-  const handleAssociateRecord = (record: any) => {
-    if (!records.find((r) => r.id === record.id)) {
-      setRecords([...records, record])
-      setShowRecordModal(false)
-      setShowSuggestedRecordsModal(false)
-      setSuccessMessage("Registro asociado con éxito")
-      setShowSuccessDialog(true)
-    }
-  }
-
-  const handleDisassociateRecord = (recordId: string) => {
-    setRecords(records.filter((r) => r.id !== recordId))
-  }
-
-  // </CHANGE> Removed unused handleSaveAllEvaluations function as it wasn't being called
-
   const handleSaveAllUpdates = () => {
     if (!id) return
 
@@ -208,8 +182,6 @@ export const GroupForm = () => {
         tematicas: formData.tematicas.split(",").map((t) => t.trim()),
         fechaActualizacion: new Date().toISOString(),
         totalIntegrantes: members.length,
-        // In a real app, you would also save members and records here
-        // For mock data, we assume they are managed directly in state for now
       }
 
       setSuccessMessage("Grupo actualizado con éxito")
@@ -219,17 +191,6 @@ export const GroupForm = () => {
       }, 1500)
     }
   }
-
-  const filteredRecords = mockRecords.filter(
-    (r) =>
-      r.tipo === selectedRecordType &&
-      (r.titulo.toLowerCase().includes(recordSearch.toLowerCase()) ||
-        r.descripcion.toLowerCase().includes(recordSearch.toLowerCase())),
-  )
-
-  const suggestedRecords = mockRecords.filter((record) => {
-    return members.some((member) => record.autores.some((autor) => autor.usuario?.id === member.usuario.id))
-  })
 
   const pageTitle = isViewMode
     ? "Ver Grupo de Investigación"
@@ -374,74 +335,6 @@ export const GroupForm = () => {
         )}
       </Modal>
 
-      <Modal isOpen={showRecordModal} onClose={() => setShowRecordModal(false)} title="Asociar Registro">
-        <div className="modal-content">
-          <div className="form-group">
-            <label>Tipo de Registro</label>
-            <select
-              className="form-select"
-              value={selectedRecordType}
-              onChange={(e) => setSelectedRecordType(e.target.value)}
-            >
-              {recordTypes.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <Input
-              placeholder="Buscar registro..."
-              value={recordSearch}
-              onChange={(e) => setRecordSearch(e.target.value)}
-            />
-          </div>
-          <div className="record-list">
-            {filteredRecords.map((record) => (
-              <div key={record.id} className="record-item">
-                <div className="record-item-info">
-                  <strong>{record.titulo}</strong>
-                  <span>{record.descripcion}</span>
-                  <span>Año: {record.año}</span>
-                </div>
-                <Button size="sm" onClick={() => handleAssociateRecord(record)}>
-                  Asociar
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={showSuggestedRecordsModal}
-        onClose={() => setShowSuggestedRecordsModal(false)}
-        title="Registros Posibles a Asociar"
-      >
-        <div className="modal-content">
-          <p className="modal-description">Registros sugeridos basados en los proyectos asociados</p>
-          <div className="record-list">
-            {suggestedRecords.length === 0 ? (
-              <p className="empty-state">No hay registros sugeridos</p>
-            ) : (
-              suggestedRecords.map((record) => (
-                <div key={record.id} className="record-item">
-                  <div className="record-item-info">
-                    <strong>{record.titulo}</strong>
-                    <span>{record.descripcion}</span>
-                    <span>Año: {record.año}</span>
-                  </div>
-                  <Button size="sm" onClick={() => handleAssociateRecord(record)}>
-                    Asociar
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </Modal>
-
       <div className="form-header">
         <h1>{pageTitle}</h1>
         <p>{isViewMode ? "Detalles del grupo de investigación" : "Complete la información del grupo"}</p>
@@ -545,12 +438,6 @@ export const GroupForm = () => {
               Integrantes
             </button>
             <button
-              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
-              onClick={() => setActiveTab("registros")}
-            >
-              Registros
-            </button>
-            <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
               onClick={() => setActiveTab("evaluaciones")}
             >
@@ -617,13 +504,13 @@ export const GroupForm = () => {
                         <th>Nombre</th>
                         <th>Rol</th>
                         <th>Tipo</th>
-                        <th>Opciones</th>
+                        {!isNewMode && <th>Opciones</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {members.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="empty-state">
+                          <td colSpan={isNewMode ? 3 : 4} className="empty-state">
                             No hay integrantes asociados. Haga clic en "Agregar integrante" para comenzar.
                           </td>
                         </tr>
@@ -633,78 +520,22 @@ export const GroupForm = () => {
                             <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
                             <td>{member.rol.replace(/_/g, " ")}</td>
                             <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Modificar",
-                                    onClick: () => handleModifyMember(member),
-                                  },
-                                  {
-                                    label: "Eliminar integrante",
-                                    onClick: () => handleRemoveMember(member.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {activeTab === "registros" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Registros Científicos Asociados</h2>
-                  <div className="tab-actions">
-                    <Button variant="secondary" onClick={() => setShowRecordModal(true)}>
-                      Asociar registro primario
-                    </Button>
-                    <Button variant="secondary" onClick={() => setShowSuggestedRecordsModal(true)}>
-                      Mostrar registros posibles a asociar
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="records-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Título</th>
-                        <th>Tipo</th>
-                        <th>Año</th>
-                        <th>Opciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="empty-state">
-                            No hay registros asociados. Haga clic en "Asociar registro" para comenzar.
-                          </td>
-                        </tr>
-                      ) : (
-                        records.map((record) => (
-                          <tr key={record.id}>
-                            <td>{record.titulo}</td>
-                            <td>{record.tipo}</td>
-                            <td>{record.año}</td>
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Desasociar",
-                                    onClick: () => handleDisassociateRecord(record.id),
-                                  },
-                                ]}
-                              />
-                            </td>
+                            {!isNewMode && (
+                              <td>
+                                <OptionsMenu
+                                  options={[
+                                    {
+                                      label: "Modificar",
+                                      onClick: () => handleModifyMember(member),
+                                    },
+                                    {
+                                      label: "Eliminar integrante",
+                                      onClick: () => handleRemoveMember(member.id),
+                                    },
+                                  ]}
+                                />
+                              </td>
+                            )}
                           </tr>
                         ))
                       )}
@@ -837,12 +668,6 @@ export const GroupForm = () => {
               Integrantes
             </button>
             <button
-              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
-              onClick={() => setActiveTab("registros")}
-            >
-              Registros
-            </button>
-            <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
               onClick={() => setActiveTab("evaluaciones")}
             >
@@ -934,40 +759,6 @@ export const GroupForm = () => {
             </Card>
           )}
 
-          {activeTab === "registros" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Registros Científicos</h2>
-                </div>
-                {records.length === 0 ? (
-                  <p className="empty-state">No hay registros asociados a este grupo.</p>
-                ) : (
-                  <div className="records-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Título</th>
-                          <th>Tipo</th>
-                          <th>Año</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {records.map((record) => (
-                          <tr key={record.id}>
-                            <td>{record.titulo}</td>
-                            <td>{record.tipo}</td>
-                            <td>{record.año}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </Card>
-          )}
-
           {activeTab === "evaluaciones" && (
             <Card>
               <div className="tab-content">
@@ -1028,12 +819,6 @@ export const GroupForm = () => {
               onClick={() => setActiveTab("integrantes")}
             >
               Integrantes
-            </button>
-            <button
-              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
-              onClick={() => setActiveTab("registros")}
-            >
-              Registros
             </button>
             <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
@@ -1102,7 +887,6 @@ export const GroupForm = () => {
                     placeholder="Ej: IA, Machine Learning, NLP"
                   />
                 </div>
-                {/* Only "Actualizar Grupo" button remains at the end of the form */}
               </form>
             </Card>
           )}
@@ -1159,68 +943,6 @@ export const GroupForm = () => {
                                   {
                                     label: "Eliminar integrante",
                                     onClick: () => handleRemoveMember(member.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {activeTab === "registros" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Registros Científicos Asociados</h2>
-                  <div className="tab-actions">
-                    <Button variant="secondary" onClick={() => setShowRecordModal(true)}>
-                      Asociar registro primario
-                    </Button>
-                    <Button variant="secondary" onClick={() => setShowSuggestedRecordsModal(true)}>
-                      Mostrar registros posibles a asociar
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="records-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Título</th>
-                        <th>Tipo</th>
-                        <th>Año</th>
-                        <th>Opciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="empty-state">
-                            No hay registros asociados. Haga clic en "Asociar registro" para comenzar.
-                          </td>
-                        </tr>
-                      ) : (
-                        records.map((record) => (
-                          <tr key={record.id}>
-                            <td>{record.titulo}</td>
-                            <td>{record.tipo}</td>
-                            <td>{record.año}</td>
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Ver detalles",
-                                    onClick: () => alert(`Ver detalles de ${record.titulo}`),
-                                  },
-                                  {
-                                    label: "Desasociar",
-                                    onClick: () => handleDisassociateRecord(record.id),
                                   },
                                 ]}
                               />
@@ -1319,8 +1041,6 @@ export const GroupForm = () => {
           </Card>
         </>
       )}
-
-      {/* The note now only appears once in the form-info div above when isNewMode && !isSaved */}
     </div>
   )
 }

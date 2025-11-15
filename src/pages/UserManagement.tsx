@@ -122,6 +122,10 @@ export const UserManagement = () => {
   }
 
   const initiateRemoveRole = (userId: string, role: UserRole) => {
+    if (role === "admin" || role === "usuario") {
+      showNotification(`El rol "${roleLabels[role]}" no puede ser eliminado`, "error")
+      return
+    }
     setRoleToRemove({ userId, role })
     setShowRemoveConfirm(true)
   }
