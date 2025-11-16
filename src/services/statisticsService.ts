@@ -54,7 +54,7 @@ class StatisticsService {
     }
   }
 
-  async getGraphicalStatistics(_year?: number | undefined): Promise<IStatisticsGraphical> {
+  async getGraphicalStatistics(year?: number): Promise<IStatisticsGraphical> {
     const gruposPorFacultad: IStatisticData[] = Object.entries(
       mockGroups.reduce(
         (acc, group) => {
@@ -120,11 +120,53 @@ class StatisticsService {
   }
 
   async generateReport(tipo: "pdf" | "xlsx", data: any): Promise<Blob> {
-    // Mock report generation
-    const content = JSON.stringify(data, null, 2)
-    return new Blob([content], {
-      type: tipo === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    })
+    if (tipo === "pdf") {
+      // Generate a simple PDF-like text file
+      const content = `
+REPORTE DE ESTADÍSTICAS
+========================
+
+Datos generados el: ${new Date().toLocaleString()}
+
+${JSON.stringify(data, null, 2)}
+      `
+      return new Blob([content], { type: "application/pdf" })
+    } else {
+      // Generate CSV format for Excel compatibility
+      let csvContent = "Reporte de Estadísticas\n\n"
+      
+      if (data.registros) {
+        csvContent += "REGISTROS CIENTÍFICOS\n"
+        csvContent += "Tipo,Total del Centro,Total de la Facultad,% Aporte\n"
+        Object.entries(data.registros.porTipo).forEach(([tipo, total]: [string, any]) => {
+          csvContent += `${tipo},${total},${Math.floor(total * 0.15)},15.0%\n`
+        })
+        csvContent += "\n"
+      }
+      
+      if (data.grupos) {
+        csvContent += "GRUPOS DE INVESTIGACIÓN\n"
+        csvContent += "Facultad,Cantidad de Grupos,Total de Integrantes\n"
+        Object.entries(data.grupos.porFacultad).forEach(([facultad, cantidad]: [string, any]) => {
+          const integrantes = data.grupos.integrantesPorGrupo[facultad] || 0
+          csvContent += `${facultad},${cantidad},${integrantes}\n`
+        })
+        csvContent += "\n"
+      }
+      
+      if (data.proyectos) {
+        csvContent += "PROYECTOS DE INVESTIGACIÓN\n"
+        csvContent += "Facultad,Cantidad de Proyectos,Total de Integrantes\n"
+        Object.entries(data.proyectos.porFacultad).forEach(([facultad, cantidad]: [string, any]) => {
+          const integrantes = data.proyectos.integrantesPorProyecto[facultad] || 0
+          csvContent += `${facultad},${cantidad},${integrantes}\n`
+        })
+      }
+      
+      return new Blob([csvContent], { 
+        type: "application/vnd.ms-excel" 
+      })
+    }
   }
 }
 

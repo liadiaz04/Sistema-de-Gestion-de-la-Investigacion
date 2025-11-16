@@ -27,7 +27,7 @@ export const mockUsers: IUser[] = [
     numeroIdentidad: "90050298765",
     correoElectronico: "maria.gonzalez@cujae.edu.cu",
     nombreUsuario: "mgonzalez",
-    roles: ["usuario"],
+    roles: ["responsable_proyecto"],
     categoriaDocente: "asistente",
     categoriaCientifica: "master",
     clasificacionGeneral: "profesor",
@@ -53,6 +53,60 @@ export const mockUsers: IUser[] = [
     departamento: "Ingeniería Mecánica",
     esExterno: false,
     esAdministrador: false,
+    pais: "Cuba",
+  },
+  {
+    id: "4",
+    nombre: "Ana",
+    apellidos: "Martínez Sánchez",
+    numeroIdentidad: "87020456789",
+    correoElectronico: "ana.martinez@cujae.edu.cu",
+    nombreUsuario: "amartinez",
+    roles: ["responsable_grupo"],
+    categoriaDocente: "titular",
+    categoriaCientifica: "master",
+    clasificacionGeneral: "profesor",
+    facultad: "Eléctrica",
+    departamento: "Automatización",
+    esExterno: false,
+    esAdministrador: false,
+    telefono: "+53 7 266 5555",
+    pais: "Cuba",
+  },
+  {
+    id: "5",
+    nombre: "Luis",
+    apellidos: "Fernández Torres",
+    numeroIdentidad: "89040567890",
+    correoElectronico: "luis.fernandez@cujae.edu.cu",
+    nombreUsuario: "lfernandez",
+    roles: ["responsable_proyecto"],
+    categoriaDocente: "asistente",
+    categoriaCientifica: "master",
+    clasificacionGeneral: "profesor",
+    facultad: "Química",
+    departamento: "Ingeniería Química",
+    esExterno: false,
+    esAdministrador: false,
+    telefono: "+53 7 266 6666",
+    pais: "Cuba",
+  },
+  {
+    id: "6",
+    nombre: "Rosa",
+    apellidos: "Pérez Domínguez",
+    numeroIdentidad: "84050678901",
+    correoElectronico: "rosa.perez@cujae.edu.cu",
+    nombreUsuario: "rperez",
+    roles: ["consejo_cientifico"],
+    categoriaDocente: "titular",
+    categoriaCientifica: "doctor",
+    clasificacionGeneral: "profesor",
+    facultad: "Arquitectura",
+    departamento: "Diseño Arquitectónico",
+    esExterno: false,
+    esAdministrador: false,
+    telefono: "+53 7 266 7777",
     pais: "Cuba",
   },
 ]
@@ -82,6 +136,18 @@ export const mockGroups: IGroup[] = [
     fechaCreacion: "2019-09-01",
     fechaActualizacion: "2024-11-20",
     totalIntegrantes: 12,
+  },
+  {
+    id: "3",
+    nombre: "Grupo de Automatización Industrial",
+    descripcion: "Investigación en control automático y robótica aplicada a procesos industriales",
+    responsable: mockUsers[3], // Ana Martínez
+    tematicas: ["Control Automático", "Robótica", "Sistemas Industriales"],
+    facultad: "Eléctrica",
+    departamento: "Automatización",
+    fechaCreacion: "2021-03-15",
+    fechaActualizacion: "2024-12-05",
+    totalIntegrantes: 6,
   },
 ]
 
@@ -120,16 +186,30 @@ export const mockGroupMembers: Record<string, any[]> = {
       fechaIngreso: "2019-09-01",
     },
   ],
+  "3": [
+    {
+      id: "gm4",
+      usuario: mockUsers[3], // Ana Martínez
+      rol: "responsable_grupo",
+      evaluacion: "excelente",
+      descripcionEvaluacion: "Excelente coordinación del grupo de automatización",
+      cargo: "Responsable",
+      dedicacion: "Tiempo completo",
+      fechaIngreso: "2021-03-15",
+    },
+  ],
 }
 
 export const mockGroupProjects: Record<string, string[]> = {
   "1": ["1"], // Grupo IA tiene proyecto de reconocimiento facial
   "2": ["2"], // Grupo Estructuras tiene proyecto de hormigón
+  "3": ["3"], // Grupo Automatización tiene proyecto de robótica
 }
 
 export const mockGroupRecords: Record<string, string[]> = {
   "1": ["1"], // Grupo IA tiene artículo de deep learning
   "2": [],
+  "3": [],
 }
 
 // Mock Projects
@@ -147,6 +227,7 @@ export const mockProjects: IProject[] = [
     fechaInicio: "2023-01-01",
     objetivos: "Desarrollar un sistema robusto de reconocimiento facial",
     tareas: "Recolección de datos, entrenamiento de modelos, implementación",
+    tipoProyecto: "investigacion",
   },
   {
     id: "2",
@@ -161,6 +242,21 @@ export const mockProjects: IProject[] = [
     fechaInicio: "2023-06-01",
     objetivos: "Evaluar propiedades mecánicas del hormigón con fibras naturales",
     tareas: "Preparación de muestras, ensayos de laboratorio, análisis de resultados",
+    tipoProyecto: "investigacion",
+  },
+  {
+    id: "3",
+    nombre: "Robot Colaborativo para Soldadura Industrial",
+    descripcion: "Desarrollo de un sistema robótico colaborativo para aplicaciones de soldadura en la industria",
+    responsable: mockUsers[4], // Luis Fernández
+    tematica: "Robótica Industrial",
+    programa: "Programa de Innovación Tecnológica",
+    estaAprobado: true,
+    estado: "activo",
+    fechaInicio: "2024-01-15",
+    objetivos: "Desarrollar un robot colaborativo seguro y eficiente para soldadura",
+    tareas: "Diseño mecánico, programación de control, pruebas de seguridad",
+    tipoProyecto: "desarrollo",
   },
 ]
 

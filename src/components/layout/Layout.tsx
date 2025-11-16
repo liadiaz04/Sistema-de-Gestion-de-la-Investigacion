@@ -13,7 +13,9 @@ export const Layout: React.FC = () => {
 
   const isAdmin = user?.roles?.includes('admin') || false
   const isAutorRegistro = user?.roles?.includes('autor_registro') || false
-  const isConseroCientifico = user?.roles?.includes('consejo_cientifico') || false
+  const isConsejoCientifico = user?.roles?.includes('consejo_cientifico') || false
+  const isResponsableProyecto = user?.roles?.includes('responsable_proyecto') || false
+  const isResponsableGrupo = user?.roles?.includes('responsable_grupo') || false
 
   const handleLogout = () => {
     logout()
@@ -25,7 +27,7 @@ export const Layout: React.FC = () => {
     { icon: Users, label: "Grupos", path: "/groups" },
     { icon: FolderKanban, label: "Proyectos", path: "/projects" },
     { icon: FileText, label: "Registros", path: "/records" },
-    ...((isAdmin || isConseroCientifico) ? [
+    ...((isAdmin || isConsejoCientifico) ? [
       { icon: PieChart, label: "Estadísticas", path: "/statistics" },
     ] : []),
     ...(isAdmin ? [

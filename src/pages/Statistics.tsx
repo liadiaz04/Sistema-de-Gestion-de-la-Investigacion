@@ -64,8 +64,11 @@ export const Statistics = () => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `estadisticas-${category}-${view}-${Date.now()}.pdf`
+    a.download = `estadisticas-${category}-${view}-${new Date().toISOString().split('T')[0]}.pdf`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   const handleExportXLSX = async () => {
@@ -74,8 +77,11 @@ export const Statistics = () => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `estadisticas-${category}-${view}-${Date.now()}.xlsx`
+    a.download = `estadisticas-${category}-${view}-${new Date().toISOString().split('T')[0]}.xlsx`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   if (loading) return <div className="loading">Cargando estadísticas...</div>

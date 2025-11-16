@@ -119,6 +119,7 @@ const RecordList: React.FC = () => {
           </div>
           {isAutorRegistro && (
             <div className="filter-group">
+              <label>Filtrar:</label>
               <select
                 value={recordFilter}
                 onChange={(e) => setRecordFilter(e.target.value as "all" | "mine")}
