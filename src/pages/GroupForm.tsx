@@ -9,15 +9,15 @@ import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import "./GroupForm.css"
-import { mockUsers, mockRecords, mockGroups } from "../services/mockData"
+import { mockUsers, mockGroups } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
-import type { IGroup } from "../types/index"
+import type { IGroup, IUser } from "../types/index"
 
 export const GroupForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
-  const { user: currentUser } = useAuthStore()
+  const { user } = useAuthStore()
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
@@ -37,6 +37,9 @@ export const GroupForm = () => {
     tematicas: "",
   })
 
+  const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
+  const [showResponsableModal, setShowResponsableModal] = useState(false)
+
   const [members, setMembers] = useState<any[]>([])
   const [evaluations, setEvaluations] = useState<Record<string, { evaluacion: string; descripcion: string }>>({})
   const [selectedMember, setSelectedMember] = useState<any>(null)
@@ -52,18 +55,6 @@ export const GroupForm = () => {
     entidad: "",
   })
 
-  const recordTypes = [
-    { value: "articulo", label: "Artículos" },
-    { value: "libro", label: "Libros" },
-    { value: "tesis", label: "Tesis" },
-    { value: "monografia", label: "Monografías" },
-    { value: "patente", label: "Patentes" },
-    { value: "software", label: "Software" },
-    { value: "evento", label: "Eventos" },
-    { value: "premio", label: "Premios" },
-    { value: "norma", label: "Normas" },
-  ]
-
   useEffect(() => {
     if (id) {
       console.log("[v0] GroupForm - Loading group with id:", id)
@@ -78,6 +69,7 @@ export const GroupForm = () => {
           departamento: group.departamento || "",
           tematicas: group.tematicas?.join(", ") || "",
         })
+        setSelectedResponsable(group.responsable)
         setMembers([])
         setIsSaved(true)
       }
@@ -86,6 +78,12 @@ export const GroupForm = () => {
 
   const handleSaveInitialData = (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!selectedResponsable) {
+      setSuccessMessage("Por favor, seleccione un responsable para el grupo")
+      setShowSuccessDialog(true)
+      return
+    }
 
     if (isEditMode && id) {
       const groupIndex = mockGroups.findIndex((g) => g.id === id)
@@ -98,6 +96,7 @@ export const GroupForm = () => {
           area: formData.area,
           departamento: formData.departamento,
           tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+          responsable: selectedResponsable,
           fechaActualizacion: new Date().toISOString(),
         }
         setSuccessMessage("Datos iniciales actualizados con éxito")
@@ -109,6 +108,13 @@ export const GroupForm = () => {
     setIsSaved(true)
     setActiveTab("integrantes")
     setSuccessMessage("Datos iniciales guardados")
+    setShowSuccessDialog(true)
+  }
+
+  const handleSelectResponsable = (user: IUser) => {
+    setSelectedResponsable(user)
+    setShowResponsableModal(false)
+    setSuccessMessage("Responsable seleccionado con éxito")
     setShowSuccessDialog(true)
   }
 
@@ -180,6 +186,7 @@ export const GroupForm = () => {
         area: formData.area,
         departamento: formData.departamento,
         tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+        responsable: selectedResponsable,
         fechaActualizacion: new Date().toISOString(),
         totalIntegrantes: members.length,
       }
@@ -209,6 +216,30 @@ export const GroupForm = () => {
           </div>
         </div>
       )}
+
+      <Modal
+        isOpen={showResponsableModal}
+        onClose={() => setShowResponsableModal(false)}
+        title="Seleccionar Responsable del Grupo"
+      >
+        <div className="modal-content">
+          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE como responsable</p>
+          <div className="directory-list">
+            {mockUsers.map((user) => (
+              <div key={user.id} className="directory-item">
+                <div className="directory-item-info">
+                  <strong>{`${user.nombre} ${user.apellidos}`}</strong>
+                  <span>{user.facultad}</span>
+                  <span>{user.correoElectronico}</span>
+                </div>
+                <Button size="sm" onClick={() => handleSelectResponsable(user)}>
+                  Seleccionar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showDirectoryModal}
@@ -403,6 +434,28 @@ export const GroupForm = () => {
                     placeholder="Ej: IA, Machine Learning, NLP"
                   />
                 </div>
+                <div className="form-group">
+                  <label>Responsable del Grupo *</label>
+                  <div className="responsable-selector">
+                    {selectedResponsable ? (
+                      <div className="selected-responsable">
+                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setShowResponsableModal(true)}
+                        >
+                          Cambiar
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
+                        Seleccionar Responsable
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <div className="form-actions">
                   <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
                     Cancelar
@@ -476,6 +529,14 @@ export const GroupForm = () => {
                   <div className="data-item full-width">
                     <label>Temáticas</label>
                     <p className="data-value">{formData.tematicas || "No especificadas"}</p>
+                  </div>
+                  <div className="data-item">
+                    <label>Responsable</label>
+                    <p className="data-value">
+                      {selectedResponsable
+                        ? `${selectedResponsable.nombre} ${selectedResponsable.apellidos}`
+                        : "No asignado"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -623,7 +684,11 @@ export const GroupForm = () => {
               <Button
                 type="button"
                 onClick={() => {
-                  if (!currentUser) return
+                  if (!selectedResponsable) {
+                    setSuccessMessage("Por favor, seleccione un responsable para el grupo")
+                    setShowSuccessDialog(true)
+                    return
+                  }
                   const newGroup: IGroup = {
                     id: `group-${Date.now()}`,
                     nombre: formData.nombre,
@@ -632,7 +697,7 @@ export const GroupForm = () => {
                     area: formData.area,
                     departamento: formData.departamento,
                     tematicas: formData.tematicas.split(",").map((t) => t.trim()),
-                    responsable: currentUser,
+                    responsable: selectedResponsable,
                     fechaCreacion: new Date().toISOString(),
                     fechaActualizacion: new Date().toISOString(),
                     totalIntegrantes: members.length,
@@ -707,6 +772,14 @@ export const GroupForm = () => {
                     <div className="data-item full-width">
                       <label>Temáticas</label>
                       <p className="data-value">{formData.tematicas || "No especificadas"}</p>
+                    </div>
+                    <div className="data-item">
+                      <label>Responsable</label>
+                      <p className="data-value">
+                        {selectedResponsable
+                          ? `${selectedResponsable.nombre} ${selectedResponsable.apellidos}`
+                          : "No asignado"}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -886,6 +959,28 @@ export const GroupForm = () => {
                     onChange={(e) => setFormData({ ...formData, tematicas: e.target.value })}
                     placeholder="Ej: IA, Machine Learning, NLP"
                   />
+                </div>
+                <div className="form-group">
+                  <label>Responsable del Grupo *</label>
+                  <div className="responsable-selector">
+                    {selectedResponsable ? (
+                      <div className="selected-responsable">
+                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setShowResponsableModal(true)}
+                        >
+                          Cambiar
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
+                        Seleccionar Responsable
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </form>
             </Card>

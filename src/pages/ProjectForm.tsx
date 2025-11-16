@@ -10,6 +10,7 @@ import { Modal } from "../components/common/Modal"
 import "./ProjectForm.css"
 import { mockProjects, mockUsers, mockRecords } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
+import type { IUser } from "../types/index"
 
 export const ProjectForm = () => {
   const navigate = useNavigate()
@@ -32,6 +33,9 @@ export const ProjectForm = () => {
   const [activeTab, setActiveTab] = useState("datos-iniciales")
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
+
+  const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
+  const [showResponsableModal, setShowResponsableModal] = useState(false)
 
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
@@ -58,6 +62,7 @@ export const ProjectForm = () => {
     detallesCientificos: "",
     otrosDatos: "",
     criterioConsejo: "",
+    responsableId: "", // Adding responsableId field - This line is now redundant due to selectedResponsable
   })
 
   useEffect(() => {
@@ -78,7 +83,9 @@ export const ProjectForm = () => {
           detallesCientificos: project.detallesCientificos || "",
           otrosDatos: project.otrosDatos || "",
           criterioConsejo: project.criterioConsejo || "",
+          responsableId: project.responsable?.id || "", // Loading responsable id - This line is now redundant due to selectedResponsable
         })
+        setSelectedResponsable(project.responsable)
         setIsSaved(true)
         console.log("[v0] ProjectForm - Data loaded, isSaved set to true")
       }
@@ -87,6 +94,12 @@ export const ProjectForm = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!selectedResponsable) {
+      setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
+      setShowSuccessDialog(true)
+      return
+    }
 
     if (isEditMode && id) {
       const index = mockProjects.findIndex((p) => p.id === id)
@@ -99,6 +112,7 @@ export const ProjectForm = () => {
           programa: formData.programa,
           tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
           estado: formData.estado,
+          responsable: selectedResponsable, // Save selected responsable
         }
       }
       setSuccessMessage("Datos iniciales actualizados con éxito")
@@ -118,6 +132,13 @@ export const ProjectForm = () => {
       ...formData,
       [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : value,
     })
+  }
+
+  const handleSelectResponsable = (user: IUser) => {
+    setSelectedResponsable(user)
+    setShowResponsableModal(false)
+    setSuccessMessage("Responsable seleccionado con éxito")
+    setShowSuccessDialog(true)
   }
 
   const handleAddFromDirectory = (user: any) => {
@@ -189,11 +210,17 @@ export const ProjectForm = () => {
   }
 
   const handleSaveCompleteProject = () => {
+    if (!selectedResponsable) {
+      setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
+      setShowSuccessDialog(true)
+      return
+    }
+
     const newProject = {
       id: `project-${Date.now()}`,
       nombre: formData.nombre,
       descripcion: formData.descripcion,
-      responsable: currentUser || mockUsers[0],
+      responsable: selectedResponsable,
       tematica: formData.tematica,
       programa: formData.programa,
       tipoProyecto: formData.tipoProyecto, // Include tipoProyecto
@@ -220,12 +247,19 @@ export const ProjectForm = () => {
   const handleSaveAllUpdates = () => {
     if (!id) return
 
+    if (!selectedResponsable) {
+      setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
+      setShowSuccessDialog(true)
+      return
+    }
+
     const projectIndex = mockProjects.findIndex((p) => p.id === id)
     if (projectIndex !== -1) {
       mockProjects[projectIndex] = {
         ...mockProjects[projectIndex],
         nombre: formData.nombre,
         descripcion: formData.descripcion,
+        responsable: selectedResponsable, // Update with selected responsable
         tematica: formData.tematica,
         programa: formData.programa,
         tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
@@ -280,6 +314,30 @@ export const ProjectForm = () => {
           </div>
         </div>
       )}
+
+      <Modal
+        isOpen={showResponsableModal}
+        onClose={() => setShowResponsableModal(false)}
+        title="Seleccionar Responsable del Proyecto"
+      >
+        <div className="modal-content">
+          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE como responsable</p>
+          <div className="directory-list">
+            {mockUsers.map((user) => (
+              <div key={user.id} className="directory-item">
+                <div className="directory-item-info">
+                  <strong>{`${user.nombre} ${user.apellidos}`}</strong>
+                  <span>{user.facultad}</span>
+                  <span>{user.correoElectronico}</span>
+                </div>
+                <Button size="sm" onClick={() => handleSelectResponsable(user)}>
+                  Seleccionar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showDirectoryModal}
@@ -551,6 +609,43 @@ export const ProjectForm = () => {
                       <option value="finalizado">Finalizado</option>
                       <option value="cancelado">Cancelado</option>
                     </select>
+                  )}
+                </div>
+
+                <div className="form-group full-width">
+                  <label>
+                    Responsable del Proyecto <span className="required">*</span>
+                  </label>
+                  {isViewMode ? (
+                    <Input
+                      type="text"
+                      value={
+                        selectedResponsable
+                          ? `${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`
+                          : "No asignado"
+                      }
+                      disabled={true}
+                    />
+                  ) : (
+                    <div className="responsable-selector">
+                      {selectedResponsable ? (
+                        <div className="selected-responsable">
+                          <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowResponsableModal(true)}
+                          >
+                            Cambiar
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
+                          Seleccionar Responsable
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
 
