@@ -18,7 +18,7 @@ import "./GroupList.css";
 const RecordList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore(); // Asume que user.id es el id del integrante
-
+  const isAdmin = false;
   const [searchTerm, setSearchTerm] = useState("");
   const [records, setRecords] = useState<RecordBase[]>([]);
   const [loading, setLoading] = useState(true);

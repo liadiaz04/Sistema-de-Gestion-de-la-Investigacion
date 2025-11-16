@@ -19,7 +19,7 @@ export const RecordForm = () => {
   const { id } = useParams()
   
   const { user: currentUser } = useAuthStore()
-  const isAdmin = currentUser?.roles?.includes("admin") || false
+  const isAdmin = false
 
   const isEditMode = id && location.pathname.includes("/edit")
   const isViewMode = id && !location.pathname.includes("/edit")
