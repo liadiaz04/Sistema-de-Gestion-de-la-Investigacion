@@ -18,19 +18,32 @@ const ProjectList: React.FC = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState("")
   const [projects, setProjects] = useState<IProject[]>(mockProjects)
+  const [viewFilter, setViewFilter] = useState<"todos" | "mis_proyectos">("todos")
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; projectId: string | null }>({
     show: false,
     projectId: null,
   })
   const { user } = useAuthStore()
-  const isAdmin =  false
+  const isAdmin = user?.roles?.includes('admin') || false
+  const isResponsableProyecto = user?.roles?.includes('responsable_proyecto') || false
 
-
-  const filteredProjects = projects.filter(
-    (project) =>
+  const filteredProjects = projects.filter((project) => {
+    const matchesSearch =
       project.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.responsable.nombre.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      project.responsable.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    if (isResponsableProyecto && viewFilter === "mis_proyectos") {
+      return matchesSearch && project.responsable.id === user?.id
+    }
+    
+    return matchesSearch
+  })
+
+  const canEditProject = (project: IProject) => {
+    if (isAdmin) return true
+    if (isResponsableProyecto && project.responsable.id === user?.id) return true
+    return false
+  }
 
   const handleDelete = (projectId: string) => {
     setProjects(projects.filter((p) => p.id !== projectId))
@@ -47,38 +60,27 @@ const ProjectList: React.FC = () => {
     { key: "tematica", header: "Temática" },
     { key: "programa", header: "Programa" },
     {
-      key: "esPriorizado",
-      header: "Priorizado",
-      render: (project: IProject) => (
-        <span className={project.esPriorizado ? "badge badge-success" : "badge badge-secondary"}>
-          {project.esPriorizado ? "Sí" : "No"}
-        </span>
-      ),
-    },
-    {
       key: "estado",
       header: "Estado",
       render: (project: IProject) => <span className={`badge badge-${project.estado}`}>{project.estado}</span>,
     },
-    ...(isAdmin ? [{
+    {
       key: "actions",
       header: "Opciones",
       render: (project: IProject) => (
-        <OptionsMenu
-          onView={() => navigate(`/projects/${project.id}`)}
-          onEdit={() => navigate(`/projects/${project.id}/edit`)}
-          onDelete={() => setDeleteConfirm({ show: true, projectId: project.id })}
-        />
+        canEditProject(project) ? (
+          <OptionsMenu
+            onView={() => navigate(`/projects/${project.id}`)}
+            onEdit={() => navigate(`/projects/${project.id}/edit`)}
+            onDelete={() => setDeleteConfirm({ show: true, projectId: project.id })}
+          />
+        ) : (
+          <Button variant="outline" onClick={() => navigate(`/projects/${project.id}`)}>
+            Ver detalles
+          </Button>
+        )
       ),
-    }] : [{
-      key: "actions",
-      header: "Opciones",
-      render: (project: IProject) => (
-        <Button variant="outline" onClick={() => navigate(`/projects/${project.id}`)}>
-          Ver detalles
-        </Button>
-      ),
-    }]),
+    },
   ]
 
   return (
@@ -107,20 +109,31 @@ const ProjectList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {isResponsableProyecto && (
+            <div className="filter-group">
+              <label>Filtrar:</label>
+              <select
+                value={viewFilter}
+                onChange={(e) => setViewFilter(e.target.value as "todos" | "mis_proyectos")}
+                className="form-select"
+              >
+                <option value="todos">Todos los proyectos</option>
+                <option value="mis_proyectos">Mis proyectos</option>
+              </select>
+            </div>
+          )}
         </div>
 
         <Table data={filteredProjects} columns={columns} />
       </Card>
 
-      {isAdmin && (
-        <ConfirmDialog
-          isOpen={deleteConfirm.show}
-          title="Eliminar Proyecto"
-          message="¿Está seguro que desea eliminar este proyecto de investigación? Esta acción no se puede deshacer."
-          onConfirm={() => deleteConfirm.projectId && handleDelete(deleteConfirm.projectId)}
-          onCancel={() => setDeleteConfirm({ show: false, projectId: null })}
-        />
-      )}
+      <ConfirmDialog
+        isOpen={deleteConfirm.show}
+        title="Eliminar Proyecto"
+        message="¿Está seguro que desea eliminar este proyecto de investigación? Esta acción no se puede deshacer."
+        onConfirm={() => deleteConfirm.projectId && handleDelete(deleteConfirm.projectId)}
+        onCancel={() => setDeleteConfirm({ show: false, projectId: null })}
+      />
     </div>
   )
 }

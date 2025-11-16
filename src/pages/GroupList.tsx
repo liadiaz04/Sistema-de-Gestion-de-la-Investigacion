@@ -19,23 +19,32 @@ export const GroupList: React.FC = () => {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const isAdmin = user?.roles?.includes('admin') || false
+  const isResponsableGrupo = user?.roles?.includes('responsable_grupo') || false
   
   const [searchTerm, setSearchTerm] = useState("")
-  const [groups, setGroups] = useState<IGroup[]>(() => [...mockGroups])
+  const [groups] = useState<IGroup[]>(() => [...mockGroups])
+  const [viewFilter, setViewFilter] = useState<"todos" | "mis_grupos">("todos")
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; groupId: string | null }>({
     show: false,
     groupId: null,
   })
 
-  const filteredGroups = groups.filter(
-    (group) =>
+  const filteredGroups = groups.filter((group) => {
+    const matchesSearch = 
       group.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      group.responsable.nombre.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+      (group.responsable?.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
+    
+    if (isResponsableGrupo && viewFilter === "mis_grupos") {
+      return matchesSearch && group.responsable && group.responsable.id === user?.id
+    }
+    
+    return matchesSearch
+  })
 
-  const handleDelete = (groupId: string) => {
-    setGroups(groups.filter((g) => g.id !== groupId))
-    setDeleteConfirm({ show: false, groupId: null })
+  const canEditGroup = (group: IGroup) => {
+    if (isAdmin) return true
+    if (isResponsableGrupo && group.responsable && group.responsable.id === user?.id) return true
+    return false
   }
 
   const columns = [
@@ -43,7 +52,7 @@ export const GroupList: React.FC = () => {
     {
       key: "responsable",
       header: "Responsable",
-      render: (group: IGroup) => `${group.responsable.nombre} ${group.responsable.apellidos}`,
+      render: (group: IGroup) => group.responsable ? `${group.responsable.nombre} ${group.responsable.apellidos}` : "No asignado",
     },
     {
       key: "tematicas",
@@ -56,7 +65,7 @@ export const GroupList: React.FC = () => {
       key: "actions",
       header: "Opciones",
       render: (group: IGroup) => (
-        isAdmin ? (
+        canEditGroup(group) ? (
           <OptionsMenu
             onView={() => navigate(`/groups/${group.id}`)}
             onEdit={() => navigate(`/groups/${group.id}/edit`)}
@@ -70,6 +79,15 @@ export const GroupList: React.FC = () => {
       ),
     },
   ]
+
+  const handleDelete = (groupId: string) => {
+    const index = mockGroups.findIndex(g => g.id === groupId)
+    if (index !== -1) {
+      mockGroups.splice(index, 1)
+      setDeleteConfirm({ show: false, groupId: null })
+      window.location.reload() // Refresh to show updated list
+    }
+  }
 
   return (
     <div className="group-list">
@@ -97,6 +115,19 @@ export const GroupList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {isResponsableGrupo && (
+            <div className="filter-group">
+              <label>Filtrar:</label>
+              <select
+                value={viewFilter}
+                onChange={(e) => setViewFilter(e.target.value as "todos" | "mis_grupos")}
+                className="form-select"
+              >
+                <option value="todos">Todos los grupos</option>
+                <option value="mis_grupos">Mis grupos</option>
+              </select>
+            </div>
+          )}
         </div>
 
         <Table data={filteredGroups} columns={columns} />

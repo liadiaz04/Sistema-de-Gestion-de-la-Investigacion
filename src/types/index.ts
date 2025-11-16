@@ -75,7 +75,7 @@ export interface IGroup {
   id: string
   nombre: string
   descripcion: string
-  responsable: IUser
+  responsable: IUser | undefined // Made responsable optional to fix TypeScript error
   tematicas: string[]
   facultad: string
   area?: string
@@ -134,9 +134,10 @@ export interface IProject {
   id: string
   nombre: string
   descripcion: string
-  responsable: IUser
+  responsable: IUser | undefined // Made responsable optional to fix TypeScript error
   tematica: string
   programa: string
+  tipoProyecto?: string // New field for project type
   esPriorizado: boolean
   estaAprobado: boolean
   estado: "propuesta" | "activo" | "finalizado" | "cancelado"
@@ -155,6 +156,7 @@ export interface IProjectData {
   responsableId: string
   tematica: string
   programa: string
+  tipoProyecto?: string // New field for project type
   esPriorizado: boolean
   estado: "propuesta" | "activo" | "finalizado" | "cancelado"
   fechaInicio: string
@@ -200,6 +202,7 @@ export type RecordType =
 export interface IRecord {
   id: string
   tipo: RecordType
+  tipoRegistro?: string // Added tipoRegistro field for dropdown
   titulo: string
   descripcion: string
   autores: IAuthor[]

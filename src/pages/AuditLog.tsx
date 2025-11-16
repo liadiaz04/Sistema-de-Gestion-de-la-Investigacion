@@ -46,11 +46,6 @@ export const AuditLog = () => {
       render: (log: IAuditLog) => log.usuario.nombreUsuario,
     },
     {
-      key: "tipoAccion",
-      header: "Acción",
-      render: (log: IAuditLog) => <span className={`action-badge action-${log.tipoAccion}`}>{log.tipoAccion}</span>,
-    },
-    {
       key: "metodo",
       header: "Método",
       render: (log: IAuditLog) => <span className={`method-badge method-${log.metodo}`}>{log.metodo}</span>,

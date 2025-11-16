@@ -9,25 +9,24 @@ import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import "./GroupForm.css"
-import { mockUsers, mockRecords, mockGroups } from "../services/mockData"
+import { mockUsers, mockGroups } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
-import type { IGroup } from "../types/index"
+import type { IGroup, IUser } from "../types/index"
 
 export const GroupForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
-  const { user: currentUser } = useAuthStore()
+  const { user } = useAuthStore()
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
-
-
+  const isNewMode = !id
 
   const [isSaved, setIsSaved] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
-  const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "registros" | "evaluaciones">("datos")
+  const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "evaluaciones">("datos")
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -38,16 +37,16 @@ export const GroupForm = () => {
     tematicas: "",
   })
 
+  const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
+  const [showResponsableModal, setShowResponsableModal] = useState(false)
+
   const [members, setMembers] = useState<any[]>([])
-  const [records, setRecords] = useState<any[]>([])
   const [evaluations, setEvaluations] = useState<Record<string, { evaluacion: string; descripcion: string }>>({})
   const [selectedMember, setSelectedMember] = useState<any>(null)
 
   const [showModifyMemberModal, setShowModifyMemberModal] = useState(false)
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
-  const [showRecordModal, setShowRecordModal] = useState(false)
-  const [showSuggestedRecordsModal, setShowSuggestedRecordsModal] = useState(false)
 
   const [externalMember, setExternalMember] = useState({
     nombre: "",
@@ -55,21 +54,6 @@ export const GroupForm = () => {
     numeroIdentidad: "",
     entidad: "",
   })
-
-  const [recordSearch, setRecordSearch] = useState("")
-  const [selectedRecordType, setSelectedRecordType] = useState("articulo")
-
-  const recordTypes = [
-    { value: "articulo", label: "Artículos" },
-    { value: "libro", label: "Libros" },
-    { value: "tesis", label: "Tesis" },
-    { value: "monografia", label: "Monografías" },
-    { value: "patente", label: "Patentes" },
-    { value: "software", label: "Software" },
-    { value: "evento", label: "Eventos" },
-    { value: "premio", label: "Premios" },
-    { value: "norma", label: "Normas" },
-  ]
 
   useEffect(() => {
     if (id) {
@@ -85,9 +69,8 @@ export const GroupForm = () => {
           departamento: group.departamento || "",
           tematicas: group.tematicas?.join(", ") || "",
         })
-        // Members and records are maintained only in component state
+        setSelectedResponsable(group.responsable)
         setMembers([])
-        setRecords([])
         setIsSaved(true)
       }
     }
@@ -95,6 +78,12 @@ export const GroupForm = () => {
 
   const handleSaveInitialData = (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!selectedResponsable) {
+      setSuccessMessage("Por favor, seleccione un responsable para el grupo")
+      setShowSuccessDialog(true)
+      return
+    }
 
     if (isEditMode && id) {
       const groupIndex = mockGroups.findIndex((g) => g.id === id)
@@ -107,6 +96,7 @@ export const GroupForm = () => {
           area: formData.area,
           departamento: formData.departamento,
           tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+          responsable: selectedResponsable,
           fechaActualizacion: new Date().toISOString(),
         }
         setSuccessMessage("Datos iniciales actualizados con éxito")
@@ -115,10 +105,16 @@ export const GroupForm = () => {
       return
     }
 
-    // New group mode
     setIsSaved(true)
     setActiveTab("integrantes")
     setSuccessMessage("Datos iniciales guardados")
+    setShowSuccessDialog(true)
+  }
+
+  const handleSelectResponsable = (user: IUser) => {
+    setSelectedResponsable(user)
+    setShowResponsableModal(false)
+    setSuccessMessage("Responsable seleccionado con éxito")
     setShowSuccessDialog(true)
   }
 
@@ -177,22 +173,6 @@ export const GroupForm = () => {
     setMembers(members.filter((m) => m.id !== memberId))
   }
 
-  const handleAssociateRecord = (record: any) => {
-    if (!records.find((r) => r.id === record.id)) {
-      setRecords([...records, record])
-      setShowRecordModal(false)
-      setShowSuggestedRecordsModal(false)
-      setSuccessMessage("Registro asociado con éxito")
-      setShowSuccessDialog(true)
-    }
-  }
-
-  const handleDisassociateRecord = (recordId: string) => {
-    setRecords(records.filter((r) => r.id !== recordId))
-  }
-
-  // </CHANGE> Removed unused handleSaveAllEvaluations function as it wasn't being called
-
   const handleSaveAllUpdates = () => {
     if (!id) return
 
@@ -206,10 +186,9 @@ export const GroupForm = () => {
         area: formData.area,
         departamento: formData.departamento,
         tematicas: formData.tematicas.split(",").map((t) => t.trim()),
+        responsable: selectedResponsable,
         fechaActualizacion: new Date().toISOString(),
         totalIntegrantes: members.length,
-        // In a real app, you would also save members and records here
-        // For mock data, we assume they are managed directly in state for now
       }
 
       setSuccessMessage("Grupo actualizado con éxito")
@@ -219,17 +198,6 @@ export const GroupForm = () => {
       }, 1500)
     }
   }
-
-  const filteredRecords = mockRecords.filter(
-    (r) =>
-      r.tipo === selectedRecordType &&
-      (r.titulo.toLowerCase().includes(recordSearch.toLowerCase()) ||
-        r.descripcion.toLowerCase().includes(recordSearch.toLowerCase())),
-  )
-
-  const suggestedRecords = mockRecords.filter((record) => {
-    return members.some((member) => record.autores.some((autor) => autor.usuario?.id === member.usuario.id))
-  })
 
   const pageTitle = isViewMode
     ? "Ver Grupo de Investigación"
@@ -248,6 +216,30 @@ export const GroupForm = () => {
           </div>
         </div>
       )}
+
+      <Modal
+        isOpen={showResponsableModal}
+        onClose={() => setShowResponsableModal(false)}
+        title="Seleccionar Responsable del Grupo"
+      >
+        <div className="modal-content">
+          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE como responsable</p>
+          <div className="directory-list">
+            {mockUsers.map((user) => (
+              <div key={user.id} className="directory-item">
+                <div className="directory-item-info">
+                  <strong>{`${user.nombre} ${user.apellidos}`}</strong>
+                  <span>{user.facultad}</span>
+                  <span>{user.correoElectronico}</span>
+                </div>
+                <Button size="sm" onClick={() => handleSelectResponsable(user)}>
+                  Seleccionar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showDirectoryModal}
@@ -374,74 +366,6 @@ export const GroupForm = () => {
         )}
       </Modal>
 
-      <Modal isOpen={showRecordModal} onClose={() => setShowRecordModal(false)} title="Asociar Registro">
-        <div className="modal-content">
-          <div className="form-group">
-            <label>Tipo de Registro</label>
-            <select
-              className="form-select"
-              value={selectedRecordType}
-              onChange={(e) => setSelectedRecordType(e.target.value)}
-            >
-              {recordTypes.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <Input
-              placeholder="Buscar registro..."
-              value={recordSearch}
-              onChange={(e) => setRecordSearch(e.target.value)}
-            />
-          </div>
-          <div className="record-list">
-            {filteredRecords.map((record) => (
-              <div key={record.id} className="record-item">
-                <div className="record-item-info">
-                  <strong>{record.titulo}</strong>
-                  <span>{record.descripcion}</span>
-                  <span>Año: {record.año}</span>
-                </div>
-                <Button size="sm" onClick={() => handleAssociateRecord(record)}>
-                  Asociar
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={showSuggestedRecordsModal}
-        onClose={() => setShowSuggestedRecordsModal(false)}
-        title="Registros Posibles a Asociar"
-      >
-        <div className="modal-content">
-          <p className="modal-description">Registros sugeridos basados en los proyectos asociados</p>
-          <div className="record-list">
-            {suggestedRecords.length === 0 ? (
-              <p className="empty-state">No hay registros sugeridos</p>
-            ) : (
-              suggestedRecords.map((record) => (
-                <div key={record.id} className="record-item">
-                  <div className="record-item-info">
-                    <strong>{record.titulo}</strong>
-                    <span>{record.descripcion}</span>
-                    <span>Año: {record.año}</span>
-                  </div>
-                  <Button size="sm" onClick={() => handleAssociateRecord(record)}>
-                    Asociar
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </Modal>
-
       <div className="form-header">
         <h1>{pageTitle}</h1>
         <p>{isViewMode ? "Detalles del grupo de investigación" : "Complete la información del grupo"}</p>
@@ -510,6 +434,28 @@ export const GroupForm = () => {
                     placeholder="Ej: IA, Machine Learning, NLP"
                   />
                 </div>
+                <div className="form-group">
+                  <label>Responsable del Grupo *</label>
+                  <div className="responsable-selector">
+                    {selectedResponsable ? (
+                      <div className="selected-responsable">
+                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setShowResponsableModal(true)}
+                        >
+                          Cambiar
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
+                        Seleccionar Responsable
+                      </Button>
+                    )}
+                  </div>
+                </div>
                 <div className="form-actions">
                   <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
                     Cancelar
@@ -543,12 +489,6 @@ export const GroupForm = () => {
               onClick={() => setActiveTab("integrantes")}
             >
               Integrantes
-            </button>
-            <button
-              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
-              onClick={() => setActiveTab("registros")}
-            >
-              Registros
             </button>
             <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
@@ -590,6 +530,14 @@ export const GroupForm = () => {
                     <label>Temáticas</label>
                     <p className="data-value">{formData.tematicas || "No especificadas"}</p>
                   </div>
+                  <div className="data-item">
+                    <label>Responsable</label>
+                    <p className="data-value">
+                      {selectedResponsable
+                        ? `${selectedResponsable.nombre} ${selectedResponsable.apellidos}`
+                        : "No asignado"}
+                    </p>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -617,13 +565,13 @@ export const GroupForm = () => {
                         <th>Nombre</th>
                         <th>Rol</th>
                         <th>Tipo</th>
-                        <th>Opciones</th>
+                        {!isNewMode && <th>Opciones</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {members.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="empty-state">
+                          <td colSpan={isNewMode ? 3 : 4} className="empty-state">
                             No hay integrantes asociados. Haga clic en "Agregar integrante" para comenzar.
                           </td>
                         </tr>
@@ -633,78 +581,22 @@ export const GroupForm = () => {
                             <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
                             <td>{member.rol.replace(/_/g, " ")}</td>
                             <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Modificar",
-                                    onClick: () => handleModifyMember(member),
-                                  },
-                                  {
-                                    label: "Eliminar integrante",
-                                    onClick: () => handleRemoveMember(member.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {activeTab === "registros" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Registros Científicos Asociados</h2>
-                  <div className="tab-actions">
-                    <Button variant="secondary" onClick={() => setShowRecordModal(true)}>
-                      Asociar registro primario
-                    </Button>
-                    <Button variant="secondary" onClick={() => setShowSuggestedRecordsModal(true)}>
-                      Mostrar registros posibles a asociar
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="records-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Título</th>
-                        <th>Tipo</th>
-                        <th>Año</th>
-                        <th>Opciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="empty-state">
-                            No hay registros asociados. Haga clic en "Asociar registro" para comenzar.
-                          </td>
-                        </tr>
-                      ) : (
-                        records.map((record) => (
-                          <tr key={record.id}>
-                            <td>{record.titulo}</td>
-                            <td>{record.tipo}</td>
-                            <td>{record.año}</td>
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Desasociar",
-                                    onClick: () => handleDisassociateRecord(record.id),
-                                  },
-                                ]}
-                              />
-                            </td>
+                            {!isNewMode && (
+                              <td>
+                                <OptionsMenu
+                                  options={[
+                                    {
+                                      label: "Modificar",
+                                      onClick: () => handleModifyMember(member),
+                                    },
+                                    {
+                                      label: "Eliminar integrante",
+                                      onClick: () => handleRemoveMember(member.id),
+                                    },
+                                  ]}
+                                />
+                              </td>
+                            )}
                           </tr>
                         ))
                       )}
@@ -792,7 +684,11 @@ export const GroupForm = () => {
               <Button
                 type="button"
                 onClick={() => {
-                  if (!currentUser) return
+                  if (!selectedResponsable) {
+                    setSuccessMessage("Por favor, seleccione un responsable para el grupo")
+                    setShowSuccessDialog(true)
+                    return
+                  }
                   const newGroup: IGroup = {
                     id: `group-${Date.now()}`,
                     nombre: formData.nombre,
@@ -801,7 +697,7 @@ export const GroupForm = () => {
                     area: formData.area,
                     departamento: formData.departamento,
                     tematicas: formData.tematicas.split(",").map((t) => t.trim()),
-                    responsable: currentUser,
+                    responsable: selectedResponsable,
                     fechaCreacion: new Date().toISOString(),
                     fechaActualizacion: new Date().toISOString(),
                     totalIntegrantes: members.length,
@@ -835,12 +731,6 @@ export const GroupForm = () => {
               onClick={() => setActiveTab("integrantes")}
             >
               Integrantes
-            </button>
-            <button
-              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
-              onClick={() => setActiveTab("registros")}
-            >
-              Registros
             </button>
             <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
@@ -883,6 +773,14 @@ export const GroupForm = () => {
                       <label>Temáticas</label>
                       <p className="data-value">{formData.tematicas || "No especificadas"}</p>
                     </div>
+                    <div className="data-item">
+                      <label>Responsable</label>
+                      <p className="data-value">
+                        {selectedResponsable
+                          ? `${selectedResponsable.nombre} ${selectedResponsable.apellidos}`
+                          : "No asignado"}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -924,40 +822,6 @@ export const GroupForm = () => {
                                 ]}
                               />
                             </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </Card>
-          )}
-
-          {activeTab === "registros" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Registros Científicos</h2>
-                </div>
-                {records.length === 0 ? (
-                  <p className="empty-state">No hay registros asociados a este grupo.</p>
-                ) : (
-                  <div className="records-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Título</th>
-                          <th>Tipo</th>
-                          <th>Año</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {records.map((record) => (
-                          <tr key={record.id}>
-                            <td>{record.titulo}</td>
-                            <td>{record.tipo}</td>
-                            <td>{record.año}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1030,12 +894,6 @@ export const GroupForm = () => {
               Integrantes
             </button>
             <button
-              className={`tab-button ${activeTab === "registros" ? "active" : ""}`}
-              onClick={() => setActiveTab("registros")}
-            >
-              Registros
-            </button>
-            <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
               onClick={() => setActiveTab("evaluaciones")}
             >
@@ -1102,7 +960,28 @@ export const GroupForm = () => {
                     placeholder="Ej: IA, Machine Learning, NLP"
                   />
                 </div>
-                {/* Only "Actualizar Grupo" button remains at the end of the form */}
+                <div className="form-group">
+                  <label>Responsable del Grupo *</label>
+                  <div className="responsable-selector">
+                    {selectedResponsable ? (
+                      <div className="selected-responsable">
+                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setShowResponsableModal(true)}
+                        >
+                          Cambiar
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
+                        Seleccionar Responsable
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </form>
             </Card>
           )}
@@ -1159,68 +1038,6 @@ export const GroupForm = () => {
                                   {
                                     label: "Eliminar integrante",
                                     onClick: () => handleRemoveMember(member.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {activeTab === "registros" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Registros Científicos Asociados</h2>
-                  <div className="tab-actions">
-                    <Button variant="secondary" onClick={() => setShowRecordModal(true)}>
-                      Asociar registro primario
-                    </Button>
-                    <Button variant="secondary" onClick={() => setShowSuggestedRecordsModal(true)}>
-                      Mostrar registros posibles a asociar
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="records-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Título</th>
-                        <th>Tipo</th>
-                        <th>Año</th>
-                        <th>Opciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="empty-state">
-                            No hay registros asociados. Haga clic en "Asociar registro" para comenzar.
-                          </td>
-                        </tr>
-                      ) : (
-                        records.map((record) => (
-                          <tr key={record.id}>
-                            <td>{record.titulo}</td>
-                            <td>{record.tipo}</td>
-                            <td>{record.año}</td>
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Ver detalles",
-                                    onClick: () => alert(`Ver detalles de ${record.titulo}`),
-                                  },
-                                  {
-                                    label: "Desasociar",
-                                    onClick: () => handleDisassociateRecord(record.id),
                                   },
                                 ]}
                               />
@@ -1319,8 +1136,6 @@ export const GroupForm = () => {
           </Card>
         </>
       )}
-
-      {/* The note now only appears once in the form-info div above when isNewMode && !isSaved */}
     </div>
   )
 }

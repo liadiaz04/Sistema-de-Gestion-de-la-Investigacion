@@ -16,45 +16,43 @@ import { useAuthStore } from "../stores/authStore"; // Ajusta la ruta según tu 
 import "./GroupList.css";
 
 const RecordList: React.FC = () => {
-  const navigate = useNavigate();
-  const { user } = useAuthStore(); // Asume que user.id es el id del integrante
-  const isAdmin = false;
-  const [searchTerm, setSearchTerm] = useState("");
-  const [records, setRecords] = useState<RecordBase[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate()
+  const { user } = useAuthStore()
+  const [searchTerm, setSearchTerm] = useState("")
+  const [records, setRecords] = useState<IRecord[]>(mockRecords)
+  const [recordFilter, setRecordFilter] = useState<"all" | "mine">("all")
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; recordId: string | null }>({
     show: false,
     recordId: null,
-  });
+  })
 
-  // Cargar registros al montar
-  useEffect(() => {
-    const fetchRecords = async () => {
-      if (localStorage.getItem('user_id') ==='') {
-        setError("Usuario no autenticado");
-        setLoading(false);
-        return;
+  const isAdmin = user?.roles?.includes('admin') || false
+  const isAutorRegistro = user?.roles?.includes('autor_registro') || false
+
+  const isAuthor = (record: IRecord): boolean => {
+    return record.autores.some(autor => autor.usuario?.id === user?.id)
+  }
+
+  const canEdit = (record: IRecord): boolean => {
+    if (isAdmin) return true
+    if (isAutorRegistro && recordFilter === "mine") return isAuthor(record)
+    return false
+  }
+
+  const canDelete = (record: IRecord): boolean => {
+    if (isAdmin) return true
+    if (isAutorRegistro && recordFilter === "mine") return isAuthor(record)
+    return false
+  }
+
+  const filteredRecords = records
+    .filter((record) => {
+      const matchesSearch = record.titulo.toLowerCase().includes(searchTerm.toLowerCase())
+      if (recordFilter === "mine") {
+        return matchesSearch && isAuthor(record)
       }
-
-      try {
-        const data = await RecordListService.fetchRecordsByAuthor(Number.parseInt(localStorage.getItem('user_id')||'0'));
-        setRecords(data);
-        setError(null);
-      } catch (err) {
-        console.error("Error al cargar registros:", err);
-        setError("No se pudieron cargar los registros. Verifique su conexión e inténtelo de nuevo.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRecords();
-  }, [user?.id]);
-
-  const filteredRecords = records.filter((record) =>
-    record.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      return matchesSearch
+    })
 
   const handleDelete = (recordId: string) => {
     setRecords(records.filter((r) => r.id !== recordId));
@@ -81,38 +79,21 @@ const RecordList: React.FC = () => {
     {
       key: "actions",
       header: "Opciones",
-      render: (r: RecordBase) => (
-        <OptionsMenu
-          onView={() => navigate(`/records/${r.id}`)}
-          onEdit={() => navigate(`/records/${r.id}/edit`)}
-          onDelete={() => setDeleteConfirm({ show: true, recordId: r.id })}
-        />
+      render: (record: IRecord) => (
+        canEdit(record) || canDelete(record) ? (
+          <OptionsMenu
+            onView={() => navigate(`/records/${record.id}`)}
+            onEdit={canEdit(record) ? () => navigate(`/records/${record.id}/edit`) : undefined}
+            onDelete={canDelete(record) ? () => setDeleteConfirm({ show: true, recordId: record.id }) : undefined}
+          />
+        ) : (
+          <Button variant="outline" onClick={() => navigate(`/records/${record.id}`)}>
+            Ver detalles
+          </Button>
+        )
       ),
     },
-  ];
-
-  // Estado: Cargando
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  // Estado: Error
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen text-center p-6">
-        <AlertCircle className="h-16 w-16 text-red-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Error al cargar los datos</h2>
-        <p className="text-gray-600 mb-6">{error}</p>
-        <Button onClick={() => window.location.reload()}>
-          Reintentar
-        </Button>
-      </div>
-    );
-  }
+  ]
 
   return (
     <div className="group-list">
@@ -121,7 +102,7 @@ const RecordList: React.FC = () => {
           <h1>Producción Científica</h1>
           <p>Gestión de registros científicos (Códice)</p>
         </div>
-        {isAdmin && (
+        {(isAdmin || isAutorRegistro) && (
           <Button onClick={() => navigate("/records/new")}>
             <Plus size={20} />
             Adicionar Registro
@@ -140,12 +121,25 @@ const RecordList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {isAutorRegistro && (
+            <div className="filter-group">
+              <label>Filtrar:</label>
+              <select
+                value={recordFilter}
+                onChange={(e) => setRecordFilter(e.target.value as "all" | "mine")}
+                className="form-select"
+              >
+                <option value="all">Todos los registros</option>
+                <option value="mine">Mis registros</option>
+              </select>
+            </div>
+          )}
         </div>
 
         <Table data={filteredRecords} columns={columns} />
       </Card>
 
-      {isAdmin && (
+      {deleteConfirm.recordId && (
         <ConfirmDialog
           isOpen={deleteConfirm.show}
           title="Eliminar Registro"
