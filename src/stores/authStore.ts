@@ -4,6 +4,7 @@ import type { User } from "../types/api/auth"
 interface AuthState {
   user: User | null
   token: string | null
+  roles: String| null
   isAuthenticated: boolean
   login: ( token: string) => void
   logout: () => void

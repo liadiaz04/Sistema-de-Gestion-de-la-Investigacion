@@ -8,9 +8,71 @@ import { Button } from "../components/common/Button"
 import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import "./ProjectForm.css"
-import { mockProjects, mockUsers, mockRecords } from "../services/mockData"
+import { mockProjects, mockRecords } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
 import type { IUser } from "../types/index"
+import {
+  recordMetadataService,
+  type ProjectTypeOption,
+  type ProjectStateOption,
+  type ProjectClassificationOption,
+  type IntegrantOption,
+} from "../services/record/recordMetadataService"
+import { projectService } from "../services/projectService"
+
+type IntegrantSearchHook = {
+  term: string
+  setTerm: (value: string) => void
+  results: IntegrantOption[]
+  isLoading: boolean
+  error: string | null
+}
+
+const useIntegrantSearch = (): IntegrantSearchHook => {
+  const [term, setTerm] = useState("")
+  const [results, setResults] = useState<IntegrantOption[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    const searchValue = term.trim()
+    if (searchValue.length < 2) {
+      setResults([])
+      setError(null)
+      setIsLoading(false)
+      return () => {
+        isMounted = false
+      }
+    }
+
+    const handler = setTimeout(async () => {
+      try {
+        setIsLoading(true)
+        const data = await recordMetadataService.getIntegrants(searchValue)
+        if (isMounted) {
+          setResults(data)
+          setError(null)
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError((err as Error).message)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }, 400)
+
+    return () => {
+      isMounted = false
+      clearTimeout(handler)
+    }
+  }, [term])
+
+  return { term, setTerm, results, isLoading, error }
+}
 
 export const ProjectForm = () => {
   const navigate = useNavigate()
@@ -18,7 +80,7 @@ export const ProjectForm = () => {
   const { id } = useParams()
   const { user: currentUser } = useAuthStore()
 
-  const isAdmin = currentUser?.roles?.includes("admin") || false
+  const isAdmin = currentUser?.role?.includes("admin") || false
 
   console.log("[v0] ProjectForm - id:", id)
   console.log("[v0] ProjectForm - location.pathname:", location.pathname)
@@ -34,36 +96,101 @@ export const ProjectForm = () => {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
 
+  const [projectTypes, setProjectTypes] = useState<ProjectTypeOption[]>([])
+  const [projectStates, setProjectStates] = useState<ProjectStateOption[]>([])
+  const [projectClassifications, setProjectClassifications] = useState<ProjectClassificationOption[]>([])
+  const [selectedProjectTypeId, setSelectedProjectTypeId] = useState<number | null>(null)
+  const [selectedProjectStateId, setSelectedProjectStateId] = useState<number | null>(null)
+  const [selectedProjectClassificationId, setSelectedProjectClassificationId] = useState<number | null>(null)
+  const [isMetadataLoading, setIsMetadataLoading] = useState(true)
+  const [metadataError, setMetadataError] = useState<string | null>(null)
+
   const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
+  const [selectedResponsableId, setSelectedResponsableId] = useState<number | null>(null)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
+  const responsableSearch = useIntegrantSearch()
 
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
   const [showRecordModal, setShowRecordModal] = useState(false)
   const [members, setMembers] = useState<any[]>([])
+  const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([])
+  const [externalMembers, setExternalMembers] = useState<any[]>([])
   const [records, setRecords] = useState<any[]>([])
   const [recordSearch, setRecordSearch] = useState("")
+  const memberSearch = useIntegrantSearch()
   const [externalMember, setExternalMember] = useState({
     nombre: "",
     apellidos: "",
     numeroIdentidad: "",
     entidad: "",
+    email: "",
   })
+
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [formData, setFormData] = useState({
     nombre: "",
+    codigo: "",
     descripcion: "",
     tematica: "",
     programa: "",
-    tipoProyecto: "", // Added tipoProyecto field
-    estado: "propuesta" as "propuesta" | "activo" | "finalizado" | "cancelado",
+    tipoProyecto: "",
+    estado: "",
     objetivos: "",
     tareas: "",
     detallesCientificos: "",
     otrosDatos: "",
     criterioConsejo: "",
-    responsableId: "", // Adding responsableId field - This line is now redundant due to selectedResponsable
+    palabrasClave: "",
+    artState: "",
+    problemaCientifico: "",
+    objetoEstudio: "",
+    campoEstudio: "",
+    hipotesis: "",
+    objetivoPrincipal: "",
+    metodosInvestigacion: "",
+    terceroInteresado: "",
+    grupoNacional: "",
+    grupoInternacional: "",
+    publicarRevista: "",
+    participarEventos: "",
+    codigoCITMA: "",
+    codigoMINVEC: "",
+    fechaInicio: "",
+    fechaFin: "",
+    presupuestoEconomico: "",
+    necesidadesEconomicas: "",
+    presupuestoGeneralCUP: "",
+    presupuestoAnualCUP: "",
+    is_international: false,
+    is_national: false,
+    is_territorial: false,
+    is_cujae: false,
   })
+
+  useEffect(() => {
+    const loadMetadata = async () => {
+      try {
+        setIsMetadataLoading(true)
+        setMetadataError(null)
+        const [typesResponse, statesResponse, classificationsResponse] = await Promise.all([
+          recordMetadataService.getProjectTypes(),
+          recordMetadataService.getProjectStates(),
+          recordMetadataService.getProjectClassifications(),
+        ])
+        setProjectTypes(typesResponse)
+        setProjectStates(statesResponse)
+        setProjectClassifications(classificationsResponse)
+      } catch (error) {
+        setMetadataError((error as Error).message || "No se pudieron cargar los catálogos")
+      } finally {
+        setIsMetadataLoading(false)
+      }
+    }
+
+    loadMetadata()
+  }, [])
 
   useEffect(() => {
     console.log("[v0] ProjectForm - useEffect running, id:", id)
@@ -73,17 +200,42 @@ export const ProjectForm = () => {
       if (project) {
         setFormData({
           nombre: project.nombre,
+          codigo: "",
           descripcion: project.descripcion,
           tematica: project.tematica,
           programa: project.programa,
-          tipoProyecto: project.tipoProyecto || "", // Load tipoProyecto
+          tipoProyecto: project.tipoProyecto || "",
           estado: project.estado,
           objetivos: project.objetivos || "",
           tareas: project.tareas || "",
           detallesCientificos: project.detallesCientificos || "",
           otrosDatos: project.otrosDatos || "",
           criterioConsejo: project.criterioConsejo || "",
-          responsableId: project.responsable?.id || "", // Loading responsable id - This line is now redundant due to selectedResponsable
+          palabrasClave: "",
+          artState: "",
+          problemaCientifico: "",
+          objetoEstudio: "",
+          campoEstudio: "",
+          hipotesis: "",
+          objetivoPrincipal: "",
+          metodosInvestigacion: "",
+          terceroInteresado: "",
+          grupoNacional: "",
+          grupoInternacional: "",
+          publicarRevista: "",
+          participarEventos: "",
+          codigoCITMA: "",
+          codigoMINVEC: "",
+          fechaInicio: project.fechaInicio || "",
+          fechaFin: project.fechaFin || "",
+          presupuestoEconomico: "",
+          necesidadesEconomicas: "",
+          presupuestoGeneralCUP: "",
+          presupuestoAnualCUP: "",
+          is_international: false,
+          is_national: false,
+          is_territorial: false,
+          is_cujae: false,
         })
         setSelectedResponsable(project.responsable)
         setIsSaved(true)
@@ -111,7 +263,7 @@ export const ProjectForm = () => {
           tematica: formData.tematica,
           programa: formData.programa,
           tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
-          estado: formData.estado,
+          estado: formData.estado as "propuesta" | "activo" | "finalizado" | "cancelado",
           responsable: selectedResponsable, // Save selected responsable
         }
       }
@@ -128,26 +280,64 @@ export const ProjectForm = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
-    setFormData({
-      ...formData,
-      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : value,
-    })
+    if (type === "checkbox") {
+      const checked = (e.target as HTMLInputElement).checked
+      setFormData({
+        ...formData,
+        [name]: checked,
+      })
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value,
+      })
+    }
   }
 
-  const handleSelectResponsable = (user: IUser) => {
-    setSelectedResponsable(user)
+  const handleSelectResponsableIntegrant = (integrant: IntegrantOption) => {
+    setSelectedResponsableId(integrant.id_integrant)
+    setSelectedResponsable({
+      id: String(integrant.id_integrant),
+      nombre: integrant.name.split(" ")[0] || "",
+      apellidos: integrant.name.split(" ").slice(1).join(" ") || "",
+      correoElectronico: integrant.email || "",
+      nombreUsuario: "",
+      numeroIdentidad: "",
+      roles: [],
+      esExterno: false,
+      esAdministrador: false,
+    } as IUser)
     setShowResponsableModal(false)
+    responsableSearch.setTerm("")
     setSuccessMessage("Responsable seleccionado con éxito")
     setShowSuccessDialog(true)
   }
 
-  const handleAddFromDirectory = (user: any) => {
+  const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
+    if (selectedMemberIds.includes(integrant.id_integrant)) {
+      setSuccessMessage("Este integrante ya está agregado")
+      setShowSuccessDialog(true)
+      return
+    }
     const newMember = {
       id: `member-${Date.now()}`,
-      usuario: user,
+      integrantId: integrant.id_integrant,
+      usuario: {
+        id: String(integrant.id_integrant),
+        nombre: integrant.name.split(" ")[0] || "",
+        apellidos: integrant.name.split(" ").slice(1).join(" ") || "",
+        correoElectronico: integrant.email || "",
+        nombreUsuario: "",
+        numeroIdentidad: "",
+        roles: [],
+        esExterno: false,
+        esAdministrador: false,
+      },
       rol: "integrante_proyecto",
     }
     setMembers([...members, newMember])
+    setSelectedMemberIds([...selectedMemberIds, integrant.id_integrant])
+    memberSearch.setTerm("")
     setShowDirectoryModal(false)
     setSuccessMessage("Integrante agregado con éxito")
     setShowSuccessDialog(true)
@@ -156,26 +346,36 @@ export const ProjectForm = () => {
   const handleAddExternalMember = (e: React.FormEvent) => {
     e.preventDefault()
     const newMember = {
-      id: `member-${Date.now()}`,
+      id: `external-${Date.now()}`,
+      integrantId: null,
       usuario: {
         id: `external-${Date.now()}`,
         nombre: externalMember.nombre,
         apellidos: externalMember.apellidos,
         numeroIdentidad: externalMember.numeroIdentidad,
         entidad: externalMember.entidad,
+        correoElectronico: externalMember.email,
         esExterno: true,
       },
       rol: "integrante_proyecto",
     }
     setMembers([...members, newMember])
+    setExternalMembers([...externalMembers, newMember])
     setShowExternalModal(false)
-    setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "" })
+    setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
     setSuccessMessage("Integrante externo agregado con éxito")
     setShowSuccessDialog(true)
   }
 
   const handleRemoveMember = (memberId: string) => {
+    const memberToRemove = members.find((m) => m.id === memberId)
     setMembers(members.filter((m) => m.id !== memberId))
+    if (memberToRemove?.integrantId) {
+      setSelectedMemberIds((prev) => prev.filter((id) => id !== memberToRemove.integrantId))
+    }
+    if (memberToRemove?.usuario?.esExterno) {
+      setExternalMembers((prev) => prev.filter((m) => m.id !== memberId))
+    }
   }
 
   const handleAssociateRecord = (record: any) => {
@@ -187,61 +387,87 @@ export const ProjectForm = () => {
     }
   }
 
-  const handleDisassociateRecord = (recordId: string) => {
-    setRecords(records.filter((r) => r.id !== recordId))
-  }
-
-  const handleOpenRecordModal = () => {
-    if (mockRecords.length === 0) {
-      setSuccessMessage("No hay registros científicos disponibles para asociar")
-      setShowSuccessDialog(true)
-      return
-    }
-    setShowRecordModal(true)
-  }
-
   const handleOpenDirectoryModal = () => {
-    if (mockUsers.length === 0) {
-      setSuccessMessage("No hay usuarios disponibles en el directorio")
-      setShowSuccessDialog(true)
-      return
-    }
     setShowDirectoryModal(true)
   }
 
-  const handleSaveCompleteProject = () => {
-    if (!selectedResponsable) {
+  // Helper para convertir string vacío a null
+  const toNullIfEmpty = (value: string | null | undefined): string | null => {
+    return value && value.trim() ? value.trim() : null
+  }
+
+  const handleSaveCompleteProject = async () => {
+    if (!selectedResponsableId) {
       setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
       setShowSuccessDialog(true)
       return
     }
 
-    const newProject = {
-      id: `project-${Date.now()}`,
-      nombre: formData.nombre,
-      descripcion: formData.descripcion,
-      responsable: selectedResponsable,
-      tematica: formData.tematica,
-      programa: formData.programa,
-      tipoProyecto: formData.tipoProyecto, // Include tipoProyecto
-      esPriorizado: false, // Removed from form, set default false
-      estaAprobado: false,
-      estado: formData.estado,
-      fechaInicio: new Date().toISOString(),
-      objetivos: formData.objetivos,
-      tareas: formData.tareas,
-      detallesCientificos: formData.detallesCientificos,
-      otrosDatos: formData.otrosDatos,
-      criterioConsejo: formData.criterioConsejo,
+    try {
+      setIsSubmitting(true)
+
+      const now = new Date().toISOString().split("T")[0]
+      const initialDate = formData.fechaInicio
+        ? new Date(formData.fechaInicio).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0]
+      const finalDate = formData.fechaFin ? new Date(formData.fechaFin).toISOString().split("T")[0] : null
+
+      const payload = {
+        title: formData.nombre,
+        code: formData.codigo || "",
+        keywords: formData.palabrasClave || "",
+        member_ids: selectedMemberIds,
+        id_responsible: selectedResponsableId,
+        thematic: formData.tematica || "",
+        id_project_type: selectedProjectTypeId,
+        art_state: formData.artState || "",
+        cientific_problem: toNullIfEmpty(formData.problemaCientifico),
+        study_object: toNullIfEmpty(formData.objetoEstudio),
+        study_field: formData.campoEstudio || "",
+        hypothesis: formData.hipotesis || "",
+        main_objective: toNullIfEmpty(formData.objetivoPrincipal),
+        research_methods: formData.metodosInvestigacion || "",
+        interested_third_party: toNullIfEmpty(formData.terceroInteresado),
+        national_group: formData.grupoNacional || "",
+        international_group: toNullIfEmpty(formData.grupoInternacional),
+        publish_magazine: toNullIfEmpty(formData.publicarRevista),
+        participate_events: toNullIfEmpty(formData.participarEventos),
+        citma_code: toNullIfEmpty(formData.codigoCITMA),
+        minvec_code: toNullIfEmpty(formData.codigoMINVEC),
+        approved: false,
+        conseil_criteria: formData.criterioConsejo || "",
+        initial_date: initialDate,
+        final_date: finalDate,
+        update_date: now,
+        id_project_state: selectedProjectStateId,
+        id_project_classification: selectedProjectClassificationId,
+        economic_budget: formData.presupuestoEconomico || "",
+        economic_needs: toNullIfEmpty(formData.necesidadesEconomicas),
+        id_faculty: null,
+        concluded: false,
+        approved_date: null,
+        general_budget_cup: toNullIfEmpty(formData.presupuestoGeneralCUP),
+        year_budget_cup: toNullIfEmpty(formData.presupuestoAnualCUP),
+        is_international: formData.is_international,
+        is_national: formData.is_national,
+        is_territorial: formData.is_territorial,
+        is_cujae: formData.is_cujae,
+      }
+
+      await projectService.createProject(payload)
+
+      setSuccessMessage("Proyecto completado y guardado con éxito")
+      setShowSuccessDialog(true)
+      setTimeout(() => {
+        navigate("/projects")
+      }, 1500)
+    } catch (error) {
+      const errorMessage = (error as Error).message || "Error al guardar el proyecto"
+      setSuccessMessage(errorMessage)
+      setShowSuccessDialog(true)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    mockProjects.push(newProject as any)
-
-    setSuccessMessage("Proyecto completado y guardado con éxito")
-    setShowSuccessDialog(true)
-    setTimeout(() => {
-      navigate("/projects")
-    }, 1500)
   }
 
   const handleSaveAllUpdates = () => {
@@ -263,7 +489,7 @@ export const ProjectForm = () => {
         tematica: formData.tematica,
         programa: formData.programa,
         tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
-        estado: formData.estado,
+        estado: formData.estado as "propuesta" | "activo" | "finalizado" | "cancelado",
         objetivos: formData.objetivos,
         tareas: formData.tareas,
         detallesCientificos: formData.detallesCientificos,
@@ -291,6 +517,7 @@ export const ProjectForm = () => {
     { id: "otros-datos", label: "Otros Datos de Interés" },
     { id: "objetivos-tareas", label: "Objetivos y Tareas" },
     { id: "integrantes", label: "Integrantes" },
+    { id: "presupuesto", label: "Presupuesto" },
     { id: "criterio-consejo", label: "Criterio del Consejo" },
   ]
 
@@ -317,20 +544,35 @@ export const ProjectForm = () => {
 
       <Modal
         isOpen={showResponsableModal}
-        onClose={() => setShowResponsableModal(false)}
+        onClose={() => {
+          setShowResponsableModal(false)
+          responsableSearch.setTerm("")
+        }}
         title="Seleccionar Responsable del Proyecto"
       >
         <div className="modal-content">
-          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE como responsable</p>
+          <p className="modal-description">Busque y seleccione un integrante del directorio CUJAE como responsable</p>
+          <div className="form-group">
+            <Input
+              placeholder="Buscar por nombre..."
+              value={responsableSearch.term}
+              onChange={(e) => responsableSearch.setTerm(e.target.value)}
+            />
+          </div>
+          {responsableSearch.isLoading && <p className="loading-state">Buscando...</p>}
+          {responsableSearch.error && <p className="error-state">{responsableSearch.error}</p>}
+          {!responsableSearch.isLoading && !responsableSearch.error && responsableSearch.results.length === 0 && responsableSearch.term.trim().length >= 2 && (
+            <p className="empty-state">No se encontraron integrantes</p>
+          )}
           <div className="directory-list">
-            {mockUsers.map((user) => (
-              <div key={user.id} className="directory-item">
+            {responsableSearch.results.map((integrant) => (
+              <div key={integrant.id_integrant} className="directory-item">
                 <div className="directory-item-info">
-                  <strong>{`${user.nombre} ${user.apellidos}`}</strong>
-                  <span>{user.facultad}</span>
-                  <span>{user.correoElectronico}</span>
+                  <strong>{integrant.name}</strong>
+                  {integrant.email && <span>{integrant.email}</span>}
+                  {integrant.work_center && <span>{integrant.work_center}</span>}
                 </div>
-                <Button size="sm" onClick={() => handleSelectResponsable(user)}>
+                <Button size="sm" onClick={() => handleSelectResponsableIntegrant(integrant)}>
                   Seleccionar
                 </Button>
               </div>
@@ -341,20 +583,35 @@ export const ProjectForm = () => {
 
       <Modal
         isOpen={showDirectoryModal}
-        onClose={() => setShowDirectoryModal(false)}
-        title="Agregar desde Directorio CUJAE"
+        onClose={() => {
+          setShowDirectoryModal(false)
+          memberSearch.setTerm("")
+        }}
+        title="Agregar Integrante desde Directorio CUJAE"
       >
         <div className="modal-content">
-          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE</p>
+          <p className="modal-description">Busque y seleccione un integrante del directorio CUJAE</p>
+          <div className="form-group">
+            <Input
+              placeholder="Buscar por nombre..."
+              value={memberSearch.term}
+              onChange={(e) => memberSearch.setTerm(e.target.value)}
+            />
+          </div>
+          {memberSearch.isLoading && <p className="loading-state">Buscando...</p>}
+          {memberSearch.error && <p className="error-state">{memberSearch.error}</p>}
+          {!memberSearch.isLoading && !memberSearch.error && memberSearch.results.length === 0 && memberSearch.term.trim().length >= 2 && (
+            <p className="empty-state">No se encontraron integrantes</p>
+          )}
           <div className="directory-list">
-            {mockUsers.map((user) => (
-              <div key={user.id} className="directory-item">
+            {memberSearch.results.map((integrant) => (
+              <div key={integrant.id_integrant} className="directory-item">
                 <div className="directory-item-info">
-                  <strong>{`${user.nombre} ${user.apellidos}`}</strong>
-                  <span>{user.facultad}</span>
-                  <span>{user.correoElectronico}</span>
+                  <strong>{integrant.name}</strong>
+                  {integrant.email && <span>{integrant.email}</span>}
+                  {integrant.work_center && <span>{integrant.work_center}</span>}
                 </div>
-                <Button size="sm" onClick={() => handleAddFromDirectory(user)}>
+                <Button size="sm" onClick={() => handleSelectMemberIntegrant(integrant)}>
                   Agregar
                 </Button>
               </div>
@@ -396,6 +653,15 @@ export const ProjectForm = () => {
               onChange={(e) => setExternalMember({ ...externalMember, entidad: e.target.value })}
               placeholder="Ej: Universidad de La Habana"
               required
+            />
+          </div>
+          <div className="form-group">
+            <label>Email</label>
+            <Input
+              type="email"
+              value={externalMember.email}
+              onChange={(e) => setExternalMember({ ...externalMember, email: e.target.value })}
+              placeholder="ejemplo@email.com"
             />
           </div>
           <div className="modal-actions">
@@ -487,6 +753,21 @@ export const ProjectForm = () => {
                   />
                 </div>
 
+                <div className="form-group">
+                  <label htmlFor="codigo">
+                    Código del Proyecto
+                  </label>
+                  <Input
+                    type="text"
+                    id="codigo"
+                    name="codigo"
+                    value={formData.codigo}
+                    onChange={handleChange}
+                    placeholder="Ej: PROJ-2024-001"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+
                 <div className="form-group full-width">
                   <label htmlFor="descripcion">
                     Descripción <span className="required">*</span>
@@ -499,6 +780,21 @@ export const ProjectForm = () => {
                     rows={4}
                     required
                     className="form-textarea"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+
+                <div className="form-group full-width">
+                  <label htmlFor="palabrasClave">
+                    Palabras Clave
+                  </label>
+                  <Input
+                    type="text"
+                    id="palabrasClave"
+                    name="palabrasClave"
+                    value={formData.palabrasClave}
+                    onChange={handleChange}
+                    placeholder="Ej: inteligencia artificial, machine learning, deep learning"
                     disabled={isViewMode ? true : false}
                   />
                 </div>
@@ -551,66 +847,125 @@ export const ProjectForm = () => {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label htmlFor="tipoProyecto">
-                    Tipo de Proyecto <span className="required">*</span>
-                  </label>
-                  {isViewMode ? (
-                    <Input
-                      type="text"
-                      id="tipoProyecto"
-                      name="tipoProyecto"
-                      value={formData.tipoProyecto}
-                      disabled={true}
-                    />
-                  ) : (
-                    <select
-                      id="tipoProyecto"
-                      name="tipoProyecto"
-                      value={formData.tipoProyecto}
-                      onChange={handleChange}
-                      required
-                      className="form-select"
-                    >
-                      <option value="">Seleccione un tipo</option>
-                      <option value="investigacion">Investigación</option>
-                      <option value="desarrollo">Desarrollo</option>
-                      <option value="innovacion">Innovación</option>
-                      <option value="extension">Extensión</option>
-                      <option value="otro">Otro</option>
-                    </select>
-                  )}
-                </div>
+                {isMetadataLoading && (
+                  <div className="form-group full-width">
+                    <p>Cargando catálogos...</p>
+                  </div>
+                )}
+                {metadataError && (
+                  <div className="form-group full-width">
+                    <p className="error-state">Error al cargar catálogos: {metadataError}</p>
+                  </div>
+                )}
+                {!isMetadataLoading && !metadataError && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="tipoProyecto">
+                        Tipo de Proyecto <span className="required">*</span>
+                      </label>
+                      {isViewMode ? (
+                        <Input
+                          type="text"
+                          id="tipoProyecto"
+                          name="tipoProyecto"
+                          value={projectTypes.find((t) => t.id_project_type === selectedProjectTypeId)?.name || formData.tipoProyecto}
+                          disabled={true}
+                        />
+                      ) : (
+                        <select
+                          id="tipoProyecto"
+                          name="tipoProyecto"
+                          value={selectedProjectTypeId || ""}
+                          onChange={(e) => {
+                            const value = e.target.value ? Number(e.target.value) : null
+                            setSelectedProjectTypeId(value)
+                            setFormData({ ...formData, tipoProyecto: projectTypes.find((t) => t.id_project_type === value)?.name || "" })
+                          }}
+                          required
+                          className="form-select"
+                          disabled={!!isViewMode}
+                        >
+                          <option value="">Seleccione un tipo</option>
+                          {projectTypes.map((type) => (
+                            <option key={type.id_project_type} value={type.id_project_type}>
+                              {type.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
 
-                <div className="form-group">
-                  <label htmlFor="estado">
-                    Estado <span className="required">*</span>
-                  </label>
-                  {isViewMode ? (
-                    <Input
-                      type="text"
-                      id="estado"
-                      name="estado"
-                      value={formData.estado}
-                      onChange={handleChange}
-                      disabled={true}
-                    />
-                  ) : (
-                    <select
-                      id="estado"
-                      name="estado"
-                      value={formData.estado}
-                      onChange={handleChange}
-                      required
-                      className="form-select"
-                    >
-                      <option value="propuesta">Propuesta</option>
-                      <option value="activo">Activo</option>
-                      <option value="finalizado">Finalizado</option>
-                      <option value="cancelado">Cancelado</option>
-                    </select>
-                  )}
-                </div>
+                    <div className="form-group">
+                      <label htmlFor="estado">
+                        Estado <span className="required">*</span>
+                      </label>
+                      {isViewMode ? (
+                        <Input
+                          type="text"
+                          id="estado"
+                          name="estado"
+                          value={projectStates.find((s) => s.id_project_state === selectedProjectStateId)?.name || formData.estado}
+                          disabled={true}
+                        />
+                      ) : (
+                        <select
+                          id="estado"
+                          name="estado"
+                          value={selectedProjectStateId || ""}
+                          onChange={(e) => {
+                            const value = e.target.value ? Number(e.target.value) : null
+                            setSelectedProjectStateId(value)
+                            setFormData({ ...formData, estado: projectStates.find((s) => s.id_project_state === value)?.name || "" })
+                          }}
+                          required
+                          className="form-select"
+                          disabled={!!isViewMode}
+                        >
+                          <option value="">Seleccione un estado</option>
+                          {projectStates.map((state) => (
+                            <option key={state.id_project_state} value={state.id_project_state}>
+                              {state.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="clasificacion">
+                        Clasificación del Proyecto
+                      </label>
+                      {isViewMode ? (
+                        <Input
+                          type="text"
+                          id="clasificacion"
+                          name="clasificacion"
+                          value={projectClassifications.find((c) => c.id_project_classification === selectedProjectClassificationId)?.name || ""}
+                          disabled={true}
+                        />
+                      ) : (
+                        <select
+                          id="clasificacion"
+                          name="clasificacion"
+                          value={selectedProjectClassificationId || ""}
+                          onChange={(e) => {
+                            const value = e.target.value ? Number(e.target.value) : null
+                            setSelectedProjectClassificationId(value)
+                          }}
+                          className="form-select"
+                          disabled={!!isViewMode}
+                        >
+                          <option value="">Seleccione una clasificación</option>
+                          {projectClassifications.map((classification) => (
+                            <option key={classification.id_project_classification} value={classification.id_project_classification}>
+                              {classification.name || classification.code}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </>
+                )}
 
                 <div className="form-group full-width">
                   <label>
@@ -667,17 +1022,242 @@ export const ProjectForm = () => {
               <h3>Detalles Científicos</h3>
               <div className="form-grid">
                 <div className="form-group full-width">
-                  <label htmlFor="detallesCientificos">Detalles Científicos</label>
-                  <textarea
-                    id="detallesCientificos"
-                    name="detallesCientificos"
-                    value={formData.detallesCientificos}
+                  <label htmlFor="artState">Estado del Arte</label>
+                  <Input
+                    type="text"
+                    id="artState"
+                    name="artState"
+                    value={formData.artState}
                     onChange={handleChange}
-                    placeholder="Describa los detalles científicos del proyecto"
-                    rows={6}
+                    placeholder="Estado del arte del proyecto"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="problemaCientifico">Problema Científico</label>
+                  <textarea
+                    id="problemaCientifico"
+                    name="problemaCientifico"
+                    value={formData.problemaCientifico}
+                    onChange={handleChange}
+                    placeholder="Describa el problema científico"
+                    rows={4}
                     className="form-textarea"
                     disabled={isViewMode ? true : false}
                   />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="objetoEstudio">Objeto de Estudio</label>
+                  <textarea
+                    id="objetoEstudio"
+                    name="objetoEstudio"
+                    value={formData.objetoEstudio}
+                    onChange={handleChange}
+                    placeholder="Describa el objeto de estudio"
+                    rows={4}
+                    className="form-textarea"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="campoEstudio">Campo de Estudio</label>
+                  <Input
+                    type="text"
+                    id="campoEstudio"
+                    name="campoEstudio"
+                    value={formData.campoEstudio}
+                    onChange={handleChange}
+                    placeholder="Campo de estudio"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="hipotesis">Hipótesis</label>
+                  <Input
+                    type="text"
+                    id="hipotesis"
+                    name="hipotesis"
+                    value={formData.hipotesis}
+                    onChange={handleChange}
+                    placeholder="Hipótesis del proyecto"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="objetivoPrincipal">Objetivo Principal</label>
+                  <textarea
+                    id="objetivoPrincipal"
+                    name="objetivoPrincipal"
+                    value={formData.objetivoPrincipal}
+                    onChange={handleChange}
+                    placeholder="Objetivo principal del proyecto"
+                    rows={4}
+                    className="form-textarea"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="metodosInvestigacion">Métodos de Investigación</label>
+                  <Input
+                    type="text"
+                    id="metodosInvestigacion"
+                    name="metodosInvestigacion"
+                    value={formData.metodosInvestigacion}
+                    onChange={handleChange}
+                    placeholder="Métodos de investigación utilizados"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="terceroInteresado">Tercero Interesado</label>
+                  <Input
+                    type="text"
+                    id="terceroInteresado"
+                    name="terceroInteresado"
+                    value={formData.terceroInteresado}
+                    onChange={handleChange}
+                    placeholder="Tercero interesado en el proyecto"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="grupoNacional">Grupo Nacional</label>
+                  <Input
+                    type="text"
+                    id="grupoNacional"
+                    name="grupoNacional"
+                    value={formData.grupoNacional}
+                    onChange={handleChange}
+                    placeholder="Grupo nacional"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="grupoInternacional">Grupo Internacional</label>
+                  <Input
+                    type="text"
+                    id="grupoInternacional"
+                    name="grupoInternacional"
+                    value={formData.grupoInternacional}
+                    onChange={handleChange}
+                    placeholder="Grupo internacional"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="publicarRevista">Publicar en Revista</label>
+                  <Input
+                    type="text"
+                    id="publicarRevista"
+                    name="publicarRevista"
+                    value={formData.publicarRevista}
+                    onChange={handleChange}
+                    placeholder="Revista donde se publicará"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="participarEventos">Participar en Eventos</label>
+                  <Input
+                    type="text"
+                    id="participarEventos"
+                    name="participarEventos"
+                    value={formData.participarEventos}
+                    onChange={handleChange}
+                    placeholder="Eventos donde participará"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="codigoCITMA">Código CITMA</label>
+                  <Input
+                    type="text"
+                    id="codigoCITMA"
+                    name="codigoCITMA"
+                    value={formData.codigoCITMA}
+                    onChange={handleChange}
+                    placeholder="Código CITMA"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="codigoMINVEC">Código MINVEC</label>
+                  <Input
+                    type="text"
+                    id="codigoMINVEC"
+                    name="codigoMINVEC"
+                    value={formData.codigoMINVEC}
+                    onChange={handleChange}
+                    placeholder="Código MINVEC"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="fechaInicio">Fecha de Inicio</label>
+                  <Input
+                    type="date"
+                    id="fechaInicio"
+                    name="fechaInicio"
+                    value={formData.fechaInicio}
+                    onChange={handleChange}
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="fechaFin">Fecha de Fin</label>
+                  <Input
+                    type="date"
+                    id="fechaFin"
+                    name="fechaFin"
+                    value={formData.fechaFin}
+                    onChange={handleChange}
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label>Clasificación del Proyecto</label>
+                  <div className="checkbox-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="is_international"
+                        checked={formData.is_international}
+                        onChange={handleChange}
+                        disabled={!!isViewMode}
+                      />
+                      <span>Internacional</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="is_national"
+                        checked={formData.is_national}
+                        onChange={handleChange}
+                        disabled={!!isViewMode}
+                      />
+                      <span>Nacional</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="is_territorial"
+                        checked={formData.is_territorial}
+                        onChange={handleChange}
+                        disabled={!!isViewMode}
+                      />
+                      <span>Territorial</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="is_cujae"
+                        checked={formData.is_cujae}
+                        onChange={handleChange}
+                        disabled={!!isViewMode}
+                      />
+                      <span>CUJAE</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -785,6 +1365,63 @@ export const ProjectForm = () => {
             </div>
           )}
 
+          {(isSaved || isViewMode || isEditMode) && activeTab === "presupuesto" && (
+            <div className="form-section">
+              <h3>Presupuesto del Proyecto</h3>
+              <div className="form-grid">
+                <div className="form-group full-width">
+                  <label htmlFor="presupuestoEconomico">Presupuesto Económico</label>
+                  <Input
+                    type="text"
+                    id="presupuestoEconomico"
+                    name="presupuestoEconomico"
+                    value={formData.presupuestoEconomico}
+                    onChange={handleChange}
+                    placeholder="Presupuesto económico del proyecto"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label htmlFor="necesidadesEconomicas">Necesidades Económicas</label>
+                  <textarea
+                    id="necesidadesEconomicas"
+                    name="necesidadesEconomicas"
+                    value={formData.necesidadesEconomicas}
+                    onChange={handleChange}
+                    placeholder="Describa las necesidades económicas"
+                    rows={4}
+                    className="form-textarea"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="presupuestoGeneralCUP">Presupuesto General (CUP)</label>
+                  <Input
+                    type="text"
+                    id="presupuestoGeneralCUP"
+                    name="presupuestoGeneralCUP"
+                    value={formData.presupuestoGeneralCUP}
+                    onChange={handleChange}
+                    placeholder="Presupuesto general en CUP"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="presupuestoAnualCUP">Presupuesto Anual (CUP)</label>
+                  <Input
+                    type="text"
+                    id="presupuestoAnualCUP"
+                    name="presupuestoAnualCUP"
+                    value={formData.presupuestoAnualCUP}
+                    onChange={handleChange}
+                    placeholder="Presupuesto anual en CUP"
+                    disabled={isViewMode ? true : false}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {(isSaved || isViewMode || isEditMode) && activeTab === "criterio-consejo" && (
             <div className="form-section">
               <h3>Criterio del Consejo Científico</h3>
@@ -819,8 +1456,8 @@ export const ProjectForm = () => {
                     </Button>
                   </>
                 ) : (
-                  <Button type="button" onClick={handleSaveCompleteProject}>
-                    Guardar Proyecto Completo
+                  <Button type="button" onClick={handleSaveCompleteProject} disabled={isSubmitting}>
+                    {isSubmitting ? "Guardando..." : "Guardar Proyecto Completo"}
                   </Button>
                 )}
               </div>
@@ -853,3 +1490,4 @@ export const ProjectForm = () => {
     </div>
   )
 }
+

@@ -250,6 +250,7 @@ export const mockProjects: IProject[] = [
     descripcion: "Desarrollo de un sistema robótico colaborativo para aplicaciones de soldadura en la industria",
     responsable: mockUsers[4], // Luis Fernández
     tematica: "Robótica Industrial",
+    esPriorizado: true,
     programa: "Programa de Innovación Tecnológica",
     estaAprobado: true,
     estado: "activo",

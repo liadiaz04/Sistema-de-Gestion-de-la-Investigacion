@@ -24,8 +24,8 @@ const ProjectList: React.FC = () => {
     projectId: null,
   })
   const { user } = useAuthStore()
-  const isAdmin = user?.roles?.includes('admin') || false
-  const isResponsableProyecto = user?.roles?.includes('responsable_proyecto') || false
+  const isAdmin = user?.role?.includes('admin') || false
+  const isResponsableProyecto = user?.role?.includes('responsable_proyecto') || false
 
   const filteredProjects = projects.filter((project) => {
     const matchesSearch =

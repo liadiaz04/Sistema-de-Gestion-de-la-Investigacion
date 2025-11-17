@@ -9,20 +9,81 @@ import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import type { RecordType } from "../types"
-import { mockRecords, mockUsers, mockProjects } from "../services/mockData"
+import { mockRecords, mockProjects } from "../services/mockData"
 import "./RecordForm.css"
 import { useAuthStore } from "../stores/authStore"
+import {
+  recordMetadataService,
+  type CountryOption,
+  type IntegrantOption,
+  type NamedOption,
+} from "../services/record/recordMetadataService"
+import { recordService } from "../services/record/recordService"
+import type { ExternalAuthor, AuthorId } from "../types/record/types"
 
+type IntegrantSearchHook = {
+  term: string
+  setTerm: (value: string) => void
+  results: IntegrantOption[]
+  isLoading: boolean
+  error: string | null
+}
+
+const useIntegrantSearch = (): IntegrantSearchHook => {
+  const [term, setTerm] = useState("")
+  const [results, setResults] = useState<IntegrantOption[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    const searchValue = term.trim()
+    if (searchValue.length < 2) {
+      setResults([])
+      setError(null)
+      setIsLoading(false)
+      return () => {
+        isMounted = false
+      }
+    }
+
+    const handler = setTimeout(async () => {
+      try {
+        setIsLoading(true)
+        const data = await recordMetadataService.getIntegrants(searchValue)
+        if (isMounted) {
+          setResults(data)
+          setError(null)
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError((err as Error).message)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }, 400)
+
+    return () => {
+      isMounted = false
+      clearTimeout(handler)
+    }
+  }, [term])
+
+  return { term, setTerm, results, isLoading, error }
+}
 export const RecordForm = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { id } = useParams()
   
   const { user: currentUser } = useAuthStore()
-  const isAdmin = false
+  const isAdmin = currentUser?.role === "admin"
 
-  const isEditMode = id && location.pathname.includes("/edit")
-  const isViewMode = id && !location.pathname.includes("/edit")
+  const isEditMode = Boolean(id && location.pathname.includes("/edit"))
+  const isViewMode = Boolean(id && !location.pathname.includes("/edit"))
 
   const [recordType, setRecordType] = useState<RecordType>("articulo")
   const [isSaved, setIsSaved] = useState(false)
@@ -33,7 +94,6 @@ export const RecordForm = () => {
   const [authors, setAuthors] = useState<any[]>([])
   const [tutors, setTutors] = useState<any[]>([])
   const [associatedProjects, setAssociatedProjects] = useState<any[]>([])
-  const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [modalType, setModalType] = useState<"author" | "tutor">("author")
@@ -42,8 +102,33 @@ export const RecordForm = () => {
     apellidos: "",
     numeroIdentidad: "",
     entidad: "",
+    email: "",
   })
   const [projectSearch, setProjectSearch] = useState("")
+
+  const [countries, setCountries] = useState<CountryOption[]>([])
+  const [articleTypes, setArticleTypes] = useState<NamedOption[]>([])
+  const [normTypes, setNormTypes] = useState<NamedOption[]>([])
+  const [prizeTypes, setPrizeTypes] = useState<NamedOption[]>([])
+  const [thesisTypes, setThesisTypes] = useState<NamedOption[]>([])
+  const [encounterTypes, setEncounterTypes] = useState<NamedOption[]>([])
+  const [selectedCountryId, setSelectedCountryId] = useState<number | null>(null)
+  const [selectedArticleTypeId, setSelectedArticleTypeId] = useState<number | null>(null)
+  const [selectedNormTypeId, setSelectedNormTypeId] = useState<number | null>(null)
+  const [selectedPrizeTypeId, setSelectedPrizeTypeId] = useState<number | null>(null)
+  const [selectedThesisTypeId, setSelectedThesisTypeId] = useState<number | null>(null)
+  const [selectedEncounterTypeId, setSelectedEncounterTypeId] = useState<number | null>(null)
+  const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [isMetadataLoading, setIsMetadataLoading] = useState(true)
+  const [metadataReloadKey, setMetadataReloadKey] = useState(0)
+  const [externalAuthors, setExternalAuthors] = useState<any[]>([])
+  const [selectedAuthorIds, setSelectedAuthorIds] = useState<number[]>([])
+  const [selectedTutorIds, setSelectedTutorIds] = useState<number[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const authorSearch = useIntegrantSearch()
+  const tutorSearch = useIntegrantSearch()
 
   const [formData, setFormData] = useState({
     titulo: "",
@@ -53,6 +138,8 @@ export const RecordForm = () => {
     resumen: "",
     palabrasClave: "",
     pais: "Cuba",
+    tipoArticulo: "",
+    tipoNorma: "",
     // Artículo
     revista: "",
     baseDatos: "",
@@ -105,6 +192,8 @@ export const RecordForm = () => {
           resumen: record.resumen || "",
           palabrasClave: record.palabrasClave?.join(", ") || "",
           pais: record.pais || "Cuba",
+          tipoArticulo: "",
+          tipoNorma: "",
           revista: "",
           baseDatos: "",
           issn: "",
@@ -130,6 +219,69 @@ export const RecordForm = () => {
       }
     }
   }, [id])
+
+  useEffect(() => {
+    const loadMetadata = async () => {
+      try {
+        setIsMetadataLoading(true)
+        setMetadataError(null)
+        const [
+          countriesResponse,
+          prizeTypesResponse,
+          thesisTypesResponse,
+          articleTypesResponse,
+          normTypesResponse,
+          encounterTypesResponse,
+        ] = await Promise.all([
+          recordMetadataService.getCountries(),
+          recordMetadataService.getPrizeTypes(),
+          recordMetadataService.getThesisTypes(),
+          recordMetadataService.getArticleTypes(),
+          recordMetadataService.getNormTypes(),
+          recordMetadataService.getEncounterTypes(),
+        ])
+        setCountries(countriesResponse)
+        setPrizeTypes(prizeTypesResponse)
+        setThesisTypes(thesisTypesResponse)
+        setArticleTypes(articleTypesResponse)
+        setNormTypes(normTypesResponse)
+        setEncounterTypes(encounterTypesResponse)
+      } catch (error) {
+        setMetadataError((error as Error).message || "No se pudieron cargar los catálogos")
+      } finally {
+        setIsMetadataLoading(false)
+      }
+    }
+
+    loadMetadata()
+  }, [metadataReloadKey])
+
+  useEffect(() => {
+    if (!countries.length || selectedCountryId) {
+      return
+    }
+    const countryMatch = countries.find((country) => country.name === formData.pais)
+    if (countryMatch) {
+      setSelectedCountryId(countryMatch.id_country)
+      return
+    }
+    const fallbackCountry = countries[0]
+    if (fallbackCountry) {
+      setSelectedCountryId(fallbackCountry.id_country)
+      setFormData((prev) => ({
+        ...prev,
+        pais: fallbackCountry.name,
+      }))
+    }
+  }, [countries, formData.pais, selectedCountryId])
+
+  useEffect(() => {
+    setSelectedArticleTypeId(null)
+    setSelectedNormTypeId(null)
+    setSelectedPrizeTypeId(null)
+    setSelectedThesisTypeId(null)
+    setSelectedEncounterTypeId(null)
+  }, [recordType])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -159,37 +311,173 @@ export const RecordForm = () => {
     }
   }
 
-  const handleAddFromDirectory = (user: any) => {
-    const newPerson = {
-      id: `person-${Date.now()}`,
-      usuario: user,
-      nombre: user.nombre,
-      apellidos: user.apellidos,
-      esExterno: false,
-      esPrincipal: false,
-      orden: authors.length + 1,
+  const splitFullName = (fullName: string) => {
+    if (!fullName.trim()) {
+      return { firstName: fullName, lastName: "" }
     }
-    if (modalType === "author") {
+    const [firstName, ...rest] = fullName.trim().split(" ")
+    return {
+      firstName,
+      lastName: rest.join(" "),
+    }
+  }
+
+  const handleSelectIntegrant = (integrant: IntegrantOption, type: "author" | "tutor") => {
+    const alreadySelected =
+      type === "author"
+        ? selectedAuthorIds.includes(integrant.id_integrant)
+        : selectedTutorIds.includes(integrant.id_integrant)
+
+    if (alreadySelected) {
+      setSuccessMessage(
+        type === "author"
+          ? "Este integrante ya forma parte de los autores"
+          : "Este integrante ya está registrado como tutor"
+      )
+      setShowSuccessDialog(true)
+      return
+    }
+
+    const { firstName, lastName } = splitFullName(integrant.name)
+    const newPerson = {
+      id: `${type}-${integrant.id_integrant}-${Date.now()}`,
+      integrantId: integrant.id_integrant,
+      usuario: {
+        id: integrant.id_integrant,
+        nombre: firstName,
+        apellidos: lastName,
+        correoElectronico: integrant.email,
+        lugarTrabajo: integrant.work_center,
+        esExterno: false,
+      },
+      nombre: firstName,
+      apellidos: lastName,
+      esExterno: false,
+      esPrincipal: type === "author" ? authors.length === 0 : false,
+      orden: type === "author" ? authors.length + 1 : tutors.length + 1,
+    }
+
+    if (type === "author") {
       setAuthors([...authors, newPerson])
-      setSuccessMessage("Autor agregado con éxito")
+      setSelectedAuthorIds([...selectedAuthorIds, integrant.id_integrant])
     } else {
       setTutors([...tutors, newPerson])
-      setSuccessMessage("Tutor agregado con éxito")
+      setSelectedTutorIds([...selectedTutorIds, integrant.id_integrant])
     }
-    setShowDirectoryModal(false)
+
+    setSuccessMessage(type === "author" ? "Autor agregado con éxito" : "Tutor agregado con éxito")
     setShowSuccessDialog(true)
+  }
+
+  const handleCountryChange = (value: string) => {
+    if (!value) {
+      setSelectedCountryId(null)
+      setFormData((prev) => ({
+        ...prev,
+        pais: "",
+      }))
+      return
+    }
+    const parsedId = Number(value)
+    setSelectedCountryId(parsedId)
+    const selectedCountry = countries.find((country) => country.id_country === parsedId)
+    setFormData((prev) => ({
+      ...prev,
+      pais: selectedCountry ? selectedCountry.name : "",
+    }))
+  }
+
+  const handleThesisTypeChange = (value: string) => {
+    const parsedId = value ? Number(value) : null
+    setSelectedThesisTypeId(parsedId)
+    const selectedType = thesisTypes.find((type) => type.id === parsedId)
+    setFormData((prev) => ({
+      ...prev,
+      tipoTesis: selectedType ? selectedType.name : "",
+    }))
+  }
+
+  const handlePrizeTypeChange = (value: string) => {
+    const parsedId = value ? Number(value) : null
+    setSelectedPrizeTypeId(parsedId)
+    const selectedType = prizeTypes.find((type) => type.id === parsedId)
+    setFormData((prev) => ({
+      ...prev,
+      tipoPremio: selectedType ? selectedType.name : "",
+    }))
+  }
+
+  const handleEncounterTypeChange = (value: string) => {
+    const parsedId = value ? Number(value) : null
+    setSelectedEncounterTypeId(parsedId)
+    const selectedType = encounterTypes.find((type) => type.id === parsedId)
+    setFormData((prev) => ({
+      ...prev,
+      tipoEvento: selectedType ? selectedType.name : "",
+    }))
+  }
+
+  const handleSelectArticleType = (option: NamedOption) => {
+    setSelectedArticleTypeId(option.id)
+    setFormData((prev) => ({
+      ...prev,
+      tipoArticulo: option.name,
+    }))
+  }
+
+  const handleSelectNormType = (option: NamedOption) => {
+    setSelectedNormTypeId(option.id)
+    setFormData((prev) => ({
+      ...prev,
+      tipoNorma: option.name,
+    }))
+  }
+
+  const renderAutocompleteList = (
+    inputValue: string,
+    options: NamedOption[],
+    onSelect: (option: NamedOption) => void
+  ) => {
+    if (!inputValue.trim() || isViewMode) {
+      return null
+    }
+    const matches = options
+      .filter((option) => option.name.toLowerCase().includes(inputValue.toLowerCase()))
+      .slice(0, 6)
+
+    if (!matches.length) {
+      return null
+    }
+
+    return (
+      <ul className="absolute left-0 top-full z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg">
+        {matches.map((option) => (
+          <li key={option.id}>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100"
+              onMouseDown={() => onSelect(option)}
+            >
+              {option.name}
+            </button>
+          </li>
+        ))}
+      </ul>
+    )
   }
 
   const handleAddExternal = (e: React.FormEvent) => {
     e.preventDefault()
     const newPerson = {
       id: `external-${Date.now()}`,
+      integrantId: null,
       usuario: {
         id: `external-${Date.now()}`,
         nombre: externalPerson.nombre,
         apellidos: externalPerson.apellidos,
         numeroIdentidad: externalPerson.numeroIdentidad,
         entidad: externalPerson.entidad,
+        correoElectronico: externalPerson.email,
         esExterno: true,
       },
       nombre: externalPerson.nombre,
@@ -200,22 +488,34 @@ export const RecordForm = () => {
     }
     if (modalType === "author") {
       setAuthors([...authors, newPerson])
+      setExternalAuthors([...externalAuthors, newPerson])
       setSuccessMessage("Autor externo agregado con éxito")
     } else {
       setTutors([...tutors, newPerson])
       setSuccessMessage("Tutor externo agregado con éxito")
     }
     setShowExternalModal(false)
-    setExternalPerson({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "" })
+    setExternalPerson({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
     setShowSuccessDialog(true)
   }
 
   const handleRemoveAuthor = (authorId: string) => {
+    const authorToRemove = authors.find((author) => author.id === authorId)
     setAuthors(authors.filter((a) => a.id !== authorId))
+    if (authorToRemove?.integrantId) {
+      setSelectedAuthorIds((prev) => prev.filter((value) => value !== authorToRemove.integrantId))
+    }
+    if (authorToRemove?.esExterno) {
+      setExternalAuthors((prev) => prev.filter((external) => external.id !== authorId))
+    }
   }
 
   const handleRemoveTutor = (tutorId: string) => {
+    const tutorToRemove = tutors.find((tutor) => tutor.id === tutorId)
     setTutors(tutors.filter((t) => t.id !== tutorId))
+    if (tutorToRemove?.integrantId) {
+      setSelectedTutorIds((prev) => prev.filter((value) => value !== tutorToRemove.integrantId))
+    }
   }
 
   const handleAssociateProject = (project: any) => {
@@ -231,35 +531,279 @@ export const RecordForm = () => {
     setAssociatedProjects(associatedProjects.filter((p) => p.id !== projectId))
   }
 
-  const handleSaveCompleteRecord = () => {
-    const newRecord = {
-      id: `record-${Date.now()}`,
-      titulo: formData.titulo,
-      descripcion: formData.descripcion,
-      tipo: recordType,
-      año: formData.año,
-      mes: formData.mes,
-      resumen: formData.resumen,
-      palabrasClave: formData.palabrasClave.split(",").map((k) => k.trim()),
-      pais: formData.pais,
-      fechaReporte: new Date().toISOString(),
-      autores: authors.map((a) => ({
-        id: a.id,
-        usuario: a.usuario,
-        nombre: a.nombre,
-        apellidos: a.apellidos,
-        esExterno: a.esExterno,
-        esPrincipal: a.esPrincipal,
-        orden: a.orden,
-      })),
-      proyectosAsociados: associatedProjects.map((p) => p.id),
+  // Helper para construir author_ids (IDs de integrantes + objetos de autores externos)
+  const buildAuthorIds = (): AuthorId[] => {
+    const authorIds: AuthorId[] = []
+    
+    // Agregar IDs de integrantes CUJAE
+    selectedAuthorIds.forEach((id) => {
+      authorIds.push(id)
+    })
+    
+    // Agregar objetos de autores externos
+    externalAuthors.forEach((external) => {
+      const externalAuthor: ExternalAuthor = {
+        name: `${external.nombre} ${external.apellidos}`,
+        work_center: external.usuario?.entidad || "",
+        email: external.usuario?.correoElectronico || "",
+        id_country: selectedCountryId || 1, // Usar país seleccionado o default
+      }
+      authorIds.push(externalAuthor)
+    })
+    
+    return authorIds
+  }
+
+  // Helper para formatear fecha (YYYY-MM-DD)
+  const formatDate = (year: number, month: number): string => {
+    return `${year}-${String(month).padStart(2, "0")}-01`
+  }
+
+  // Helper para convertir string vacío a null
+  const toNullIfEmpty = (value: string | null | undefined): string | null => {
+    return value && value.trim() ? value.trim() : null
+  }
+
+  // Helper para convertir string a boolean
+  const toBoolean = (value: string | boolean | undefined): boolean => {
+    if (typeof value === "boolean") return value
+    if (typeof value === "string") {
+      return value === "true" || value === "concedida" || value === "terminado" || value === "registrado"
     }
-    mockRecords.push(newRecord as any)
-    setSuccessMessage("Registro científico guardado con éxito")
-    setShowSuccessDialog(true)
-    setTimeout(() => {
-      navigate("/records")
-    }, 1500)
+    return false
+  }
+
+  const handleSaveCompleteRecord = async () => {
+    try {
+      setIsSubmitting(true)
+      setSubmitError(null)
+
+      const authorIds = buildAuthorIds()
+      const keywords = toNullIfEmpty(formData.palabrasClave)
+      const resume = toNullIfEmpty(formData.resumen)
+      const onlyDate = formatDate(formData.año, formData.mes)
+      const reportDate = new Date().toISOString().split("T")[0]
+
+      switch (recordType) {
+        case "articulo": {
+          const payload = {
+            title: formData.titulo,
+            journal: formData.revista,
+            voulume: formData.volumen || "",
+            pages: formData.paginas || "",
+            author_ids: authorIds,
+            number: toNullIfEmpty(formData.numero),
+            keywords,
+            doi: toNullIfEmpty(formData.doi),
+            resume,
+            id_article_type: selectedArticleTypeId,
+            report_date: reportDate,
+            issn: toNullIfEmpty(formData.issn),
+            id_country: selectedCountryId,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+            published: true,
+          }
+          await recordService.createArticle(payload)
+          break
+        }
+        case "libro": {
+          const payload = {
+            title: formData.titulo,
+            chapter_title: formData.descripcion || "",
+            author_ids: authorIds,
+            editor: formData.editorial || "",
+            voulume: formData.volumen || "",
+            number: toNullIfEmpty(formData.numero),
+            series: null,
+            pages: toNullIfEmpty(formData.paginas),
+            publisher: formData.editorial || "",
+            keywords,
+            resume,
+            isbn: toNullIfEmpty(formData.isbn),
+            report_date: reportDate,
+            id_country: selectedCountryId,
+            is_chapter: false,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+          }
+          await recordService.createBook(payload)
+          break
+        }
+        case "monografia": {
+          const payload = {
+            title: formData.titulo,
+            isbn: formData.isbn || "",
+            pages: formData.paginas || "",
+            author_ids: authorIds,
+            number: toNullIfEmpty(formData.numero),
+            month: toNullIfEmpty(String(formData.mes)),
+            keywords,
+            resume,
+            cenda: formData.registroCENDA || "",
+            report_date: reportDate,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_country: selectedCountryId,
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+          }
+          await recordService.createMonograph(payload)
+          break
+        }
+        case "norma": {
+          const payload = {
+            title: formData.titulo,
+            registration_number: formData.numeroRegistro || "",
+            pages: formData.paginas || "",
+            author_ids: authorIds,
+            keywords,
+            resume,
+            id_norm_type: selectedNormTypeId,
+            report_date: reportDate,
+            id_country: selectedCountryId,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+          }
+          await recordService.createNorm(payload)
+          break
+        }
+        case "patente": {
+          const payload = {
+            title: formData.titulo,
+            reg_number: formData.numeroRegistro || "",
+            yearfiled: String(formData.año),
+            author_ids: authorIds,
+            language: null,
+            assignee: "",
+            monthfield: toNullIfEmpty(String(formData.mes)),
+            keywords,
+            resume,
+            report_date: reportDate,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_country: selectedCountryId,
+            is_conceded: toBoolean(formData.estado),
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+          }
+          await recordService.createPatent(payload)
+          break
+        }
+        case "software": {
+          const payload = {
+            title: formData.titulo,
+            number: formData.registroCENDA || "",
+            yearfiled: String(formData.año),
+            author_ids: authorIds,
+            language: null,
+            assignee: "",
+            monthfield: toNullIfEmpty(String(formData.mes)),
+            keywords,
+            resume,
+            report_date: reportDate,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_country: selectedCountryId,
+            is_conceded: toBoolean(formData.estado),
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            is_multimedia: false,
+            id_group: null,
+          }
+          await recordService.createSoftware(payload)
+          break
+        }
+        case "evento": {
+          const payload = {
+            title: formData.titulo,
+            encounter_name: formData.nombreEvento || "",
+            author_ids: authorIds,
+            keywords,
+            resume,
+            id_encounter_type: selectedEncounterTypeId,
+            report_date: reportDate,
+            isbn: null,
+            city: null,
+            issn: null,
+            organizer: formData.organizador || "",
+            id_country: selectedCountryId,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+          }
+          await recordService.createEvent(payload)
+          break
+        }
+        case "premio": {
+          const payload = {
+            title: formData.titulo,
+            grant_institution: formData.institucion || "",
+            author_ids: authorIds,
+            keywords,
+            resume,
+            id_prize_type: selectedPrizeTypeId,
+            report_date: reportDate,
+            id_country: selectedCountryId,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+          }
+          await recordService.createPrize(payload)
+          break
+        }
+        case "tesis": {
+          const payload = {
+            title: formData.titulo,
+            institution: formData.institucion || "",
+            author_ids: authorIds,
+            tutor_ids: selectedTutorIds,
+            keywords,
+            resume,
+            id_thesis_type: selectedThesisTypeId,
+            report_date: reportDate,
+            id_country: selectedCountryId,
+            month_only: formData.mes,
+            year_only: formData.año,
+            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
+            only_date: onlyDate,
+            id_group: null,
+          }
+          await recordService.createThesis(payload)
+          break
+        }
+        default:
+          throw new Error("Tipo de registro no válido")
+      }
+
+      setSuccessMessage("Registro científico guardado con éxito")
+      setShowSuccessDialog(true)
+      setTimeout(() => {
+        navigate("/records")
+      }, 1500)
+    } catch (error) {
+      const errorMessage = (error as Error).message || "Error al guardar el registro"
+      setSubmitError(errorMessage)
+      setSuccessMessage(errorMessage)
+      setShowSuccessDialog(true)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleUpdateRecord = () => {
@@ -285,6 +829,14 @@ export const RecordForm = () => {
           esPrincipal: a.esPrincipal,
           orden: a.orden,
         })),
+        metadata: {
+          countryId: selectedCountryId,
+          articleTypeId: selectedArticleTypeId,
+          normTypeId: selectedNormTypeId,
+          prizeTypeId: selectedPrizeTypeId,
+          thesisTypeId: selectedThesisTypeId,
+          encounterTypeId: selectedEncounterTypeId,
+        },
       }
       setSuccessMessage("Registro actualizado con éxito")
       setShowSuccessDialog(true)
@@ -322,6 +874,22 @@ export const RecordForm = () => {
                 required
                 disabled={isViewMode ? true : false}
               />
+            </div>
+            <div className="form-group relative">
+              <label htmlFor="tipoArticulo">Tipo de Artículo</label>
+              <Input
+                id="tipoArticulo"
+                name="tipoArticulo"
+                type="text"
+                value={formData.tipoArticulo}
+                onChange={(event) => {
+                  setSelectedArticleTypeId(null)
+                  handleChange(event)
+                }}
+                placeholder="Ej: Investigativo, Opinión..."
+                disabled={isViewMode}
+              />
+              {renderAutocompleteList(formData.tipoArticulo, articleTypes, handleSelectArticleType)}
             </div>
             <div className="form-group">
               <label htmlFor="baseDatos">Base de Datos</label>
@@ -437,6 +1005,52 @@ export const RecordForm = () => {
             </div>
           </>
         )
+      case "norma":
+        return (
+          <>
+            <div className="form-group">
+              <label htmlFor="numeroRegistro">
+                Número de Registro <span className="required">*</span>
+              </label>
+              <Input
+                id="numeroRegistro"
+                name="numeroRegistro"
+                type="text"
+                value={formData.numeroRegistro}
+                onChange={handleChange}
+                required
+                disabled={isViewMode}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="paginas">Páginas</label>
+              <Input
+                id="paginas"
+                name="paginas"
+                type="text"
+                value={formData.paginas}
+                onChange={handleChange}
+                disabled={isViewMode}
+              />
+            </div>
+            <div className="form-group relative">
+              <label htmlFor="tipoNorma">Tipo de Norma</label>
+              <Input
+                id="tipoNorma"
+                name="tipoNorma"
+                type="text"
+                value={formData.tipoNorma}
+                onChange={(event) => {
+                  setSelectedNormTypeId(null)
+                  handleChange(event)
+                }}
+                placeholder="Seleccione desde la lista sugerida"
+                disabled={isViewMode}
+              />
+              {renderAutocompleteList(formData.tipoNorma, normTypes, handleSelectNormType)}
+            </div>
+          </>
+        )
       case "tesis":
         return (
           <div className="form-group">
@@ -456,15 +1070,17 @@ export const RecordForm = () => {
             <select
               id="tipoTesis"
               name="tipoTesis"
-              value={formData.tipoTesis}
-              onChange={handleChange}
+              value={selectedThesisTypeId ?? ""}
+              onChange={(event) => handleThesisTypeChange(event.target.value)}
               required
               className="form-select"
             >
               <option value="">Seleccione tipo</option>
-              <option value="licenciatura">Licenciatura</option>
-              <option value="maestria">Maestría</option>
-              <option value="doctorado">Doctorado</option>
+              {thesisTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))}
             </select>
             )}
           </div>
@@ -582,15 +1198,31 @@ export const RecordForm = () => {
             </div>
             <div className="form-group">
               <label htmlFor="tipoEvento">Tipo de Evento</label>
-              <Input
-                id="tipoEvento"
-                name="tipoEvento"
-                type="text"
-                value={formData.tipoEvento}
-                onChange={handleChange}
-                placeholder="Ej: Congreso, Simposio"
-                disabled={isViewMode ? true : false}
-              />
+              {isViewMode ? (
+                <Input
+                  id="tipoEvento"
+                  name="tipoEvento"
+                  type="text"
+                  value={formData.tipoEvento}
+                  onChange={handleChange}
+                  disabled
+                />
+              ) : (
+                <select
+                  id="tipoEvento"
+                  name="tipoEvento"
+                  value={selectedEncounterTypeId ?? ""}
+                  onChange={(event) => handleEncounterTypeChange(event.target.value)}
+                  className="form-select"
+                >
+                  <option value="">Seleccione tipo</option>
+                  {encounterTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </>
         )
@@ -599,14 +1231,31 @@ export const RecordForm = () => {
           <>
             <div className="form-group">
               <label htmlFor="tipoPremio">Tipo de Premio</label>
-              <Input
-                id="tipoPremio"
-                name="tipoPremio"
-                type="text"
-                value={formData.tipoPremio}
-                onChange={handleChange}
-                disabled={isViewMode ? true : false}
-              />
+              {isViewMode ? (
+                <Input
+                  id="tipoPremio"
+                  name="tipoPremio"
+                  type="text"
+                  value={formData.tipoPremio}
+                  onChange={handleChange}
+                  disabled
+                />
+              ) : (
+                <select
+                  id="tipoPremio"
+                  name="tipoPremio"
+                  value={selectedPrizeTypeId ?? ""}
+                  onChange={(event) => handlePrizeTypeChange(event.target.value)}
+                  className="form-select"
+                >
+                  <option value="">Seleccione tipo</option>
+                  {prizeTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="form-group">
               <label htmlFor="institucion">Institución que Otorga</label>
@@ -633,6 +1282,31 @@ export const RecordForm = () => {
     { id: "proyectos", label: "Proyectos Asociados" },
   ]
 
+  if (isMetadataLoading) {
+    return (
+      <div className="record-form">
+        <Card>
+          <p>Cargando catálogos iniciales...</p>
+        </Card>
+      </div>
+    )
+  }
+
+  if (metadataError) {
+    return (
+      <div className="record-form">
+        <Card>
+          <p className="error-message">{metadataError}</p>
+          <div className="form-actions">
+            <Button type="button" onClick={() => setMetadataReloadKey((prev) => prev + 1)}>
+              Reintentar carga
+            </Button>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="record-form">
       {showSuccessDialog && (
@@ -644,34 +1318,6 @@ export const RecordForm = () => {
           </div>
         </div>
       )}
-
-      <Modal
-        isOpen={showDirectoryModal}
-        onClose={() => setShowDirectoryModal(false)}
-        title={`Agregar ${modalType === "author" ? "Autor" : "Tutor"} desde Directorio CUJAE`}
-      >
-        <div className="modal-content">
-          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE</p>
-          <div className="directory-list">
-            {mockUsers.length === 0 ? (
-              <p className="empty-state">No hay usuarios disponibles en el directorio</p>
-            ) : (
-              mockUsers.map((user) => (
-                <div key={user.id} className="directory-item">
-                  <div className="directory-item-info">
-                    <strong>{`${user.nombre} ${user.apellidos}`}</strong>
-                    <span>{user.facultad}</span>
-                    <span>{user.correoElectronico}</span>
-                  </div>
-                  <Button size="sm" onClick={() => handleAddFromDirectory(user)}>
-                    Agregar
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </Modal>
 
       <Modal
         isOpen={showExternalModal}
@@ -710,6 +1356,15 @@ export const RecordForm = () => {
               onChange={(e) => setExternalPerson({ ...externalPerson, entidad: e.target.value })}
               placeholder="Ej: Universidad de La Habana"
               required
+            />
+          </div>
+          <div className="form-group">
+            <label>Correo Electrónico</label>
+            <Input
+              type="email"
+              value={externalPerson.email}
+              onChange={(e) => setExternalPerson({ ...externalPerson, email: e.target.value })}
+              placeholder="ejemplo@universidad.edu"
             />
           </div>
           <div className="modal-actions">
@@ -870,14 +1525,25 @@ export const RecordForm = () => {
 
                   <div className="form-group">
                     <label htmlFor="pais">País</label>
-                    <Input
-                      id="pais"
-                      name="pais"
-                      type="text"
-                      value={formData.pais}
-                      onChange={handleChange}
-                      disabled={isViewMode ? true : false}
-                    />
+                    {isViewMode ? (
+                      <Input id="pais" name="pais" type="text" value={formData.pais} onChange={handleChange} disabled />
+                    ) : (
+                      <select
+                        id="pais"
+                        name="pais"
+                        value={selectedCountryId ?? ""}
+                        onChange={(event) => handleCountryChange(event.target.value)}
+                        className="form-select"
+                        disabled={countries.length === 0}
+                      >
+                        <option value="">Seleccione un país</option>
+                        {countries.map((country) => (
+                          <option key={country.id_country} value={country.id_country}>
+                            {country.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 </div>
               </div>
@@ -934,39 +1600,73 @@ export const RecordForm = () => {
           {(isSaved || isViewMode || isEditMode) && activeTab === "autores" && (
             <div className="form-section">
               <div className="tab-header">
-              <h3>Autores del Registro</h3>
+                <h3>Autores del Registro</h3>
                 {!isViewMode && (
                   <div className="tab-actions">
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => {
-                        if (mockUsers.length === 0) {
-                          setSuccessMessage("No hay usuarios disponibles en el directorio")
-                          setShowSuccessDialog(true)
-                          return
-                        }
-                        setModalType("author")
-                        setShowDirectoryModal(true)
-                      }}
-                    >
-                  Agregar Autor del Directorio CUJAE
-                </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
+                      aria-label="Agregar autor externo"
                       onClick={() => {
                         setModalType("author")
                         setShowExternalModal(true)
                       }}
                     >
-                  Agregar Autor Externo
-                </Button>
-              </div>
+                      Registrar Autor Externo
+                    </Button>
+                  </div>
                 )}
               </div>
+
+              {!isViewMode && (
+                <div className="form-group full-width">
+                  <label htmlFor="authorSearch">Buscar integrante CUJAE</label>
+                  <Input
+                    id="authorSearch"
+                    name="authorSearch"
+                    type="text"
+                    value={authorSearch.term}
+                    onChange={(event) => authorSearch.setTerm(event.target.value)}
+                    placeholder="Escribe un nombre, correo o centro de trabajo"
+                    aria-label="Campo para buscar integrantes"
+                  />
+                  <small className="form-hint">
+                    Filtramos automáticamente contra el directorio en línea y puedes seleccionar los resultados.
+                  </small>
+                </div>
+              )}
+
+              {!isViewMode && (
+                <div className="record-list">
+                  {authorSearch.isLoading ? (
+                    <p className="empty-state">Buscando integrantes...</p>
+                  ) : authorSearch.error ? (
+                    <p className="error-message">{authorSearch.error}</p>
+                  ) : authorSearch.results.length === 0 ? (
+                    <p className="empty-state">Escribe al menos 2 caracteres para obtener coincidencias</p>
+                  ) : (
+                    authorSearch.results.map((integrant) => (
+                      <div key={integrant.id_integrant} className="record-item">
+                        <div className="record-item-info">
+                          <strong>{integrant.name}</strong>
+                          <span>{integrant.email || "Sin correo"}</span>
+                          <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          aria-label={`Agregar ${integrant.name} como autor`}
+                          onClick={() => handleSelectIntegrant(integrant, "author")}
+                        >
+                          Agregar
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
               {authors.length === 0 ? (
-              <p className="empty-state">No hay autores agregados aún</p>
+                <p className="empty-state">No hay autores agregados aún</p>
               ) : (
                 <div className="members-table">
                   <table>
@@ -1002,45 +1702,90 @@ export const RecordForm = () => {
                   </table>
                 </div>
               )}
+
+              {externalAuthors.length > 0 && (
+                <div className="external-authors">
+                  <h4>Autores externos registrados</h4>
+                  <ul>
+                    {externalAuthors.map((author) => (
+                      <li key={author.id}>{`${author.nombre} ${author.apellidos} - ${
+                        author.usuario?.entidad || "Sin entidad"
+                      }`}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
           {(isSaved || isViewMode || isEditMode) && activeTab === "tutores" && recordType === "tesis" && (
             <div className="form-section">
               <div className="tab-header">
-              <h3>Tutores de la Tesis</h3>
+                <h3>Tutores de la Tesis</h3>
                 {!isViewMode && (
                   <div className="tab-actions">
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => {
-                        if (mockUsers.length === 0) {
-                          setSuccessMessage("No hay usuarios disponibles en el directorio")
-                          setShowSuccessDialog(true)
-                          return
-                        }
-                        setModalType("tutor")
-                        setShowDirectoryModal(true)
-                      }}
-                    >
-                  Agregar Tutor del Directorio CUJAE
-                </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
+                      aria-label="Agregar tutor externo"
                       onClick={() => {
                         setModalType("tutor")
                         setShowExternalModal(true)
                       }}
                     >
-                  Agregar Tutor Externo
-                </Button>
-              </div>
+                      Registrar Tutor Externo
+                    </Button>
+                  </div>
                 )}
               </div>
+
+              {!isViewMode && (
+                <div className="form-group full-width">
+                  <label htmlFor="tutorSearch">Buscar integrante tutor</label>
+                  <Input
+                    id="tutorSearch"
+                    name="tutorSearch"
+                    type="text"
+                    value={tutorSearch.term}
+                    onChange={(event) => tutorSearch.setTerm(event.target.value)}
+                    placeholder="Escribe para buscar potenciales tutores"
+                    aria-label="Campo para buscar tutores"
+                  />
+                  <small className="form-hint">Agrega tutores oficiales desde el directorio institucional.</small>
+                </div>
+              )}
+
+              {!isViewMode && (
+                <div className="record-list">
+                  {tutorSearch.isLoading ? (
+                    <p className="empty-state">Buscando tutores...</p>
+                  ) : tutorSearch.error ? (
+                    <p className="error-message">{tutorSearch.error}</p>
+                  ) : tutorSearch.results.length === 0 ? (
+                    <p className="empty-state">Escribe al menos 2 caracteres para listar tutores</p>
+                  ) : (
+                    tutorSearch.results.map((integrant) => (
+                      <div key={integrant.id_integrant} className="record-item">
+                        <div className="record-item-info">
+                          <strong>{integrant.name}</strong>
+                          <span>{integrant.email || "Sin correo"}</span>
+                          <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          aria-label={`Agregar ${integrant.name} como tutor`}
+                          onClick={() => handleSelectIntegrant(integrant, "tutor")}
+                        >
+                          Agregar
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
               {tutors.length === 0 ? (
-              <p className="empty-state">No hay tutores agregados aún</p>
+                <p className="empty-state">No hay tutores agregados aún</p>
               ) : (
                 <div className="members-table">
                   <table>
@@ -1147,8 +1892,9 @@ export const RecordForm = () => {
       {isSaved && !isViewMode && !isEditMode && (
         <Card>
           <div className="form-actions">
-            <Button type="button" onClick={handleSaveCompleteRecord}>
-              Guardar Registro Completo
+            {submitError && <p className="error-message">{submitError}</p>}
+            <Button type="button" onClick={handleSaveCompleteRecord} disabled={isSubmitting}>
+              {isSubmitting ? "Guardando..." : "Guardar Registro Completo"}
             </Button>
           </div>
         </Card>

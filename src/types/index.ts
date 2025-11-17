@@ -134,7 +134,7 @@ export interface IProject {
   id: string
   nombre: string
   descripcion: string
-  responsable: IUser | undefined // Made responsable optional to fix TypeScript error
+  responsable: IUser  // Made responsable optional to fix TypeScript error
   tematica: string
   programa: string
   tipoProyecto?: string // New field for project type
@@ -213,6 +213,7 @@ export interface IRecord {
   palabrasClave?: string[]
   pais?: string
   archivoAdjunto?: string
+  metadata?: Record<string, number | null>
 }
 
 export interface IArticle extends IRecord {

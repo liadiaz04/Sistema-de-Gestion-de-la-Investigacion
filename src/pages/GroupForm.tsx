@@ -9,15 +9,74 @@ import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import "./GroupForm.css"
-import { mockUsers, mockGroups } from "../services/mockData"
-import { useAuthStore } from "../stores/authStore"
-import type { IGroup, IUser } from "../types/index"
+import { mockGroups } from "../services/mockData"
+import type { IUser } from "../types/index"
+import {
+  recordMetadataService,
+  type FacultyOption,
+  type FacultyAreaOption,
+  type IntegrantOption,
+} from "../services/record/recordMetadataService"
+import { groupService } from "../services/groupService"
+
+type IntegrantSearchHook = {
+  term: string
+  setTerm: (value: string) => void
+  results: IntegrantOption[]
+  isLoading: boolean
+  error: string | null
+}
+
+const useIntegrantSearch = (): IntegrantSearchHook => {
+  const [term, setTerm] = useState("")
+  const [results, setResults] = useState<IntegrantOption[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    const searchValue = term.trim()
+    if (searchValue.length < 2) {
+      setResults([])
+      setError(null)
+      setIsLoading(false)
+      return () => {
+        isMounted = false
+      }
+    }
+
+    const handler = setTimeout(async () => {
+      try {
+        setIsLoading(true)
+        const data = await recordMetadataService.getIntegrants(searchValue)
+        if (isMounted) {
+          setResults(data)
+          setError(null)
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError((err as Error).message)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }, 400)
+
+    return () => {
+      isMounted = false
+      clearTimeout(handler)
+    }
+  }, [term])
+
+  return { term, setTerm, results, isLoading, error }
+}
 
 export const GroupForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
-  const { user } = useAuthStore()
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
@@ -27,6 +86,13 @@ export const GroupForm = () => {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
   const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "evaluaciones">("datos")
+
+  const [faculties, setFaculties] = useState<FacultyOption[]>([])
+  const [facultyAreas, setFacultyAreas] = useState<FacultyAreaOption[]>([])
+  const [selectedFacultyId, setSelectedFacultyId] = useState<number | null>(null)
+  const [selectedFacultyAreaId, setSelectedFacultyAreaId] = useState<number | null>(null)
+  const [isMetadataLoading, setIsMetadataLoading] = useState(true)
+  const [metadataError, setMetadataError] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -38,22 +104,51 @@ export const GroupForm = () => {
   })
 
   const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
+  const [selectedResponsableId, setSelectedResponsableId] = useState<number | null>(null)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
+  const responsableSearch = useIntegrantSearch()
 
   const [members, setMembers] = useState<any[]>([])
-  const [evaluations, setEvaluations] = useState<Record<string, { evaluacion: string; descripcion: string }>>({})
+  const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([])
+  const [externalMembers, setExternalMembers] = useState<any[]>([])
   const [selectedMember, setSelectedMember] = useState<any>(null)
 
   const [showModifyMemberModal, setShowModifyMemberModal] = useState(false)
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
+  const memberSearch = useIntegrantSearch()
 
   const [externalMember, setExternalMember] = useState({
     nombre: "",
     apellidos: "",
     numeroIdentidad: "",
     entidad: "",
+    email: "",
   })
+
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadMetadata = async () => {
+      try {
+        setIsMetadataLoading(true)
+        setMetadataError(null)
+        const [facultiesResponse, areasResponse] = await Promise.all([
+          recordMetadataService.getFaculties(),
+          recordMetadataService.getFacultyAreas(),
+        ])
+        setFaculties(facultiesResponse)
+        setFacultyAreas(areasResponse)
+      } catch (error) {
+        setMetadataError((error as Error).message || "No se pudieron cargar los catálogos")
+      } finally {
+        setIsMetadataLoading(false)
+      }
+    }
+
+    loadMetadata()
+  }, [])
 
   useEffect(() => {
     if (id) {
@@ -75,6 +170,75 @@ export const GroupForm = () => {
       }
     }
   }, [id])
+
+  // Filtrar áreas por facultad seleccionada
+  const filteredFacultyAreas = facultyAreas.filter((area) => area.id_faculty === selectedFacultyId)
+
+  const handleFacultyChange = (facultyId: string) => {
+    const id = facultyId ? Number(facultyId) : null
+    setSelectedFacultyId(id)
+    setSelectedFacultyAreaId(null)
+    const faculty = faculties.find((f) => f.id_faculty === id)
+    setFormData({ ...formData, facultad: faculty?.name || "", area: "" })
+  }
+
+  const handleFacultyAreaChange = (areaId: string) => {
+    const id = areaId ? Number(areaId) : null
+    setSelectedFacultyAreaId(id)
+    const area = facultyAreas.find((a) => a.id_faculty_area === id)
+    setFormData({ ...formData, area: area?.name || "" })
+  }
+
+  const handleSelectResponsableIntegrant = (integrant: IntegrantOption) => {
+    setSelectedResponsableId(integrant.id_integrant)
+    setSelectedResponsable({
+      id: String(integrant.id_integrant),
+      nombre: integrant.name.split(" ")[0] || "",
+      apellidos: integrant.name.split(" ").slice(1).join(" ") || "",
+      correoElectronico: integrant.email || "",
+      nombreUsuario: "",
+      numeroIdentidad: "",
+      roles: [],
+      esExterno: false,
+      esAdministrador: false,
+    } as IUser)
+    setShowResponsableModal(false)
+    responsableSearch.setTerm("")
+    setSuccessMessage("Responsable seleccionado con éxito")
+    setShowSuccessDialog(true)
+  }
+
+  const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
+    if (selectedMemberIds.includes(integrant.id_integrant)) {
+      setSuccessMessage("Este integrante ya está agregado")
+      setShowSuccessDialog(true)
+      return
+    }
+    const newMember = {
+      id: `member-${Date.now()}`,
+      integrantId: integrant.id_integrant,
+      usuario: {
+        id: String(integrant.id_integrant),
+        nombre: integrant.name.split(" ")[0] || "",
+        apellidos: integrant.name.split(" ").slice(1).join(" ") || "",
+        correoElectronico: integrant.email || "",
+        nombreUsuario: "",
+        numeroIdentidad: "",
+        roles: [],
+        esExterno: false,
+        esAdministrador: false,
+      },
+      rol: "integrante_grupo",
+      evaluacion: null,
+      descripcionEvaluacion: "",
+    }
+    setMembers([...members, newMember])
+    setSelectedMemberIds([...selectedMemberIds, integrant.id_integrant])
+    memberSearch.setTerm("")
+    setShowDirectoryModal(false)
+    setSuccessMessage("Integrante agregado con éxito")
+    setShowSuccessDialog(true)
+  }
 
   const handleSaveInitialData = (e: React.FormEvent) => {
     e.preventDefault()
@@ -111,37 +275,18 @@ export const GroupForm = () => {
     setShowSuccessDialog(true)
   }
 
-  const handleSelectResponsable = (user: IUser) => {
-    setSelectedResponsable(user)
-    setShowResponsableModal(false)
-    setSuccessMessage("Responsable seleccionado con éxito")
-    setShowSuccessDialog(true)
-  }
-
-  const handleAddFromDirectory = (user: any) => {
-    const newMember = {
-      id: `member-${Date.now()}`,
-      usuario: user,
-      rol: "integrante_grupo",
-      evaluacion: null,
-      descripcionEvaluacion: "",
-    }
-    setMembers([...members, newMember])
-    setShowDirectoryModal(false)
-    setSuccessMessage("Integrante agregado con éxito")
-    setShowSuccessDialog(true)
-  }
-
   const handleAddExternalMember = (e: React.FormEvent) => {
     e.preventDefault()
     const newMember = {
-      id: `member-${Date.now()}`,
+      id: `external-${Date.now()}`,
+      integrantId: null,
       usuario: {
         id: `external-${Date.now()}`,
         nombre: externalMember.nombre,
         apellidos: externalMember.apellidos,
         numeroIdentidad: externalMember.numeroIdentidad,
         entidad: externalMember.entidad,
+        correoElectronico: externalMember.email,
         esExterno: true,
       },
       rol: "integrante_grupo",
@@ -149,8 +294,9 @@ export const GroupForm = () => {
       descripcionEvaluacion: "",
     }
     setMembers([...members, newMember])
+    setExternalMembers([...externalMembers, newMember])
     setShowExternalModal(false)
-    setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "" })
+    setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
     setSuccessMessage("Integrante externo agregado con éxito")
     setShowSuccessDialog(true)
   }
@@ -170,7 +316,14 @@ export const GroupForm = () => {
   }
 
   const handleRemoveMember = (memberId: string) => {
+    const memberToRemove = members.find((m) => m.id === memberId)
     setMembers(members.filter((m) => m.id !== memberId))
+    if (memberToRemove?.integrantId) {
+      setSelectedMemberIds((prev) => prev.filter((id) => id !== memberToRemove.integrantId))
+    }
+    if (memberToRemove?.usuario?.esExterno) {
+      setExternalMembers((prev) => prev.filter((m) => m.id !== memberId))
+    }
   }
 
   const handleSaveAllUpdates = () => {
@@ -199,6 +352,47 @@ export const GroupForm = () => {
     }
   }
 
+  const handleSaveCompleteGroup = async () => {
+    if (!selectedResponsableId || !selectedFacultyId || !selectedFacultyAreaId) {
+      setSuccessMessage("Por favor, complete todos los campos requeridos (responsable, facultad y área)")
+      setShowSuccessDialog(true)
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      setSubmitError(null)
+
+      const now = new Date().toISOString()
+      const payload = {
+        name: formData.nombre,
+        subjects: formData.tematicas || "",
+        problems: formData.descripcion || "",
+        id_admin: selectedResponsableId,
+        id_faculty: selectedFacultyId,
+        create_date: now,
+        update_date: now,
+        member_ids: selectedMemberIds,
+        id_faculty_area: selectedFacultyAreaId,
+      }
+
+      await groupService.createGroup(payload)
+
+      setSuccessMessage("Grupo completado y guardado con éxito")
+      setShowSuccessDialog(true)
+      setTimeout(() => {
+        navigate("/groups")
+      }, 1500)
+    } catch (error) {
+      const errorMessage = (error as Error).message || "Error al guardar el grupo"
+      setSubmitError(errorMessage)
+      setSuccessMessage(errorMessage)
+      setShowSuccessDialog(true)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const pageTitle = isViewMode
     ? "Ver Grupo de Investigación"
     : isEditMode
@@ -223,20 +417,43 @@ export const GroupForm = () => {
         title="Seleccionar Responsable del Grupo"
       >
         <div className="modal-content">
-          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE como responsable</p>
-          <div className="directory-list">
-            {mockUsers.map((user) => (
-              <div key={user.id} className="directory-item">
-                <div className="directory-item-info">
-                  <strong>{`${user.nombre} ${user.apellidos}`}</strong>
-                  <span>{user.facultad}</span>
-                  <span>{user.correoElectronico}</span>
+          <div className="form-group">
+            <label>Buscar integrante CUJAE</label>
+            <Input
+              placeholder="Escribe un nombre, correo o centro de trabajo"
+              value={responsableSearch.term}
+              onChange={(e) => responsableSearch.setTerm(e.target.value)}
+              aria-label="Campo para buscar responsable"
+            />
+            <small className="form-hint">
+              Filtramos automáticamente contra el directorio en línea y puedes seleccionar los resultados.
+            </small>
+          </div>
+          <div className="record-list">
+            {responsableSearch.isLoading ? (
+              <p className="empty-state">Buscando integrantes...</p>
+            ) : responsableSearch.error ? (
+              <p className="error-message">{responsableSearch.error}</p>
+            ) : responsableSearch.results.length === 0 ? (
+              <p className="empty-state">Escribe al menos 2 caracteres para obtener coincidencias</p>
+            ) : (
+              responsableSearch.results.map((integrant) => (
+                <div key={integrant.id_integrant} className="record-item">
+                  <div className="record-item-info">
+                    <strong>{integrant.name}</strong>
+                    <span>{integrant.email || "Sin correo"}</span>
+                    <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    aria-label={`Seleccionar ${integrant.name} como responsable`}
+                    onClick={() => handleSelectResponsableIntegrant(integrant)}
+                  >
+                    Seleccionar
+                  </Button>
                 </div>
-                <Button size="sm" onClick={() => handleSelectResponsable(user)}>
-                  Seleccionar
-                </Button>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </Modal>
@@ -244,23 +461,46 @@ export const GroupForm = () => {
       <Modal
         isOpen={showDirectoryModal}
         onClose={() => setShowDirectoryModal(false)}
-        title="Agregar desde Directorio CUJAE"
+        title="Agregar Integrante desde Directorio CUJAE"
       >
         <div className="modal-content">
-          <p className="modal-description">Seleccione un usuario del directorio de la CUJAE</p>
-          <div className="directory-list">
-            {mockUsers.map((user) => (
-              <div key={user.id} className="directory-item">
-                <div className="directory-item-info">
-                  <strong>{`${user.nombre} ${user.apellidos}`}</strong>
-                  <span>{user.facultad}</span>
-                  <span>{user.correoElectronico}</span>
+          <div className="form-group">
+            <label>Buscar integrante CUJAE</label>
+            <Input
+              placeholder="Escribe un nombre, correo o centro de trabajo"
+              value={memberSearch.term}
+              onChange={(e) => memberSearch.setTerm(e.target.value)}
+              aria-label="Campo para buscar integrantes"
+            />
+            <small className="form-hint">
+              Filtramos automáticamente contra el directorio en línea y puedes seleccionar los resultados.
+            </small>
+          </div>
+          <div className="record-list">
+            {memberSearch.isLoading ? (
+              <p className="empty-state">Buscando integrantes...</p>
+            ) : memberSearch.error ? (
+              <p className="error-message">{memberSearch.error}</p>
+            ) : memberSearch.results.length === 0 ? (
+              <p className="empty-state">Escribe al menos 2 caracteres para obtener coincidencias</p>
+            ) : (
+              memberSearch.results.map((integrant) => (
+                <div key={integrant.id_integrant} className="record-item">
+                  <div className="record-item-info">
+                    <strong>{integrant.name}</strong>
+                    <span>{integrant.email || "Sin correo"}</span>
+                    <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    aria-label={`Agregar ${integrant.name} como integrante`}
+                    onClick={() => handleSelectMemberIntegrant(integrant)}
+                  >
+                    Agregar
+                  </Button>
                 </div>
-                <Button size="sm" onClick={() => handleAddFromDirectory(user)}>
-                  Agregar
-                </Button>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </Modal>
@@ -298,6 +538,15 @@ export const GroupForm = () => {
               onChange={(e) => setExternalMember({ ...externalMember, entidad: e.target.value })}
               placeholder="Ej: Universidad de La Habana"
               required
+            />
+          </div>
+          <div className="form-group">
+            <label>Correo Electrónico</label>
+            <Input
+              type="email"
+              value={externalMember.email}
+              onChange={(e) => setExternalMember({ ...externalMember, email: e.target.value })}
+              placeholder="ejemplo@universidad.edu"
             />
           </div>
           <div className="modal-actions">
@@ -371,7 +620,19 @@ export const GroupForm = () => {
         <p>{isViewMode ? "Detalles del grupo de investigación" : "Complete la información del grupo"}</p>
       </div>
 
-      {!isViewMode && !isEditMode && !isSaved && (
+      {isMetadataLoading && (
+        <Card>
+          <p>Cargando catálogos iniciales...</p>
+        </Card>
+      )}
+
+      {metadataError && (
+        <Card>
+          <p className="error-message">{metadataError}</p>
+        </Card>
+      )}
+
+      {!isMetadataLoading && !metadataError && !isViewMode && !isEditMode && !isSaved && (
         <>
           <Card>
             <form onSubmit={handleSaveInitialData}>
@@ -400,21 +661,45 @@ export const GroupForm = () => {
                 </div>
                 <div className="form-group">
                   <label>Facultad</label>
-                  <Input
-                    name="facultad"
-                    value={formData.facultad}
-                    onChange={(e) => setFormData({ ...formData, facultad: e.target.value })}
-                    placeholder="Facultad"
-                  />
+                  {isMetadataLoading ? (
+                    <Input name="facultad" value="Cargando..." disabled />
+                  ) : (
+                    <select
+                      name="facultad"
+                      value={selectedFacultyId ?? ""}
+                      onChange={(e) => handleFacultyChange(e.target.value)}
+                      className="form-select"
+                      disabled={faculties.length === 0}
+                    >
+                      <option value="">Seleccione una facultad</option>
+                      {faculties.map((faculty) => (
+                        <option key={faculty.id_faculty} value={faculty.id_faculty}>
+                          {faculty.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Área</label>
-                  <Input
-                    name="area"
-                    value={formData.area}
-                    onChange={(e) => setFormData({ ...formData, area: e.target.value })}
-                    placeholder="Área"
-                  />
+                  {isMetadataLoading ? (
+                    <Input name="area" value="Cargando..." disabled />
+                  ) : (
+                    <select
+                      name="area"
+                      value={selectedFacultyAreaId ?? ""}
+                      onChange={(e) => handleFacultyAreaChange(e.target.value)}
+                      className="form-select"
+                      disabled={!selectedFacultyId || filteredFacultyAreas.length === 0}
+                    >
+                      <option value="">Seleccione un área</option>
+                      {filteredFacultyAreas.map((area) => (
+                        <option key={area.id_faculty_area} value={area.id_faculty_area}>
+                          {area.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Departamento</label>
@@ -490,12 +775,12 @@ export const GroupForm = () => {
             >
               Integrantes
             </button>
-            <button
+            {/* <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
               onClick={() => setActiveTab("evaluaciones")}
             >
               Evaluaciones
-            </button>
+            </button> */}
           </div>
 
           {activeTab === "datos" && (
@@ -607,7 +892,7 @@ export const GroupForm = () => {
             </Card>
           )}
 
-          {activeTab === "evaluaciones" && (
+          {/* {activeTab === "evaluaciones" && (
             <Card>
               <div className="tab-content">
                 <div className="tab-header">
@@ -677,40 +962,13 @@ export const GroupForm = () => {
                 </div>
               </div>
             </Card>
-          )}
+          )} */}
 
           <Card>
             <div className="form-actions">
-              <Button
-                type="button"
-                onClick={() => {
-                  if (!selectedResponsable) {
-                    setSuccessMessage("Por favor, seleccione un responsable para el grupo")
-                    setShowSuccessDialog(true)
-                    return
-                  }
-                  const newGroup: IGroup = {
-                    id: `group-${Date.now()}`,
-                    nombre: formData.nombre,
-                    descripcion: formData.descripcion,
-                    facultad: formData.facultad,
-                    area: formData.area,
-                    departamento: formData.departamento,
-                    tematicas: formData.tematicas.split(",").map((t) => t.trim()),
-                    responsable: selectedResponsable,
-                    fechaCreacion: new Date().toISOString(),
-                    fechaActualizacion: new Date().toISOString(),
-                    totalIntegrantes: members.length,
-                  }
-                  mockGroups.push(newGroup)
-                  setSuccessMessage("Grupo completado y guardado con éxito")
-                  setShowSuccessDialog(true)
-                  setTimeout(() => {
-                    navigate("/groups")
-                  }, 1500)
-                }}
-              >
-                Guardar Grupo Completo
+              {submitError && <p className="error-message">{submitError}</p>}
+              <Button type="button" onClick={handleSaveCompleteGroup} disabled={isSubmitting}>
+                {isSubmitting ? "Guardando..." : "Guardar Grupo Completo"}
               </Button>
             </div>
           </Card>
@@ -732,12 +990,12 @@ export const GroupForm = () => {
             >
               Integrantes
             </button>
-            <button
+            {/* <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
               onClick={() => setActiveTab("evaluaciones")}
             >
               Evaluaciones
-            </button>
+            </button> */}
           </div>
 
           {activeTab === "datos" && (
@@ -832,7 +1090,7 @@ export const GroupForm = () => {
             </Card>
           )}
 
-          {activeTab === "evaluaciones" && (
+          {/* {activeTab === "evaluaciones" && (
             <Card>
               <div className="tab-content">
                 <div className="tab-header">
@@ -852,7 +1110,7 @@ export const GroupForm = () => {
                       </thead>
                       <tbody>
                         {members.map((member) => {
-                          const evaluation = evaluations[member.id] || { evaluacion: "no_evaluado", descripcion: "" }
+                          const evaluation = { evaluacion: "no_evaluado", descripcion: "" }
                           return (
                             <tr key={member.id}>
                               <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
@@ -867,7 +1125,7 @@ export const GroupForm = () => {
                 )}
               </div>
             </Card>
-          )}
+          )} */}
 
           <Card>
             <div className="form-actions">
@@ -893,12 +1151,12 @@ export const GroupForm = () => {
             >
               Integrantes
             </button>
-            <button
+            {/* <button
               className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
               onClick={() => setActiveTab("evaluaciones")}
             >
               Evaluaciones
-            </button>
+            </button> */}
           </div>
 
           {activeTab === "datos" && (
@@ -1052,7 +1310,7 @@ export const GroupForm = () => {
             </Card>
           )}
 
-          {activeTab === "evaluaciones" && (
+          {/* {activeTab === "evaluaciones" && (
             <Card>
               <div className="tab-content">
                 <div className="tab-header">
@@ -1122,7 +1380,7 @@ export const GroupForm = () => {
                 </div>
               </div>
             </Card>
-          )}
+          )} */}
 
           <Card>
             <div className="form-actions">

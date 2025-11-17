@@ -11,9 +11,10 @@ import { OptionsMenu } from "../components/common/OptionsMenu";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { Plus, Search, Loader2, AlertCircle } from "lucide-react";
 import type {  RecordBase } from "../types/recordList/types"; // Asegúrate de que la ruta sea correcta
-import { RecordListService } from "../services/recordList/recordListService";
+import type { IRecord } from "../types";
 import { useAuthStore } from "../stores/authStore"; // Ajusta la ruta según tu proyecto
 import "./GroupList.css";
+import { mockRecords } from "../services/mockData";
 
 const RecordList: React.FC = () => {
   const navigate = useNavigate()
@@ -26,8 +27,8 @@ const RecordList: React.FC = () => {
     recordId: null,
   })
 
-  const isAdmin = user?.roles?.includes('admin') || false
-  const isAutorRegistro = user?.roles?.includes('autor_registro') || false
+  const isAdmin = user?.role?.includes('admin') || false
+  const isAutorRegistro = user?.role?.includes('autor_registro') || false
 
   const isAuthor = (record: IRecord): boolean => {
     return record.autores.some(autor => autor.usuario?.id === user?.id)
@@ -62,20 +63,20 @@ const RecordList: React.FC = () => {
 
 
   const columns = [
-    { key: "titulo", header: "Título", render: (r: RecordBase) => r.title },
+    { key: "titulo", header: "Título", render: (r: IRecord) => r.titulo },
     {
       key: "tipo",
       header: "Tipo",
-      render: (r: RecordBase) => (
+      render: (r: IRecord) => (
         <span className="badge badge-primary">{r.tipo}</span>
       ),
     },
     {
       key: "autores",
       header: "Autores",
-      render: (r: RecordBase) => r.authors.map((a) => a.name).join(", "),
+      render: (r: IRecord) => r.autores.map((a) => a.nombre).join(", "),
     },
-    { key: "año", header: "Año", render: (r: RecordBase) => r.year_only },
+    { key: "año", header: "Año", render: (r: IRecord) => r.año },
     {
       key: "actions",
       header: "Opciones",
