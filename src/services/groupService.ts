@@ -44,11 +44,11 @@ export const groupService = {
   /**
    * Crea un nuevo grupo
    */
-  async createGroup(group: GroupCreate): Promise<Group> {
+  /*async createGroup(group: GroupCreate): Promise<Group> {
     const response = await apiClient.post<Group>('/groups/', group);
     return response.data;
   },
-
+*/
   /**
    * Actualiza un grupo existente
    */
