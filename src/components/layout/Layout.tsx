@@ -3,19 +3,15 @@
 import React from "react"
 import { Outlet, useNavigate } from "react-router-dom"
 import { useAuthStore } from "../../stores/authStore"
+import { usePermissions } from "../../hooks/usePermissions"
 import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3, UserCog, ClipboardList, PieChart } from 'lucide-react'
 import "./Layout.css"
 
 export const Layout: React.FC = () => {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
+  const { isAdmin, hasRole, canViewStatistics, canManageUsers, canViewAuditLog } = usePermissions()
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
-
-  const isAdmin = user?.roles?.includes('admin') || false
-  const isAutorRegistro = user?.roles?.includes('autor_registro') || false
-  const isConsejoCientifico = user?.roles?.includes('consejo_cientifico') || false
-  const isResponsableProyecto = user?.roles?.includes('responsable_proyecto') || false
-  const isResponsableGrupo = user?.roles?.includes('responsable_grupo') || false
 
   const handleLogout = () => {
     logout()
@@ -27,11 +23,13 @@ export const Layout: React.FC = () => {
     { icon: Users, label: "Grupos", path: "/groups" },
     { icon: FolderKanban, label: "Proyectos", path: "/projects" },
     { icon: FileText, label: "Registros", path: "/records" },
-    ...((isAdmin || isConsejoCientifico) ? [
+    ...(canViewStatistics() ? [
       { icon: PieChart, label: "Estadísticas", path: "/statistics" },
     ] : []),
-    ...(isAdmin ? [
+    ...(canManageUsers() ? [
       { icon: UserCog, label: "Usuarios", path: "/users" },
+    ] : []),
+    ...(canViewAuditLog() ? [
       { icon: ClipboardList, label: "Bitácora", path: "/audit" },
     ] : []),
   ]

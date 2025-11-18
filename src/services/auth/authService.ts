@@ -2,19 +2,61 @@ import { apiClient } from '../api/client';
 import type { 
   LoginRequest, 
   RegisterRequest, 
- 
   User 
 } from '../../types/api/auth';
 import type { AxiosResponse } from 'axios';
-
+import { integrantService } from '../integrantService';
+import type { IntegrantWithRoles } from '../../types/api/integrant';
+import type { IUser } from '../../types';
 
 /**
  * Transforma la respuesta del servidor al modelo de dominio
  */
-const transformAuthResponse = (response: AxiosResponse): { token: string , user_id:string} => {
+const transformAuthResponse = (response: AxiosResponse): { token: string, user_id: string } => {
   return {
     token: response.data.access_token,
     user_id: response.data.user_id
+  };
+};
+
+/**
+ * Mapea IntegrantWithRoles a IUser
+ */
+const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
+  const nameParts = integrant.name.split(' ');
+  const nombre = nameParts[0] || '';
+  const apellidos = nameParts.slice(1).join(' ') || '';
+
+  // Mapear roles del backend al formato del frontend
+  const roleMap: Record<string, import('../../types').UserRole> = {
+    'admin': 'admin',
+    'responsable_proyecto': 'responsable_proyecto',
+    'responsable_grupo': 'responsable_grupo',
+    'integrante_proyecto': 'integrante_proyecto',
+    'integrante_grupo': 'integrante_grupo',
+    'consejo_cientifico': 'consejo_cientifico',
+    'autor_registro': 'autor_registro',
+    'usuario': 'usuario',
+  };
+
+  const roles = integrant.roles?.map(r => 
+    roleMap[r.role_name.toLowerCase()] || 'usuario'
+  ) || [];
+
+  return {
+    id: integrant.id_integrant.toString(),
+    nombre,
+    apellidos,
+    numeroIdentidad: integrant.identity || '',
+    correoElectronico: integrant.email || '',
+    nombreUsuario: integrant.email?.split('@')[0] || '',
+    roles,
+    esExterno: integrant.external,
+    esAdministrador: roles.includes('admin'),
+    telefono: integrant.phone || undefined,
+    lugarTrabajo: integrant.work_center || undefined,
+    fondoTiempo: integrant.available_time?.toString() || undefined,
+    curriculum: integrant.curriculum || undefined,
   };
 };
 
@@ -26,7 +68,7 @@ export const authService = {
   /**
    * Inicia sesión con credenciales
    */
-  async login(credentials: LoginRequest): Promise<{  token: string }> {
+  async login(credentials: LoginRequest): Promise<{ token: string, user: IUser }> {
     console.log(credentials);
     const response = await apiClient.post('/auth/login', {
       'email': credentials.email,
@@ -39,7 +81,21 @@ export const authService = {
     localStorage.setItem('auth_token', transformed.token);
     localStorage.setItem('user_id', transformed.user_id);
     
-    return transformed;
+    // Obtener el usuario completo con sus roles
+    try {
+      const integrant = await integrantService.getIntegrantById(parseInt(transformed.user_id));
+      const user = mapIntegrantToIUser(integrant);
+      
+      // Guardar usuario en localStorage
+      localStorage.setItem('user', JSON.stringify(user));
+      
+      return { token: transformed.token, user };
+    } catch (error) {
+      console.error('Error obteniendo usuario completo:', error);
+      // Si falla, crear un usuario básico con los roles del token
+      // (Los roles vienen en el token JWT, pero por ahora usamos el endpoint)
+      throw error;
+    }
   },
 
   /**
