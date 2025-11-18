@@ -3,16 +3,50 @@
 import { useState, useEffect } from "react"
 import type { IUser, UserRole } from "../types"
 import { userService } from "../services/userService"
+import { roleService } from "../services/roleService"
 import { useAuthStore } from "../stores/authStore"
+import { usePermissions } from "../hooks/usePermissions"
 import { Button } from "../components/common/Button"
 import { Card } from "../components/common/Card"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { OptionsMenu } from "../components/common/OptionsMenu"
+import { Loader2, AlertCircle } from "lucide-react"
+import type { Role } from "../types/api/role"
 import "./UserManagement.css"
 
+// Mapeo de role_name del backend a UserRole del frontend
+const mapRoleNameToUserRole = (roleName: string): UserRole => {
+  const roleMap: Record<string, UserRole> = {
+    'admin': 'admin',
+    'responsable_proyecto': 'responsable_proyecto',
+    'responsable_grupo': 'responsable_grupo',
+    'integrante_proyecto': 'integrante_proyecto',
+    'integrante_grupo': 'integrante_grupo',
+    'consejo_cientifico': 'consejo_cientifico',
+    'autor_registro': 'autor_registro',
+    'usuario': 'usuario',
+  }
+  return roleMap[roleName.toLowerCase()] || 'usuario'
+}
+
+// Mapeo de UserRole a etiqueta legible
+const roleLabels: Record<UserRole, string> = {
+  admin: "Administrador",
+  responsable_proyecto: "Responsable de Proyecto",
+  responsable_grupo: "Responsable de Grupo",
+  integrante_proyecto: "Integrante de Proyecto",
+  integrante_grupo: "Integrante de Grupo",
+  consejo_cientifico: "Consejo Científico",
+  autor_registro: "Autor de Registro",
+  usuario: "Usuario",
+}
+
 export const UserManagement = () => {
+  const { isAdmin } = usePermissions()
   const [users, setUsers] = useState<IUser[]>([])
+  const [availableRoles, setAvailableRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedUser, setSelectedUser] = useState<IUser | null>(null)
   const [newRole, setNewRole] = useState<UserRole>("usuario")
@@ -24,31 +58,38 @@ export const UserManagement = () => {
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const currentUser = useAuthStore((state) => state.user)
 
-  const roles: UserRole[] = [
-    "admin",
-    "responsable_proyecto",
-    "responsable_grupo",
-    "integrante_proyecto",
-    "integrante_grupo",
-    "consejo_cientifico",
-    "autor_registro",
-    "usuario",
-  ]
-
-  const roleLabels: Record<UserRole, string> = {
-    admin: "Administrador",
-    responsable_proyecto: "Responsable de Proyecto",
-    responsable_grupo: "Responsable de Grupo",
-    integrante_proyecto: "Integrante de Proyecto",
-    integrante_grupo: "Integrante de Grupo",
-    consejo_cientifico: "Consejo Científico",
-    autor_registro: "Autor de Registro",
-    usuario: "Usuario",
-  }
+  // Convertir roles del backend a UserRole[]
+  const roles: UserRole[] = availableRoles.map(r => mapRoleNameToUserRole(r.role_name))
 
   useEffect(() => {
-    loadUsers()
+    loadData()
   }, [])
+
+  const loadData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      // Cargar usuarios y roles en paralelo
+      const [usersData, rolesData] = await Promise.all([
+        userService.getAllUsers(),
+        roleService.getAllRoles({ limit: 100 }),
+      ])
+      setUsers(usersData)
+      setAvailableRoles(rolesData)
+      
+      if (selectedUser) {
+        const updatedUser = usersData.find((u) => u.id === selectedUser.id)
+        if (updatedUser) {
+          setSelectedUser(updatedUser)
+        }
+      }
+    } catch (err) {
+      console.error("Error loading data:", err)
+      setError(err instanceof Error ? err.message : "Error al cargar los datos")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const loadUsers = async () => {
     try {
@@ -62,8 +103,7 @@ export const UserManagement = () => {
       }
     } catch (error) {
       console.error("Error loading users:", error)
-    } finally {
-      setLoading(false)
+      showNotification("Error al cargar los usuarios", "error")
     }
   }
 
@@ -162,11 +202,48 @@ export const UserManagement = () => {
       user.correoElectronico.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  if (loading) return <div className="loading">Cargando usuarios...</div>
+  if (loading) {
+    return (
+      <div className="user-management">
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+          <Loader2 className="animate-spin" size={32} />
+          <span style={{ marginLeft: '1rem' }}>Cargando usuarios...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Verificar permisos
+  if (!isAdmin()) {
+    return (
+      <div className="user-management">
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
+          <AlertCircle size={48} style={{ margin: '0 auto 1rem', color: '#c33' }} />
+          <h2>Acceso Denegado</h2>
+          <p>No tienes permisos para acceder a esta sección.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="user-management">
       {notification && <div className={`notification notification-${notification.type}`}>{notification.message}</div>}
+      {error && (
+        <div style={{ 
+          padding: '1rem', 
+          margin: '1rem', 
+          backgroundColor: '#fee', 
+          color: '#c33',
+          borderRadius: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
+          <AlertCircle size={20} />
+          <span>{error}</span>
+        </div>
+      )}
 
       <div className="page-header">
         <div className="header-content">
@@ -215,7 +292,7 @@ export const UserManagement = () => {
                     <span className="role-tag">{roleLabels[getPrimaryRole(user.roles)]}</span>
                   </td>
                   <td className="actions-cell">
-                    {currentUser?.roles.includes("admin") && (
+                    {isAdmin() && (
                       <OptionsMenu
                         options={[
                           {
