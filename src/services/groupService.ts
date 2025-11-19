@@ -28,6 +28,7 @@ export const groupService = {
         skip: filters?.skip ?? 0,
         limit: filters?.limit ?? 100,
         search: filters?.search,
+        id_admin: filters?.id_admin,
       },
     });
     return response.data;
@@ -67,5 +68,12 @@ export const groupService = {
 
   async createGroup(data: CreateGroupPayload) {
     return apiClient.post('/groups/', data)
+  },
+
+  /**
+   * Actualiza un grupo usando el mismo payload que createGroup
+   */
+  async updateGroupWithPayload(groupId: number, data: CreateGroupPayload) {
+    return apiClient.put(`/groups/${groupId}`, data)
   },
 }

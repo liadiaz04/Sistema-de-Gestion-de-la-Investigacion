@@ -12,7 +12,7 @@ import "./AuthForm.css"
 
 export const AuthForm: React.FC = () => {
   const navigate = useNavigate()
-  const login = useAuthStore((state) => state.login)
+  const { login, updateUser } = useAuthStore()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -24,9 +24,19 @@ export const AuthForm: React.FC = () => {
     setLoading(true)
 
     try {
-      console.log(username)
       const response = await authService.login({ email: username, password })
-      login( response.token)
+      login(response.token)
+      // Actualizar el usuario en el store (el authService ya lo guarda en localStorage)
+      // Pero necesitamos actualizar el store también
+      const userFromStorage = localStorage.getItem('user')
+      if (userFromStorage) {
+        try {
+          const user = JSON.parse(userFromStorage)
+          updateUser(user)
+        } catch (parseError) {
+          console.error('Error parsing user from storage:', parseError)
+        }
+      }
       navigate("/dashboard")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión")

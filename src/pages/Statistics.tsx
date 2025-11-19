@@ -1,10 +1,14 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import type { IStatisticsTabular, IStatisticsGraphical } from "../types"
 import { statisticsService } from "../services/statisticsService"
+import { recordMetadataService, type FacultyOption } from "../services/record/recordMetadataService"
+import { apiClient } from "../services/api/client"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
+import { usePermissions } from "../hooks/usePermissions"
 import {
   BarChart,
   Bar,
@@ -14,7 +18,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  LineChart,
   Line,
   ComposedChart,
 } from "recharts"
@@ -25,17 +28,48 @@ type GroupVisualizationType = "porFacultad" | "masIntegrantes"
 type ProjectVisualizationType = "porFacultad" | "porEstado"
 
 export const Statistics = () => {
+  const navigate = useNavigate()
+  const { canViewStatistics } = usePermissions()
   const [view, setView] = useState<"tabular" | "graphical">("tabular")
   const [category, setCategory] = useState<StatisticsCategory>("registros")
   const [tabularData, setTabularData] = useState<IStatisticsTabular | null>(null)
   const [graphicalData, setGraphicalData] = useState<IStatisticsGraphical | null>(null)
   const [selectedYear, setSelectedYear] = useState(2024)
   const [selectedFacultad, setSelectedFacultad] = useState<string>("Todas")
+  const [selectedFacultadId, setSelectedFacultadId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [groupVisualizationType, setGroupVisualizationType] = useState<GroupVisualizationType>("porFacultad")
   const [projectVisualizationType, setProjectVisualizationType] = useState<ProjectVisualizationType>("porFacultad")
+  const [faculties, setFaculties] = useState<FacultyOption[]>([])
+  const [recordStats, setRecordStats] = useState<Record<string, { total: number; inFaculty: number }>>({})
+  const [loadingRecords, setLoadingRecords] = useState(false)
 
-  const facultades = ["Todas", "Industrial", "Eléctrica", "Civil", "Mecánica", "Arquitectura", "Informática", "Química"]
+  // Verificar permisos al montar el componente
+  useEffect(() => {
+    if (!canViewStatistics()) {
+      navigate("/dashboard")
+    }
+  }, [canViewStatistics, navigate])
+
+  // Cargar facultades al montar el componente
+  useEffect(() => {
+    const loadFaculties = async () => {
+      try {
+        const facultiesData = await recordMetadataService.getFaculties()
+        setFaculties(facultiesData)
+      } catch (error) {
+        console.error("Error loading faculties:", error)
+      }
+    }
+    loadFaculties()
+  }, [])
+
+  // Cargar estadísticas de registros cuando cambia la facultad seleccionada
+  useEffect(() => {
+    if (category === "registros" && view === "tabular") {
+      loadRecordStatistics()
+    }
+  }, [selectedFacultadId, category, view])
 
   useEffect(() => {
     loadStatistics()
@@ -55,6 +89,72 @@ export const Statistics = () => {
       console.error("Error loading statistics:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadRecordStatistics = async () => {
+    if (!selectedFacultadId) {
+      // Si no hay facultad seleccionada, limpiar estadísticas
+      setRecordStats({})
+      return
+    }
+
+    setLoadingRecords(true)
+    try {
+      // Mapeo de tipos de registros a sus endpoints
+      const recordTypes = [
+        { key: "articulo", endpoint: "articles", totalKey: "total_articles", inFacultyKey: "articles_in_faculty" },
+        { key: "libro", endpoint: "books", totalKey: "total_books", inFacultyKey: "books_in_faculty" },
+        { key: "monografia", endpoint: "monographs", totalKey: "total_monographs", inFacultyKey: "monographs_in_faculty" },
+        { key: "norma", endpoint: "norms", totalKey: "total_norms", inFacultyKey: "norms_in_faculty" },
+        { key: "patente", endpoint: "patents", totalKey: "total_patents", inFacultyKey: "patents_in_faculty" },
+        { key: "software", endpoint: "softwares", totalKey: "total_softwares", inFacultyKey: "softwares_in_faculty" },
+        { key: "tesis", endpoint: "theses", totalKey: "total_theses", inFacultyKey: "theses_in_faculty" },
+        { key: "evento", endpoint: "encounters", totalKey: "total_encounters", inFacultyKey: "encounters_in_faculty" },
+        { key: "premio", endpoint: "prizes", totalKey: "total_prizes", inFacultyKey: "prizes_in_faculty" },
+      ]
+
+      // Hacer todas las peticiones en paralelo
+      const promises = recordTypes.map(async (recordType) => {
+        try {
+          const response = await apiClient.get(`/${recordType.endpoint}/count/${selectedFacultadId}`, {
+          })
+          const data = response.data
+          return {
+            key: recordType.key,
+            total: data[recordType.totalKey] || 0,
+            inFaculty: data[recordType.inFacultyKey] || 0,
+          }
+        } catch (error) {
+          console.error(`Error loading ${recordType.key} statistics:`, error)
+          return {
+            key: recordType.key,
+            total: 0,
+            inFaculty: 0,
+          }
+        }
+      })
+
+      const results = await Promise.all(promises)
+      const statsMap: Record<string, { total: number; inFaculty: number }> = {}
+      results.forEach((result) => {
+        statsMap[result.key] = { total: result.total, inFaculty: result.inFaculty }
+      })
+      setRecordStats(statsMap)
+    } catch (error) {
+      console.error("Error loading record statistics:", error)
+    } finally {
+      setLoadingRecords(false)
+    }
+  }
+
+  const handleFacultadChange = (facultadName: string) => {
+    setSelectedFacultad(facultadName)
+    if (facultadName === "Todas") {
+      setSelectedFacultadId(null)
+    } else {
+      const faculty = faculties.find((f) => f.name === facultadName)
+      setSelectedFacultadId(faculty?.id_faculty || null)
     }
   }
 
@@ -138,10 +238,11 @@ export const Statistics = () => {
                 <div className="filters-container" style={{ marginBottom: "1rem" }}>
                   <div className="facultad-selector">
                     <label>Filtrar por Facultad:</label>
-                    <select value={selectedFacultad} onChange={(e) => setSelectedFacultad(e.target.value)}>
-                      {facultades.map((fac) => (
-                        <option key={fac} value={fac}>
-                          {fac}
+                    <select value={selectedFacultad} onChange={(e) => handleFacultadChange(e.target.value)}>
+                      <option value="Todas">Todas</option>
+                      {faculties.map((faculty) => (
+                        <option key={faculty.id_faculty} value={faculty.name}>
+                          {faculty.name}
                         </option>
                       ))}
                     </select>
@@ -149,52 +250,74 @@ export const Statistics = () => {
                 </div>
 
                 <div className="stats-table-container">
-                  <table className="stats-table">
-                    <thead>
-                      <tr>
-                        <th>Tipo de Artículo</th>
-                        <th>Total del Centro</th>
-                        <th>Total de la Facultad</th>
-                        <th>% Aporte de la Facultad al Centro</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(tabularData.registros.porTipo).map(([tipo, total]) => {
-                        const totalFacultad = selectedFacultad === "Todas" 
-                          ? total 
-                          : Math.floor(total * 0.15) // Mock: 15% para facultad seleccionada
-                        const aporte = selectedFacultad === "Todas"
-                          ? 100
-                          : (totalFacultad / total) * 100
-                        return (
-                          <tr key={tipo}>
-                            <td className="tipo-label">{tipo}</td>
-                            <td className="total-value">{total}</td>
-                            <td className="user-value">{totalFacultad}</td>
-                            <td className="aporte-value">{aporte.toFixed(1)}%</td>
+                  {loadingRecords ? (
+                    <div className="loading">Cargando estadísticas de registros...</div>
+                  ) : (
+                    <table className="stats-table">
+                      <thead>
+                        <tr>
+                          <th>Tipo de Registro</th>
+                          <th>Total del Centro</th>
+                          <th>Total de la Facultad</th>
+                          <th>% Aporte de la Facultad al Centro</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(recordStats).length === 0 && selectedFacultadId ? (
+                          <tr>
+                            <td colSpan={4} style={{ textAlign: "center", padding: "2rem" }}>
+                              No hay datos disponibles
+                            </td>
                           </tr>
-                        )
-                      })}
-                      <tr className="total-row">
-                        <td>
-                          <strong>Total</strong>
-                        </td>
-                        <td>
-                          <strong>{tabularData.registros.total}</strong>
-                        </td>
-                        <td>
-                          <strong>
-                            {selectedFacultad === "Todas"
-                              ? tabularData.registros.total
-                              : Math.floor(tabularData.registros.total * 0.15)}
-                          </strong>
-                        </td>
-                        <td>
-                          <strong>{selectedFacultad === "Todas" ? "100.0" : "15.0"}%</strong>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                        ) : selectedFacultad === "Todas" ? (
+                          <tr>
+                            <td colSpan={4} style={{ textAlign: "center", padding: "2rem" }}>
+                              Seleccione una facultad para ver las estadísticas
+                            </td>
+                          </tr>
+                        ) : (
+                          <>
+                            {Object.entries(recordStats).map(([tipo, stats]) => {
+                              const tipoLabel = tipo.charAt(0).toUpperCase() + tipo.slice(1)
+                              const aporte = stats.total > 0 ? (stats.inFaculty / stats.total) * 100 : 0
+                              return (
+                                <tr key={tipo}>
+                                  <td className="tipo-label">{tipoLabel}</td>
+                                  <td className="total-value">{stats.total}</td>
+                                  <td className="user-value">{stats.inFaculty}</td>
+                                  <td className="aporte-value">{aporte.toFixed(1)}%</td>
+                                </tr>
+                              )
+                            })}
+                            <tr className="total-row">
+                              <td>
+                                <strong>Total</strong>
+                              </td>
+                              <td>
+                                <strong>
+                                  {Object.values(recordStats).reduce((sum, stats) => sum + stats.total, 0)}
+                                </strong>
+                              </td>
+                              <td>
+                                <strong>
+                                  {Object.values(recordStats).reduce((sum, stats) => sum + stats.inFaculty, 0)}
+                                </strong>
+                              </td>
+                              <td>
+                                <strong>
+                                  {(() => {
+                                    const total = Object.values(recordStats).reduce((sum, stats) => sum + stats.total, 0)
+                                    const inFaculty = Object.values(recordStats).reduce((sum, stats) => sum + stats.inFaculty, 0)
+                                    return total > 0 ? ((inFaculty / total) * 100).toFixed(1) : "0.0"
+                                  })()}%
+                                </strong>
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </Card>
             </>

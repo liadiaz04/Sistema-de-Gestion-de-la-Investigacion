@@ -31,6 +31,8 @@ export interface IPasswordRecoveryData {
 
 export type UserRole =
   | "admin"
+  | "integrant"
+  | "consejo"
   | "responsable_proyecto"
   | "responsable_grupo"
   | "integrante_proyecto"

@@ -60,4 +60,27 @@ export const integrantService = {
   async updateIntegrantRoles(integrantId: number, roleIds: number[]): Promise<IntegrantGet> {
     return this.updateIntegrant(integrantId, { role_ids: roleIds });
   },
+
+  /**
+   * Modifica los roles del integrante enviando roles_list con el nuevo rol
+   * Envía PUT a /integrants/{id} con body: { roles_list: [id_del_rol] }
+   */
+  async modifyIntegrantRole(integrantId: number, roleId: number): Promise<IntegrantGet> {
+    // Asegurar que roleId sea un número entero
+    ;
+    
+    // Crear el body con roles_list como array de números enteros
+    const body: { roles_list: number[] } = {
+      roles_list: [roleId]
+    };
+    
+    console.log('Modificando rol del integrante:', {
+      integrantId,
+      roleId: roleId,
+      body
+    });
+    
+    const response = await apiClient.put<IntegrantGet>(`/integrants/${integrantId}`, body);
+    return response.data;
+  },
 };

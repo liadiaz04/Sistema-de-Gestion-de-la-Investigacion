@@ -11,10 +11,37 @@ import { OptionsMenu } from "../components/common/OptionsMenu"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { Plus, Search, Loader2, AlertCircle } from 'lucide-react'
 import { groupService } from "../services/groupService"
-import type { IGroup } from "../types"
-import { useAuthStore } from "../stores/authStore"
+import { integrantService } from "../services/integrantService"
+import type { IGroup, IUser } from "../types"
+import { usePermissions } from "../hooks/usePermissions"
 import type { Group } from "../types/api/group"
+import type { IntegrantWithRoles } from "../types/api/integrant"
 import "./GroupList.css"
+
+// Función para mapear IntegrantWithRoles a IUser
+const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
+  const nameParts = integrant.name.split(' ')
+  const nombre = nameParts[0] || ''
+  const apellidos = nameParts.slice(1).join(' ') || ''
+
+  return {
+    id: integrant.id_integrant.toString(),
+    nombre,
+    apellidos,
+    numeroIdentidad: integrant.identity || '',
+    correoElectronico: integrant.email || '',
+    nombreUsuario: integrant.email?.split('@')[0] || '',
+    roles: integrant.roles?.map(r => {
+      const roleName = r.role_name.toUpperCase()
+      if (roleName === 'ADMIN' || r.id_role === 1) return 'admin'
+      if (roleName === 'INTEGRANT' || r.id_role === 2) return 'integrant'
+      if (roleName === 'CONSEJO' || r.id_role === 3) return 'consejo'
+      return 'usuario'
+    }) || [],
+    esExterno: integrant.external,
+    esAdministrador: integrant.roles?.some(r => r.id_role === 1) || false,
+  }
+}
 
 // Función para mapear Group (API) a IGroup (Frontend)
 const mapGroupToIGroup = (group: Group): IGroup => {
@@ -23,17 +50,17 @@ const mapGroupToIGroup = (group: Group): IGroup => {
     ? group.subjects.split(',').map(t => t.trim()).filter(t => t.length > 0)
     : []
 
-  // Parsear nombre del líder
-  const leaderName = group.leader?.name || ''
-  const nameParts = leaderName.split(' ')
-  const nombre = nameParts[0] || ''
-  const apellidos = nameParts.slice(1).join(' ') || ''
-
-  return {
-    id: group.id_group.toString(),
-    nombre: group.name,
-    descripcion: group.problems || '',
-    responsable: group.leader ? {
+  // Obtener el responsable: primero intentar desde leader, luego desde members usando id_admin
+  let responsable: IUser | undefined = undefined
+  
+  if (group.leader) {
+    // Si viene el objeto leader completo
+    const leaderName = group.leader.name || ''
+    const nameParts = leaderName.split(' ')
+    const nombre = nameParts[0] || ''
+    const apellidos = nameParts.slice(1).join(' ') || ''
+    
+    responsable = {
       id: group.leader.id_integrant.toString(),
       nombre,
       apellidos,
@@ -43,7 +70,60 @@ const mapGroupToIGroup = (group: Group): IGroup => {
       roles: [],
       esExterno: false,
       esAdministrador: false,
-    } : undefined,
+    }
+  } else if (group.id_admin && group.members) {
+    // Buscar el responsable en los miembros usando id_admin
+    const responsableMember = group.members.find(m => m.id_integrant === group.id_admin)
+    if (responsableMember) {
+      const nameParts = responsableMember.name.split(' ')
+      const nombre = nameParts[0] || ''
+      const apellidos = nameParts.slice(1).join(' ') || ''
+      
+      responsable = {
+        id: responsableMember.id_integrant.toString(),
+        nombre,
+        apellidos,
+        numeroIdentidad: '',
+        correoElectronico: '',
+        nombreUsuario: '',
+        roles: [],
+        esExterno: false,
+        esAdministrador: false,
+      }
+    } else if (group.id_admin) {
+      // Si no está en members pero tenemos id_admin, crear un objeto básico
+      responsable = {
+        id: group.id_admin.toString(),
+        nombre: '',
+        apellidos: '',
+        numeroIdentidad: '',
+        correoElectronico: '',
+        nombreUsuario: '',
+        roles: [],
+        esExterno: false,
+        esAdministrador: false,
+      }
+    }
+  } else if (group.id_integrant) {
+    // Fallback a id_integrant si existe (legacy)
+    responsable = {
+      id: group.id_integrant.toString(),
+      nombre: '',
+      apellidos: '',
+      numeroIdentidad: '',
+      correoElectronico: '',
+      nombreUsuario: '',
+      roles: [],
+      esExterno: false,
+      esAdministrador: false,
+    }
+  }
+
+  return {
+    id: group.id_group.toString(),
+    nombre: group.name,
+    descripcion: group.problems || '',
+    responsable,
     tematicas,
     facultad: group.faculty?.name || '',
     area: group.faculty_area?.name || undefined,
@@ -56,21 +136,20 @@ const mapGroupToIGroup = (group: Group): IGroup => {
 
 export const GroupList: React.FC = () => {
   const navigate = useNavigate()
-  const { user } = useAuthStore()
-  const isAdmin = user?.roles?.includes('admin') || false
-  const isResponsableGrupo = user?.roles?.includes('responsable_grupo') || false
+  const { canCreateGroups, canManageAllGroups } = usePermissions()
   
   const [searchTerm, setSearchTerm] = useState("")
   const [groups, setGroups] = useState<IGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [viewFilter, setViewFilter] = useState<"todos" | "mis_grupos">("todos")
+  const [showOnlyMyGroups, setShowOnlyMyGroups] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; groupId: string | null }>({
     show: false,
     groupId: null,
   })
 
-  const userId = user?.id ? parseInt(user.id) : null
+  // Obtener user_id del localStorage
+  const userId = localStorage.getItem('user_id') ? parseInt(localStorage.getItem('user_id')!) : null
 
   // Cargar grupos al montar el componente o cambiar el filtro
   useEffect(() => {
@@ -82,23 +161,74 @@ export const GroupList: React.FC = () => {
           limit: 100,
         }
         
+        // Si el checkbox está marcado y hay userId, filtrar por id_admin
+        if (showOnlyMyGroups && userId) {
+          filters.id_admin = userId
+        }
+        
         // Si hay término de búsqueda, agregarlo
         if (searchTerm.trim()) {
           filters.search = searchTerm.trim()
         }
         
         const fetchedGroups = await groupService.getAllGroups(filters)
-        const mappedGroups = fetchedGroups.map(mapGroupToIGroup)
         
-        // Filtrar por "mis grupos" si es necesario (filtrado local ya que el backend no tiene ese filtro)
-        let filtered = mappedGroups
-        if (isResponsableGrupo && viewFilter === "mis_grupos" && userId) {
-          filtered = mappedGroups.filter(g => 
-            g.responsable && parseInt(g.responsable.id) === userId
+        // Identificar IDs de responsables que necesitan ser cargados desde el endpoint
+        // Cargamos todos los responsables que no vienen con el objeto leader completo
+        const responsableIdsToLoad = new Set<number>()
+        fetchedGroups.forEach(group => {
+          // Si no viene leader pero sí id_admin, necesitamos cargarlo
+          if (!group.leader && group.id_admin) {
+            responsableIdsToLoad.add(group.id_admin)
+          }
+          // Si viene id_integrant pero no leader, también cargarlo
+          else if (!group.leader && group.id_integrant) {
+            responsableIdsToLoad.add(group.id_integrant)
+          }
+        })
+        
+        // Cargar los detalles de los responsables en paralelo
+        const responsablesMap = new Map<number, IUser>()
+        if (responsableIdsToLoad.size > 0) {
+          const responsablePromises = Array.from(responsableIdsToLoad).map(id => 
+            integrantService.getIntegrantById(id).catch(err => {
+              console.warn(`Error cargando integrante ${id}:`, err)
+              return null
+            })
           )
+          
+          const responsables = await Promise.all(responsablePromises)
+          
+          responsables.forEach(integrant => {
+            if (integrant) {
+              const iUser = mapIntegrantToIUser(integrant)
+              responsablesMap.set(integrant.id_integrant, iUser)
+            }
+          })
         }
         
-        setGroups(filtered)
+        // Mapear grupos y usar los responsables cargados cuando sea necesario
+        const mappedGroups = fetchedGroups.map(group => {
+          const mapped = mapGroupToIGroup(group)
+          
+          // Si el responsable no tiene nombre completo, intentar obtenerlo del mapa
+          if (mapped.responsable && (!mapped.responsable.nombre || mapped.responsable.nombre.trim() === '')) {
+            const responsableId = parseInt(mapped.responsable.id)
+            if (!isNaN(responsableId)) {
+              const responsableCompleto = responsablesMap.get(responsableId)
+              if (responsableCompleto) {
+                return {
+                  ...mapped,
+                  responsable: responsableCompleto
+                }
+              }
+            }
+          }
+          
+          return mapped
+        })
+        
+        setGroups(mappedGroups)
       } catch (err) {
         console.error("Error cargando grupos:", err)
         setError(err instanceof Error ? err.message : "Error al cargar los grupos")
@@ -113,7 +243,7 @@ export const GroupList: React.FC = () => {
     }, 500)
 
     return () => clearTimeout(timeoutId)
-  }, [viewFilter, userId, searchTerm, isResponsableGrupo])
+  }, [showOnlyMyGroups, userId, searchTerm])
 
   const filteredGroups = groups.filter((group) => {
     // La búsqueda ya se hace en el backend, pero podemos filtrar localmente también
@@ -121,16 +251,17 @@ export const GroupList: React.FC = () => {
       group.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (group.responsable?.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
     
-    if (isResponsableGrupo && viewFilter === "mis_grupos") {
-      return matchesSearch && group.responsable && parseInt(group.responsable.id) === userId
-    }
-    
     return matchesSearch
   })
 
+  const isUserResponsible = (group: IGroup) => {
+    if (!userId) return false
+    return group.responsable && parseInt(group.responsable.id) === userId
+  }
+
   const canEditGroup = (group: IGroup) => {
-    if (isAdmin) return true
-    if (isResponsableGrupo && group.responsable && parseInt(group.responsable.id) === userId) return true
+    if (canManageAllGroups()) return true
+    if (isUserResponsible(group)) return true
     return false
   }
 
@@ -141,21 +272,15 @@ export const GroupList: React.FC = () => {
       const filters: any = {
         limit: 100,
       }
+      if (showOnlyMyGroups && userId) {
+        filters.id_admin = userId
+      }
       if (searchTerm.trim()) {
         filters.search = searchTerm.trim()
       }
       const fetchedGroups = await groupService.getAllGroups(filters)
       const mappedGroups = fetchedGroups.map(mapGroupToIGroup)
-      
-      // Aplicar filtro de "mis grupos" si es necesario
-      let filtered = mappedGroups
-      if (isResponsableGrupo && viewFilter === "mis_grupos" && userId) {
-        filtered = mappedGroups.filter(g => 
-          g.responsable && parseInt(g.responsable.id) === userId
-        )
-      }
-      
-      setGroups(filtered)
+      setGroups(mappedGroups)
       setDeleteConfirm({ show: false, groupId: null })
     } catch (err) {
       console.error("Error eliminando grupo:", err)
@@ -203,7 +328,7 @@ export const GroupList: React.FC = () => {
           <h1>Grupos de Investigación</h1>
           <p>Gestión de grupos de investigación (Quorum)</p>
         </div>
-        {isAdmin && (
+        {canCreateGroups() && (
           <Button onClick={() => navigate("/groups/new")}>
             <Plus size={20} />
             Adicionar Grupo
@@ -222,19 +347,17 @@ export const GroupList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          {isResponsableGrupo && (
-            <div className="filter-group">
-              <label>Filtrar:</label>
-              <select
-                value={viewFilter}
-                onChange={(e) => setViewFilter(e.target.value as "todos" | "mis_grupos")}
-                className="form-select"
-              >
-                <option value="todos">Todos los grupos</option>
-                <option value="mis_grupos">Mis grupos</option>
-              </select>
-            </div>
-          )}
+          <div className="filter-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showOnlyMyGroups}
+                onChange={(e) => setShowOnlyMyGroups(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span>Grupos de los que soy responsable</span>
+            </label>
+          </div>
         </div>
 
         {loading && (

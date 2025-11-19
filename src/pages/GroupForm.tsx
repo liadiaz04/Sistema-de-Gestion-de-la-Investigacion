@@ -10,6 +10,8 @@ import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import "./GroupForm.css"
 import { mockGroups } from "../services/mockData"
+import { useAuthStore } from "../stores/authStore"
+import { usePermissions } from "../hooks/usePermissions"
 import type { IUser } from "../types/index"
 import {
   recordMetadataService,
@@ -77,6 +79,10 @@ export const GroupForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
+  const { user: currentUser } = useAuthStore()
+  const { isAutor } = usePermissions()
+
+  const isAutorUser = isAutor()
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
@@ -107,6 +113,11 @@ export const GroupForm = () => {
   const [selectedResponsableId, setSelectedResponsableId] = useState<number | null>(null)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
+  const [originalCreateDate, setOriginalCreateDate] = useState<string>("")
+  
+  // Verificar si el usuario actual es responsable y es autor
+  const isCurrentUserResponsable = Boolean(isEditMode && isAutorUser && selectedResponsableId && currentUser && 
+                                   parseInt(currentUser.id) === selectedResponsableId)
 
   const [members, setMembers] = useState<any[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([])
@@ -151,25 +162,89 @@ export const GroupForm = () => {
   }, [])
 
   useEffect(() => {
-    if (id) {
-      console.log("[v0] GroupForm - Loading group with id:", id)
-      const group = mockGroups.find((g) => g.id === id)
-      console.log("[v0] GroupForm - Found group:", group)
-      if (group) {
-        setFormData({
-          nombre: group.nombre || "",
-          descripcion: group.descripcion || "",
-          facultad: group.facultad || "",
-          area: group.area || "",
-          departamento: group.departamento || "",
-          tematicas: group.tematicas?.join(", ") || "",
-        })
-        setSelectedResponsable(group.responsable)
-        setMembers([])
-        setIsSaved(true)
+    const loadGroupData = async () => {
+      if (id && (isViewMode || isEditMode)) {
+        try {
+          const group = await groupService.getGroupById(parseInt(id))
+          
+          setFormData({
+            nombre: group.name || "",
+            descripcion: group.problems || "",
+            facultad: group.faculty?.name || "",
+            area: group.faculty_area?.name || "",
+            departamento: "",
+            tematicas: group.subjects || "",
+          })
+          
+          if (group.leader) {
+            setSelectedResponsableId(group.leader.id_integrant)
+            setSelectedResponsable({
+              id: String(group.leader.id_integrant),
+              nombre: group.leader.name.split(" ")[0] || "",
+              apellidos: group.leader.name.split(" ").slice(1).join(" ") || "",
+              correoElectronico: group.leader.email || "",
+              nombreUsuario: "",
+              numeroIdentidad: "",
+              roles: [],
+              esExterno: false,
+              esAdministrador: false,
+            } as IUser)
+          }
+          
+          setSelectedFacultyId(group.id_faculty)
+          setSelectedFacultyAreaId(group.id_faculty_area || null)
+          
+          // Guardar fecha de creación original
+          if (group.create_date) {
+            setOriginalCreateDate(group.create_date)
+          }
+          
+          // Cargar miembros
+          if (group.members) {
+            const memberIds = group.members.map(m => m.id_integrant)
+            setSelectedMemberIds(memberIds)
+            // Mapear miembros a formato del formulario
+            const mappedMembers = group.members.map((m, idx) => ({
+              id: `member-${m.id_integrant || idx}`,
+              integrantId: m.id_integrant,
+              usuario: m.integrant ? {
+                id: String(m.integrant.id_integrant),
+                nombre: m.integrant.name.split(" ")[0] || "",
+                apellidos: m.integrant.name.split(" ").slice(1).join(" ") || "",
+                correoElectronico: m.integrant.email || "",
+                nombreUsuario: "",
+                numeroIdentidad: "",
+                roles: [],
+                esExterno: false,
+                esAdministrador: false,
+              } : {
+                id: String(m.id_integrant),
+                nombre: m.name.split(" ")[0] || "",
+                apellidos: m.name.split(" ").slice(1).join(" ") || "",
+                correoElectronico: "",
+                nombreUsuario: "",
+                numeroIdentidad: "",
+                roles: [],
+                esExterno: false,
+                esAdministrador: false,
+              },
+              rol: "integrante_grupo",
+              evaluacion: null,
+              descripcionEvaluacion: "",
+            }))
+            setMembers(mappedMembers)
+          }
+          
+          setIsSaved(true)
+        } catch (error) {
+          console.error("Error cargando grupo:", error)
+          setMetadataError((error as Error).message || "Error al cargar el grupo")
+        }
       }
     }
-  }, [id])
+    
+    loadGroupData()
+  }, [id, isViewMode, isEditMode])
 
   // Filtrar áreas por facultad seleccionada
   const filteredFacultyAreas = facultyAreas.filter((area) => area.id_faculty === selectedFacultyId)
@@ -326,29 +401,44 @@ export const GroupForm = () => {
     }
   }
 
-  const handleSaveAllUpdates = () => {
+  const handleSaveAllUpdates = async () => {
     if (!id) return
 
-    const groupIndex = mockGroups.findIndex((g) => g.id === id)
-    if (groupIndex !== -1) {
-      mockGroups[groupIndex] = {
-        ...mockGroups[groupIndex],
-        nombre: formData.nombre,
-        descripcion: formData.descripcion,
-        facultad: formData.facultad,
-        area: formData.area,
-        departamento: formData.departamento,
-        tematicas: formData.tematicas.split(",").map((t) => t.trim()),
-        responsable: selectedResponsable,
-        fechaActualizacion: new Date().toISOString(),
-        totalIntegrantes: members.length,
+    if (!selectedResponsableId || !selectedFacultyId || !selectedFacultyAreaId) {
+      setSuccessMessage("Por favor, complete todos los campos requeridos (responsable, facultad y área)")
+      setShowSuccessDialog(true)
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+
+      const now = new Date().toISOString()
+      const payload = {
+        name: formData.nombre,
+        subjects: formData.tematicas || "",
+        problems: formData.descripcion || "",
+        id_admin: selectedResponsableId,
+        id_faculty: selectedFacultyId,
+        id_faculty_area: selectedFacultyAreaId,
+        create_date: originalCreateDate || now, // Mantener la fecha original
+        update_date: now,
+        member_ids: selectedMemberIds, // Solo IDs de integrantes CUJAE, no externos
       }
+
+      await groupService.updateGroupWithPayload(parseInt(id), payload)
 
       setSuccessMessage("Grupo actualizado con éxito")
       setShowSuccessDialog(true)
       setTimeout(() => {
         navigate("/groups")
       }, 1500)
+    } catch (error) {
+      console.error("Error actualizando grupo:", error)
+      setSuccessMessage("Error al actualizar el grupo")
+      setShowSuccessDialog(true)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -376,9 +466,16 @@ export const GroupForm = () => {
         id_faculty_area: selectedFacultyAreaId,
       }
 
-      await groupService.createGroup(payload)
+      if (isEditMode && id) {
+        // Modo edición: actualizar grupo existente
+        await groupService.updateGroupWithPayload(parseInt(id), payload)
+        setSuccessMessage("Grupo actualizado con éxito")
+      } else {
+        // Modo creación: crear nuevo grupo
+        await groupService.createGroup(payload)
+        setSuccessMessage("Grupo completado y guardado con éxito")
+      }
 
-      setSuccessMessage("Grupo completado y guardado con éxito")
       setShowSuccessDialog(true)
       setTimeout(() => {
         navigate("/groups")
@@ -724,20 +821,40 @@ export const GroupForm = () => {
                   <div className="responsable-selector">
                     {selectedResponsable ? (
                       <div className="selected-responsable">
-                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setShowResponsableModal(true)}
-                        >
-                          Cambiar
-                        </Button>
+                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos}${selectedResponsable.facultad ? ` - ${selectedResponsable.facultad}` : ''}`}</span>
+                        {!isEditMode && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowResponsableModal(true)}
+                            disabled={isCurrentUserResponsable}
+                          >
+                            Cambiar
+                          </Button>
+                        )}
                       </div>
                     ) : (
-                      <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
-                        Seleccionar Responsable
-                      </Button>
+                      !isEditMode && (
+                        <Button 
+                          type="button" 
+                          variant="secondary" 
+                          onClick={() => setShowResponsableModal(true)}
+                          disabled={isCurrentUserResponsable}
+                        >
+                          Seleccionar Responsable
+                        </Button>
+                      )
+                    )}
+                    {isEditMode && selectedResponsable && (
+                      <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                        El responsable no puede ser modificado
+                      </p>
+                    )}
+                    {isCurrentUserResponsable && (
+                      <p className="form-hint" style={{ color: '#c33', marginTop: '0.5rem' }}>
+                        Como autor, no puede cambiar el responsable del grupo
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1049,43 +1166,60 @@ export const GroupForm = () => {
             <Card>
               <div className="tab-content">
                 <div className="tab-header">
-                  <h2>Integrantes del Grupo</h2>
+                  <h2>Gestión de Integrantes</h2>
+                  <div className="tab-actions">
+                    <Button type="button" variant="secondary" onClick={() => setShowDirectoryModal(true)}>
+                      Agregar integrante (Directorio CUJAE)
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={() => setShowExternalModal(true)}>
+                      Agregar integrante (Externo de la CUJAE)
+                    </Button>
+                  </div>
                 </div>
-                {members.length === 0 ? (
-                  <p className="empty-state">No hay integrantes asociados a este grupo.</p>
-                ) : (
-                  <div className="members-table">
-                    <table>
-                      <thead>
+
+                <div className="members-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Rol</th>
+                        <th>Tipo</th>
+                        <th>Opciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.length === 0 ? (
                         <tr>
-                          <th>Nombre</th>
-                          <th>Rol</th>
-                          <th>Tipo</th>
-                          <th>Opciones</th>
+                          <td colSpan={4} className="empty-state">
+                            No hay integrantes asociados. Haga clic en "Agregar integrante" para comenzar.
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {members.map((member) => (
+                      ) : (
+                        members.map((member) => (
                           <tr key={member.id}>
-                            <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
-                            <td>{member.rol.replace(/_/g, " ")}</td>
-                            <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
+                            <td>{`${member.usuario?.nombre || ""} ${member.usuario?.apellidos || ""}`}</td>
+                            <td>{member.rol?.replace(/_/g, " ") || "integrante_grupo"}</td>
+                            <td>{member.usuario?.esExterno ? "Externo" : "CUJAE"}</td>
                             <td>
                               <OptionsMenu
                                 options={[
                                   {
-                                    label: "Ver detalles",
-                                    onClick: () => alert(`Ver detalles de ${member.usuario.nombre}`),
+                                    label: "Modificar",
+                                    onClick: () => handleModifyMember(member),
+                                  },
+                                  {
+                                    label: "Eliminar integrante",
+                                    onClick: () => handleRemoveMember(member.id),
                                   },
                                 ]}
                               />
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </Card>
           )}
@@ -1183,22 +1317,48 @@ export const GroupForm = () => {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Facultad</label>
-                  <Input
-                    name="facultad"
-                    value={formData.facultad}
-                    onChange={(e) => setFormData({ ...formData, facultad: e.target.value })}
-                    placeholder="Facultad"
-                  />
+                  <label>Facultad *</label>
+                  {isMetadataLoading ? (
+                    <Input name="facultad" value="Cargando..." disabled />
+                  ) : (
+                    <select
+                      name="facultad"
+                      value={selectedFacultyId ?? ""}
+                      onChange={(e) => handleFacultyChange(e.target.value)}
+                      className="form-select"
+                      required
+                      disabled={faculties.length === 0}
+                    >
+                      <option value="">Seleccione una facultad</option>
+                      {faculties.map((faculty) => (
+                        <option key={faculty.id_faculty} value={faculty.id_faculty}>
+                          {faculty.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="form-group">
-                  <label>Área</label>
-                  <Input
-                    name="area"
-                    value={formData.area}
-                    onChange={(e) => setFormData({ ...formData, area: e.target.value })}
-                    placeholder="Área"
-                  />
+                  <label>Área *</label>
+                  {isMetadataLoading ? (
+                    <Input name="area" value="Cargando..." disabled />
+                  ) : (
+                    <select
+                      name="area"
+                      value={selectedFacultyAreaId ?? ""}
+                      onChange={(e) => handleFacultyAreaChange(e.target.value)}
+                      className="form-select"
+                      required
+                      disabled={!selectedFacultyId || filteredFacultyAreas.length === 0}
+                    >
+                      <option value="">Seleccione un área</option>
+                      {filteredFacultyAreas.map((area) => (
+                        <option key={area.id_faculty_area} value={area.id_faculty_area}>
+                          {area.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Departamento</label>
@@ -1223,20 +1383,31 @@ export const GroupForm = () => {
                   <div className="responsable-selector">
                     {selectedResponsable ? (
                       <div className="selected-responsable">
-                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
+                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos}${selectedResponsable.facultad ? ` - ${selectedResponsable.facultad}` : ''}`}</span>
                         <Button
                           type="button"
                           variant="secondary"
                           size="sm"
                           onClick={() => setShowResponsableModal(true)}
+                          disabled={isCurrentUserResponsable}
                         >
                           Cambiar
                         </Button>
                       </div>
                     ) : (
-                      <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
+                      <Button 
+                        type="button" 
+                        variant="secondary" 
+                        onClick={() => setShowResponsableModal(true)}
+                        disabled={isCurrentUserResponsable}
+                      >
                         Seleccionar Responsable
                       </Button>
+                    )}
+                    {isCurrentUserResponsable && (
+                      <p className="form-hint" style={{ color: '#c33', marginTop: '0.5rem' }}>
+                        Como autor, no puede cambiar el responsable del grupo
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1387,8 +1558,8 @@ export const GroupForm = () => {
               <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={handleSaveAllUpdates}>
-                Actualizar Grupo
+              <Button type="button" onClick={handleSaveAllUpdates} disabled={isSubmitting}>
+                {isSubmitting ? "Guardando..." : "Actualizar Grupo"}
               </Button>
             </div>
           </Card>

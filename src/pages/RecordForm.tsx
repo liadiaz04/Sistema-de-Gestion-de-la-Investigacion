@@ -20,7 +20,7 @@ import {
 } from "../services/record/recordMetadataService"
 import { recordService } from "../services/record/recordService"
 import type { ExternalAuthor, AuthorId } from "../types/record/types"
-
+import type { UserRole } from "../types"
 type IntegrantSearchHook = {
   term: string
   setTerm: (value: string) => void
@@ -80,7 +80,7 @@ export const RecordForm = () => {
   const { id } = useParams()
   
   const { user: currentUser } = useAuthStore()
-  const isAdmin = currentUser?.role === "admin"
+  const isAdmin = currentUser?.roles?.includes("admin") || false
 
   const isEditMode = Boolean(id && location.pathname.includes("/edit"))
   const isViewMode = Boolean(id && !location.pathname.includes("/edit"))
@@ -501,6 +501,15 @@ export const RecordForm = () => {
 
   const handleRemoveAuthor = (authorId: string) => {
     const authorToRemove = authors.find((author) => author.id === authorId)
+    
+    // Prevenir que el usuario se elimine a sí mismo como autor
+    const userId = currentUser?.id ? parseInt(currentUser.id) : null
+    if (authorToRemove?.integrantId && userId && authorToRemove.integrantId === userId) {
+      setSuccessMessage("No puede eliminarse a sí mismo como autor del registro")
+      setShowSuccessDialog(true)
+      return
+    }
+    
     setAuthors(authors.filter((a) => a.id !== authorId))
     if (authorToRemove?.integrantId) {
       setSelectedAuthorIds((prev) => prev.filter((value) => value !== authorToRemove.integrantId))
@@ -1417,13 +1426,18 @@ export const RecordForm = () => {
             key={type.value}
             type="button"
             className={`type-menu-item ${recordType === type.value ? "selected" : ""}`}
-            onClick={() => !isViewMode && !isSaved && setRecordType(type.value)}
-            disabled={isViewMode || isSaved ? true : false}
+            onClick={() => !isViewMode && !isSaved && !isEditMode && setRecordType(type.value)}
+            disabled={isViewMode || isSaved || isEditMode}
           >
             {type.label}
           </button>
         ))}
       </div>
+      {isEditMode && (
+        <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem', textAlign: 'center' }}>
+          El tipo de registro no puede ser modificado
+        </p>
+      )}
 
       {(isSaved || isViewMode || isEditMode) && (
         <div className="form-tabs">
@@ -1691,6 +1705,11 @@ export const RecordForm = () => {
                                   {
                                     label: "Eliminar",
                                     onClick: () => handleRemoveAuthor(author.id),
+                                    className: (() => {
+                                      const userId = currentUser?.id ? parseInt(currentUser.id) : null
+                                      const isCurrentUser = author.integrantId && userId && author.integrantId === userId
+                                      return isCurrentUser ? "disabled" : ""
+                                    })(),
                                   },
                                 ]}
                               />

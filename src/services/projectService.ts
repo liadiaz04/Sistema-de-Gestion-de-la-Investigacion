@@ -93,6 +93,14 @@ export const projectService = {
   },
 
   /**
+   * Actualiza un proyecto usando el mismo payload que createProject
+   */
+  async updateProjectWithPayload(projectId: number, data: CreateProjectPayload): Promise<Project> {
+    const response = await apiClient.put<Project>(`/projects/${projectId}`, data);
+    return response.data;
+  },
+
+  /**
    * Elimina un proyecto
    */
   async deleteProject(projectId: number): Promise<Project> {

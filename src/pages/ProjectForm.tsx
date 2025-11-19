@@ -10,6 +10,7 @@ import { Modal } from "../components/common/Modal"
 import "./ProjectForm.css"
 import { mockProjects, mockRecords } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
+import { usePermissions } from "../hooks/usePermissions"
 import type { IUser } from "../types/index"
 import {
   recordMetadataService,
@@ -79,8 +80,9 @@ export const ProjectForm = () => {
   const location = useLocation()
   const { id } = useParams()
   const { user: currentUser } = useAuthStore()
+  const { isAdmin, isAutor } = usePermissions()
 
-  const isAdmin = currentUser?.role?.includes("admin") || false
+  const isAutorUser = isAutor()
 
   console.log("[v0] ProjectForm - id:", id)
   console.log("[v0] ProjectForm - location.pathname:", location.pathname)
@@ -109,6 +111,11 @@ export const ProjectForm = () => {
   const [selectedResponsableId, setSelectedResponsableId] = useState<number | null>(null)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
+  const [originalInitialDate, setOriginalInitialDate] = useState<string>("")
+  
+  // Verificar si el usuario actual es responsable y es autor
+  const isCurrentUserResponsable = Boolean(isEditMode && isAutorUser && selectedResponsableId && currentUser && 
+                                   parseInt(currentUser.id) === selectedResponsableId)
 
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
@@ -193,56 +200,123 @@ export const ProjectForm = () => {
   }, [])
 
   useEffect(() => {
-    console.log("[v0] ProjectForm - useEffect running, id:", id)
-    if (id) {
-      const project = mockProjects.find((p) => p.id === id)
-      console.log("[v0] ProjectForm - Found project:", project)
-      if (project) {
-        setFormData({
-          nombre: project.nombre,
-          codigo: "",
-          descripcion: project.descripcion,
-          tematica: project.tematica,
-          programa: project.programa,
-          tipoProyecto: project.tipoProyecto || "",
-          estado: project.estado,
-          objetivos: project.objetivos || "",
-          tareas: project.tareas || "",
-          detallesCientificos: project.detallesCientificos || "",
-          otrosDatos: project.otrosDatos || "",
-          criterioConsejo: project.criterioConsejo || "",
-          palabrasClave: "",
-          artState: "",
-          problemaCientifico: "",
-          objetoEstudio: "",
-          campoEstudio: "",
-          hipotesis: "",
-          objetivoPrincipal: "",
-          metodosInvestigacion: "",
-          terceroInteresado: "",
-          grupoNacional: "",
-          grupoInternacional: "",
-          publicarRevista: "",
-          participarEventos: "",
-          codigoCITMA: "",
-          codigoMINVEC: "",
-          fechaInicio: project.fechaInicio || "",
-          fechaFin: project.fechaFin || "",
-          presupuestoEconomico: "",
-          necesidadesEconomicas: "",
-          presupuestoGeneralCUP: "",
-          presupuestoAnualCUP: "",
-          is_international: false,
-          is_national: false,
-          is_territorial: false,
-          is_cujae: false,
-        })
-        setSelectedResponsable(project.responsable)
-        setIsSaved(true)
-        console.log("[v0] ProjectForm - Data loaded, isSaved set to true")
+    const loadProjectData = async () => {
+      if (id && (isViewMode || isEditMode)) {
+        try {
+          const project = await projectService.getProjectById(parseInt(id))
+          
+          // Type assertion para acceder a todos los campos del proyecto
+          const projectData = project as any
+          
+          setFormData({
+            nombre: project.title || "",
+            codigo: project.code || "",
+            descripcion: project.description || "",
+            tematica: project.thematic || project.classification?.name || "",
+            programa: project.national_group || project.international_group || project.type?.name || "",
+            tipoProyecto: project.type?.name || "",
+            estado: project.state?.name || "propuesta",
+            objetivos: project.objectives || "",
+            tareas: project.tasks || "",
+            detallesCientificos: project.scientific_details || "",
+            otrosDatos: project.other_data || "",
+            criterioConsejo: project.council_criteria || project.conseil_criteria || "",
+            palabrasClave: projectData.keywords || "",
+            artState: projectData.art_state || "",
+            problemaCientifico: project.cientific_problem || "",
+            objetoEstudio: projectData.study_object || "",
+            campoEstudio: projectData.study_field || "",
+            hipotesis: projectData.hypothesis || "",
+            objetivoPrincipal: project.main_objective || "",
+            metodosInvestigacion: projectData.research_methods || "",
+            terceroInteresado: projectData.interested_third_party || "",
+            grupoNacional: project.national_group || "",
+            grupoInternacional: project.international_group || "",
+            publicarRevista: projectData.publish_magazine || "",
+            participarEventos: projectData.participate_events || "",
+            codigoCITMA: projectData.citma_code || "",
+            codigoMINVEC: projectData.minvec_code || "",
+            fechaInicio: project.start_date || project.initial_date || "",
+            fechaFin: project.end_date || project.final_date || "",
+            presupuestoEconomico: projectData.economic_budget || "",
+            necesidadesEconomicas: projectData.economic_needs || "",
+            presupuestoGeneralCUP: projectData.general_budget_cup || "",
+            presupuestoAnualCUP: projectData.year_budget_cup || "",
+            is_international: projectData.is_international || false,
+            is_national: projectData.is_national || false,
+            is_territorial: projectData.is_territorial || false,
+            is_cujae: projectData.is_cujae || false,
+          })
+          
+          if (project.responsible) {
+            setSelectedResponsableId(project.responsible.id_integrant)
+            setSelectedResponsable({
+              id: String(project.responsible.id_integrant),
+              nombre: project.responsible.name.split(" ")[0] || "",
+              apellidos: project.responsible.name.split(" ").slice(1).join(" ") || "",
+              correoElectronico: project.responsible.email || "",
+              nombreUsuario: "",
+              numeroIdentidad: "",
+              roles: [],
+              esExterno: false,
+              esAdministrador: false,
+            } as IUser)
+          }
+          
+          setSelectedProjectTypeId(project.id_type || project.id_project_type || null)
+          setSelectedProjectStateId(project.id_state || project.id_project_state || null)
+          setSelectedProjectClassificationId(project.id_classification || projectData.id_project_classification || null)
+          
+          // Guardar fecha de creación original
+          if (project.initial_date) {
+            setOriginalInitialDate(project.initial_date)
+          }
+          
+          // Cargar miembros
+          if (project.members) {
+            const memberIds = project.members.map(m => m.id_integrant)
+            setSelectedMemberIds(memberIds)
+            
+            // Mapear miembros a formato del formulario
+            const mappedMembers = project.members.map((m, idx) => ({
+              id: `member-${m.id_project_member || idx}`,
+              integrantId: m.id_integrant,
+              usuario: m.integrant ? {
+                id: String(m.integrant.id_integrant),
+                nombre: m.integrant.name.split(" ")[0] || "",
+                apellidos: m.integrant.name.split(" ").slice(1).join(" ") || "",
+                correoElectronico: m.integrant.email || "",
+                nombreUsuario: "",
+                numeroIdentidad: "",
+                roles: [],
+                esExterno: false,
+                esAdministrador: false,
+              } : {
+                id: String(m.id_integrant),
+                nombre: "",
+                apellidos: "",
+                correoElectronico: "",
+                nombreUsuario: "",
+                numeroIdentidad: "",
+                roles: [],
+                esExterno: false,
+                esAdministrador: false,
+              },
+              rol: "integrante_proyecto",
+            }))
+            setMembers(mappedMembers)
+          }
+          
+          setIsSaved(true)
+        } catch (error) {
+          console.error("Error cargando proyecto:", error)
+          setMetadataError((error as Error).message || "Error al cargar el proyecto")
+        }
       }
     }
-  }, [id])
+    
+    loadProjectData()
+  }, [id, isViewMode, isEditMode])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -454,9 +528,16 @@ export const ProjectForm = () => {
         is_cujae: formData.is_cujae,
       }
 
-      await projectService.createProject(payload)
+      if (isEditMode && id) {
+        // Modo edición: actualizar proyecto existente
+        await projectService.updateProjectWithPayload(parseInt(id), payload)
+        setSuccessMessage("Proyecto actualizado con éxito")
+      } else {
+        // Modo creación: crear nuevo proyecto
+        await projectService.createProject(payload)
+        setSuccessMessage("Proyecto completado y guardado con éxito")
+      }
 
-      setSuccessMessage("Proyecto completado y guardado con éxito")
       setShowSuccessDialog(true)
       setTimeout(() => {
         navigate("/projects")
@@ -470,38 +551,80 @@ export const ProjectForm = () => {
     }
   }
 
-  const handleSaveAllUpdates = () => {
+  const handleSaveAllUpdates = async () => {
     if (!id) return
 
-    if (!selectedResponsable) {
+    if (!selectedResponsableId) {
       setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
       setShowSuccessDialog(true)
       return
     }
 
-    const projectIndex = mockProjects.findIndex((p) => p.id === id)
-    if (projectIndex !== -1) {
-      mockProjects[projectIndex] = {
-        ...mockProjects[projectIndex],
-        nombre: formData.nombre,
-        descripcion: formData.descripcion,
-        responsable: selectedResponsable, // Update with selected responsable
-        tematica: formData.tematica,
-        programa: formData.programa,
-        tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
-        estado: formData.estado as "propuesta" | "activo" | "finalizado" | "cancelado",
-        objetivos: formData.objetivos,
-        tareas: formData.tareas,
-        detallesCientificos: formData.detallesCientificos,
-        otrosDatos: formData.otrosDatos,
-        criterioConsejo: formData.criterioConsejo,
+    try {
+      setIsSubmitting(true)
+
+      const now = new Date().toISOString().split("T")[0]
+      const initialDate = originalInitialDate || formData.fechaInicio
+        ? (originalInitialDate || new Date(formData.fechaInicio).toISOString().split("T")[0])
+        : new Date().toISOString().split("T")[0]
+      const finalDate = formData.fechaFin ? new Date(formData.fechaFin).toISOString().split("T")[0] : null
+
+      const payload = {
+        title: formData.nombre,
+        code: formData.codigo || "",
+        keywords: formData.palabrasClave || "",
+        member_ids: selectedMemberIds,
+        id_responsible: selectedResponsableId,
+        thematic: formData.tematica || "",
+        id_project_type: selectedProjectTypeId,
+        art_state: formData.artState || "",
+        cientific_problem: toNullIfEmpty(formData.problemaCientifico),
+        study_object: toNullIfEmpty(formData.objetoEstudio),
+        study_field: formData.campoEstudio || "",
+        hypothesis: formData.hipotesis || "",
+        main_objective: toNullIfEmpty(formData.objetivoPrincipal),
+        research_methods: formData.metodosInvestigacion || "",
+        interested_third_party: toNullIfEmpty(formData.terceroInteresado),
+        national_group: formData.grupoNacional || "",
+        international_group: toNullIfEmpty(formData.grupoInternacional),
+        publish_magazine: toNullIfEmpty(formData.publicarRevista),
+        participate_events: toNullIfEmpty(formData.participarEventos),
+        citma_code: toNullIfEmpty(formData.codigoCITMA),
+        minvec_code: toNullIfEmpty(formData.codigoMINVEC),
+        approved: false,
+        conseil_criteria: formData.criterioConsejo || "",
+        initial_date: initialDate,
+        final_date: finalDate,
+        update_date: now,
+        id_project_state: selectedProjectStateId,
+        id_project_classification: selectedProjectClassificationId,
+        economic_budget: formData.presupuestoEconomico || "",
+        economic_needs: toNullIfEmpty(formData.necesidadesEconomicas),
+        id_faculty: null,
+        concluded: false,
+        approved_date: null,
+        general_budget_cup: toNullIfEmpty(formData.presupuestoGeneralCUP),
+        year_budget_cup: toNullIfEmpty(formData.presupuestoAnualCUP),
+        is_international: formData.is_international,
+        is_national: formData.is_national,
+        is_territorial: formData.is_territorial,
+        is_cujae: formData.is_cujae,
       }
+
+      await projectService.updateProjectWithPayload(parseInt(id), payload)
 
       setSuccessMessage("Proyecto actualizado con éxito")
       setShowSuccessDialog(true)
       setTimeout(() => {
         navigate("/projects")
       }, 1500)
+    } catch (error) {
+      console.error("Error actualizando proyecto:", error)
+      const errorMessage = (error as Error).message || "Error al actualizar el proyecto"
+      setSuccessMessage(errorMessage)
+      setShowSuccessDialog(true)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -749,7 +872,7 @@ export const ProjectForm = () => {
                     onChange={handleChange}
                     placeholder="Ej: Sistema de Reconocimiento Facial"
                     required
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
 
@@ -764,7 +887,7 @@ export const ProjectForm = () => {
                     value={formData.codigo}
                     onChange={handleChange}
                     placeholder="Ej: PROJ-2024-001"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
 
@@ -780,7 +903,7 @@ export const ProjectForm = () => {
                     rows={4}
                     required
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
 
@@ -795,7 +918,7 @@ export const ProjectForm = () => {
                     value={formData.palabrasClave}
                     onChange={handleChange}
                     placeholder="Ej: inteligencia artificial, machine learning, deep learning"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
 
@@ -827,7 +950,7 @@ export const ProjectForm = () => {
                     onChange={handleChange}
                     placeholder="Ej: Inteligencia Artificial"
                     required
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
 
@@ -843,7 +966,7 @@ export const ProjectForm = () => {
                     onChange={handleChange}
                     placeholder="Ej: Programa Nacional de Informatización"
                     required
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
 
@@ -985,20 +1108,34 @@ export const ProjectForm = () => {
                     <div className="responsable-selector">
                       {selectedResponsable ? (
                         <div className="selected-responsable">
-                          <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`}</span>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setShowResponsableModal(true)}
-                          >
-                            Cambiar
-                          </Button>
+                          <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos}${selectedResponsable.facultad ? ` - ${selectedResponsable.facultad}` : ''}`}</span>
+                          {!isEditMode && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setShowResponsableModal(true)}
+                            >
+                              Cambiar
+                            </Button>
+                          )}
                         </div>
                       ) : (
-                        <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
-                          Seleccionar Responsable
-                        </Button>
+                        !isEditMode && (
+                      <Button 
+                        type="button" 
+                        variant="secondary" 
+                        onClick={() => setShowResponsableModal(true)}
+                        disabled={isCurrentUserResponsable}
+                      >
+                        Seleccionar Responsable
+                      </Button>
+                        )
+                      )}
+                      {isEditMode && selectedResponsable && (
+                        <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                          El responsable no puede ser modificado
+                        </p>
                       )}
                     </div>
                   )}
@@ -1030,7 +1167,7 @@ export const ProjectForm = () => {
                     value={formData.artState}
                     onChange={handleChange}
                     placeholder="Estado del arte del proyecto"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1043,7 +1180,7 @@ export const ProjectForm = () => {
                     placeholder="Describa el problema científico"
                     rows={4}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1056,7 +1193,7 @@ export const ProjectForm = () => {
                     placeholder="Describa el objeto de estudio"
                     rows={4}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1068,7 +1205,7 @@ export const ProjectForm = () => {
                     value={formData.campoEstudio}
                     onChange={handleChange}
                     placeholder="Campo de estudio"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1080,7 +1217,7 @@ export const ProjectForm = () => {
                     value={formData.hipotesis}
                     onChange={handleChange}
                     placeholder="Hipótesis del proyecto"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1093,7 +1230,7 @@ export const ProjectForm = () => {
                     placeholder="Objetivo principal del proyecto"
                     rows={4}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1105,7 +1242,7 @@ export const ProjectForm = () => {
                     value={formData.metodosInvestigacion}
                     onChange={handleChange}
                     placeholder="Métodos de investigación utilizados"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1117,7 +1254,7 @@ export const ProjectForm = () => {
                     value={formData.terceroInteresado}
                     onChange={handleChange}
                     placeholder="Tercero interesado en el proyecto"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1129,7 +1266,7 @@ export const ProjectForm = () => {
                     value={formData.grupoNacional}
                     onChange={handleChange}
                     placeholder="Grupo nacional"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1141,7 +1278,7 @@ export const ProjectForm = () => {
                     value={formData.grupoInternacional}
                     onChange={handleChange}
                     placeholder="Grupo internacional"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1153,7 +1290,7 @@ export const ProjectForm = () => {
                     value={formData.publicarRevista}
                     onChange={handleChange}
                     placeholder="Revista donde se publicará"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1165,7 +1302,7 @@ export const ProjectForm = () => {
                     value={formData.participarEventos}
                     onChange={handleChange}
                     placeholder="Eventos donde participará"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group">
@@ -1177,7 +1314,7 @@ export const ProjectForm = () => {
                     value={formData.codigoCITMA}
                     onChange={handleChange}
                     placeholder="Código CITMA"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group">
@@ -1189,7 +1326,7 @@ export const ProjectForm = () => {
                     value={formData.codigoMINVEC}
                     onChange={handleChange}
                     placeholder="Código MINVEC"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group">
@@ -1200,7 +1337,7 @@ export const ProjectForm = () => {
                     name="fechaInicio"
                     value={formData.fechaInicio}
                     onChange={handleChange}
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group">
@@ -1211,7 +1348,7 @@ export const ProjectForm = () => {
                     name="fechaFin"
                     value={formData.fechaFin}
                     onChange={handleChange}
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1277,7 +1414,7 @@ export const ProjectForm = () => {
                     placeholder="Información adicional relevante"
                     rows={6}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
               </div>
@@ -1298,7 +1435,7 @@ export const ProjectForm = () => {
                     placeholder="Describa los objetivos del proyecto"
                     rows={4}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
 
@@ -1312,7 +1449,7 @@ export const ProjectForm = () => {
                     placeholder="Describa las tareas principales del proyecto"
                     rows={4}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
               </div>
@@ -1378,7 +1515,7 @@ export const ProjectForm = () => {
                     value={formData.presupuestoEconomico}
                     onChange={handleChange}
                     placeholder="Presupuesto económico del proyecto"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group full-width">
@@ -1391,7 +1528,7 @@ export const ProjectForm = () => {
                     placeholder="Describa las necesidades económicas"
                     rows={4}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group">
@@ -1403,7 +1540,7 @@ export const ProjectForm = () => {
                     value={formData.presupuestoGeneralCUP}
                     onChange={handleChange}
                     placeholder="Presupuesto general en CUP"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
                 <div className="form-group">
@@ -1415,7 +1552,7 @@ export const ProjectForm = () => {
                     value={formData.presupuestoAnualCUP}
                     onChange={handleChange}
                     placeholder="Presupuesto anual en CUP"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
               </div>
@@ -1436,7 +1573,7 @@ export const ProjectForm = () => {
                     placeholder="Criterio emitido por el consejo científico"
                     rows={6}
                     className="form-textarea"
-                    disabled={isViewMode ? true : false}
+                    disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
               </div>
@@ -1469,7 +1606,7 @@ export const ProjectForm = () => {
               <Button type="button" onClick={() => navigate("/projects")}>
                 Volver a Proyectos
               </Button>
-              {isAdmin && (
+              {isAdmin() && (
                 <Button type="button" variant="secondary" onClick={() => navigate(`/projects/${id}/edit`)}>
                   Editar Proyecto
                 </Button>

@@ -22,8 +22,9 @@ export interface FacultyArea {
 // Miembro del grupo (con campo admin de la tabla intermedia)
 export interface GroupMember {
   id_integrant: number;
-  integrant?: IntegrantSummary;
+  name: string;
   admin: boolean; // Campo de la tabla intermedia group_integrant
+  integrant?: IntegrantSummary; // Opcional, puede venir en algunas respuestas
 }
 
 // Grupo básico (respuesta de GET /groups/)
@@ -33,7 +34,8 @@ export interface Group {
   subjects: string; // Temáticas separadas por comas o algún delimitador
   problems: string; // Descripción/problemas
   id_faculty_area?: number | null;
-  id_integrant: number; // Líder/responsable
+  id_integrant?: number; // Líder/responsable (legacy, puede no venir)
+  id_admin?: number; // ID del responsable/admin del grupo
   id_faculty: number;
   create_date: string;
   update_date: string;
@@ -72,5 +74,6 @@ export interface GroupFilters {
   skip?: number;
   limit?: number;
   search?: string;
+  id_admin?: number;
 }
 

@@ -13,12 +13,13 @@ import { Plus, Search, Loader2, AlertCircle } from "lucide-react";
 import type { Registro } from "../types/recordList/Registros";
 import { RecordListService } from "../services/recordList/recordListService";
 import { useAuthStore } from "../stores/authStore";
+import { usePermissions } from "../hooks/usePermissions";
 import "./GroupList.css";
-import { mockRecords } from "../services/mockData";
 
 const RecordList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { canCreateRecords, canModifyRecord, canDeleteRecord, isIntegrant } = usePermissions();
   const [searchTerm, setSearchTerm] = useState("");
   const [records, setRecords] = useState<Registro[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,11 +35,9 @@ const RecordList: React.FC = () => {
     recordType: null,
   });
 
-  const isAdmin = user?.roles?.includes('admin') || false;
-  const isAutorRegistro = user?.roles?.includes('autor_registro') || false;
   const userId = user?.id ? parseInt(user.id) : null;
 
-  // Cargar registros al montar el componente o cambiar el filtro
+  // Cargar registros al montar el componente o cambiar el filtro o término de búsqueda
   useEffect(() => {
     const loadRecords = async () => {
       setLoading(true);
@@ -46,12 +45,15 @@ const RecordList: React.FC = () => {
       try {
         let fetchedRecords: Registro[];
         
+        // Usar el término de búsqueda si existe
+        const searchParam = searchTerm.trim() || undefined;
+        
         if (recordFilter === "mine" && userId) {
           // Cargar solo los registros del usuario actual
-          fetchedRecords = await RecordListService.fetchRecordsByAuthor(userId);
+          fetchedRecords = await RecordListService.fetchRecordsByAuthor(userId, searchParam);
         } else {
           // Cargar todos los registros
-          fetchedRecords = await RecordListService.fetchAllRecords();
+          fetchedRecords = await RecordListService.fetchAllRecords(searchParam);
         }
         
         setRecords(fetchedRecords);
@@ -63,8 +65,13 @@ const RecordList: React.FC = () => {
       }
     };
 
-    loadRecords();
-  }, [recordFilter, userId]);
+    // Debounce para la búsqueda
+    const timeoutId = setTimeout(() => {
+      loadRecords();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [recordFilter, userId, searchTerm]);
 
   const isAuthor = (record: Registro): boolean => {
     if (!userId) return false;
@@ -72,34 +79,26 @@ const RecordList: React.FC = () => {
   };
 
   const canEdit = (record: Registro): boolean => {
-    if (isAdmin) return true;
-    if (isAutorRegistro && recordFilter === "mine") return isAuthor(record);
-    return false;
+    return canModifyRecord(isAuthor(record));
   };
 
   const canDelete = (record: Registro): boolean => {
-    if (isAdmin) return true;
-    if (isAutorRegistro && recordFilter === "mine") return isAuthor(record);
-    return false;
+    return canDeleteRecord(isAuthor(record));
   };
 
-  const filteredRecords = records.filter((record) => {
-    const matchesSearch = record.titulo.toLowerCase().includes(searchTerm.toLowerCase());
-    if (recordFilter === "mine") {
-      return matchesSearch && isAuthor(record);
-    }
-    return matchesSearch;
-  });
+  // La búsqueda ya se hace en el backend, pero podemos mantener el filtrado local como respaldo
+  const filteredRecords = records;
 
   const handleDelete = async (recordId: string, recordType: string) => {
     try {
       await RecordListService.deleteRecord(recordId, recordType);
-      // Recargar la lista después de eliminar
+      // Recargar la lista después de eliminar (mantener los filtros actuales)
+      const searchParam = searchTerm.trim() || undefined;
       if (recordFilter === "mine" && userId) {
-        const updatedRecords = await RecordListService.fetchRecordsByAuthor(userId);
+        const updatedRecords = await RecordListService.fetchRecordsByAuthor(userId, searchParam);
         setRecords(updatedRecords);
       } else {
-        const updatedRecords = await RecordListService.fetchAllRecords();
+        const updatedRecords = await RecordListService.fetchAllRecords(searchParam);
         setRecords(updatedRecords);
       }
       setDeleteConfirm({ show: false, recordId: null, recordType: null });
@@ -135,23 +134,31 @@ const RecordList: React.FC = () => {
     {
       key: "actions",
       header: "Opciones",
-      render: (record: Registro) => (
-        canEdit(record) || canDelete(record) ? (
-          <OptionsMenu
-            onView={() => navigate(`/records/${record.id}`)}
-            onEdit={canEdit(record) ? () => navigate(`/records/${record.id}/edit`) : undefined}
-            onDelete={canDelete(record) ? () => setDeleteConfirm({ 
-              show: true, 
-              recordId: record.id,
-              recordType: record.tipo,
-            }) : undefined}
-          />
-        ) : (
+      render: (record: Registro) => {
+        const canEditRecord = canEdit(record);
+        const canDeleteRecord = canDelete(record);
+        
+        // INTEGRANT solo ve opciones si es autor, CONSEJO y ADMIN siempre ven opciones
+        if (canEditRecord || canDeleteRecord) {
+          return (
+            <OptionsMenu
+              onView={() => navigate(`/records/${record.id}`)}
+              onEdit={canEditRecord ? () => navigate(`/records/${record.id}/edit`) : undefined}
+              onDelete={canDeleteRecord ? () => setDeleteConfirm({ 
+                show: true, 
+                recordId: record.id,
+                recordType: record.tipo,
+              }) : undefined}
+            />
+          );
+        }
+        
+        return (
           <Button variant="outline" onClick={() => navigate(`/records/${record.id}`)}>
             Ver detalles
           </Button>
-        )
-      ),
+        );
+      },
     },
   ];
 
@@ -162,7 +169,7 @@ const RecordList: React.FC = () => {
           <h1>Producción Científica</h1>
           <p>Gestión de registros científicos (Códice)</p>
         </div>
-        {(isAdmin || isAutorRegistro) && (
+        {canCreateRecords() && (
           <Button onClick={() => navigate("/records/new")}>
             <Plus size={20} />
             Adicionar Registro
@@ -181,7 +188,7 @@ const RecordList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          {isAutorRegistro && (
+          {isIntegrant() && (
             <div className="filter-group">
               <label>Filtrar:</label>
               <select

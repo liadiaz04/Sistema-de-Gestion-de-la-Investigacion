@@ -86,15 +86,24 @@ export const RecordListService = {
   /**
    * Obtiene todos los registros (sin filtro de autor)
    * Hace peticiones a todos los endpoints y convierte cada respuesta en instancias de las clases correspondientes
+   * @param search - Término de búsqueda opcional para filtrar registros
    */
-  async fetchAllRecords(): Promise<Registro[]> {
+  async fetchAllRecords(search?: string): Promise<Registro[]> {
     const allRecords: Registro[] = [];
 
     // Iteramos sobre cada tipo de registro
     for (const [key, config] of Object.entries(endpointsMap)) {
       try {
+        // Construimos los parámetros de la petición
+        const params: Record<string, any> = {};
+        if (search && search.trim()) {
+          params.search = search.trim();
+        }
+
         // Hacemos la petición al endpoint
-        const response = await apiClient.get<any[]>(config.endpoint);
+        const response = await apiClient.get<any[]>(config.endpoint, {
+          params: Object.keys(params).length > 0 ? params : undefined,
+        });
 
         // Convertimos cada item de la respuesta en una instancia de la clase correspondiente
         const items = Array.isArray(response.data) ? response.data : [];
@@ -119,16 +128,24 @@ export const RecordListService = {
   /**
    * Obtiene registros filtrados por autor
    * Hace peticiones a todos los endpoints con el filtro de autor y convierte cada respuesta en instancias de las clases correspondientes
+   * @param authorId - ID del autor para filtrar registros
+   * @param search - Término de búsqueda opcional para filtrar registros
    */
-  async fetchRecordsByAuthor(authorId: number): Promise<Registro[]> {
+  async fetchRecordsByAuthor(authorId: number, search?: string): Promise<Registro[]> {
     const allRecords: Registro[] = [];
 
     // Iteramos sobre cada tipo de registro
     for (const [key, config] of Object.entries(endpointsMap)) {
       try {
-        // Hacemos la petición al endpoint con el filtro de autor
+        // Construimos los parámetros de la petición
+        const params: Record<string, any> = { author_id: authorId };
+        if (search && search.trim()) {
+          params.search = search.trim();
+        }
+
+        // Hacemos la petición al endpoint con el filtro de autor y búsqueda
         const response = await apiClient.get<any[]>(config.endpoint, {
-          params: { author_id: authorId },
+          params,
         });
 
         // Convertimos cada item de la respuesta en una instancia de la clase correspondiente

@@ -15,23 +15,35 @@ import type { Role } from "../types/api/role"
 import "./UserManagement.css"
 
 // Mapeo de role_name del backend a UserRole del frontend
-const mapRoleNameToUserRole = (roleName: string): UserRole => {
+// Backend roles: ADMIN (id:1), USUARIO (id:2), CONSEJO (id:3), AUTOR (id:4)
+const mapRoleNameToUserRole = (role: { id_role: number; role_name: string }): UserRole => {
+  const roleName = role.role_name.toUpperCase();
+  
+  // Mapear según los IDs primero (más confiable)
+  if (role.id_role === 1 || roleName === 'ADMIN') return 'admin';
+  if (role.id_role === 2 || roleName === 'USUARIO') return 'integrant';
+  if (role.id_role === 3 || roleName === 'CONSEJO') return 'consejo';
+  if (role.id_role === 4 || roleName === 'AUTOR') return 'autor_registro';
+  
+  // Mapeo por nombre para roles adicionales
   const roleMap: Record<string, UserRole> = {
-    'admin': 'admin',
     'responsable_proyecto': 'responsable_proyecto',
     'responsable_grupo': 'responsable_grupo',
     'integrante_proyecto': 'integrante_proyecto',
     'integrante_grupo': 'integrante_grupo',
-    'consejo_cientifico': 'consejo_cientifico',
+    'consejo_cientifico': 'consejo',
     'autor_registro': 'autor_registro',
     'usuario': 'usuario',
   }
-  return roleMap[roleName.toLowerCase()] || 'usuario'
+  
+  return roleMap[role.role_name.toLowerCase()] || 'usuario'
 }
 
 // Mapeo de UserRole a etiqueta legible
 const roleLabels: Record<UserRole, string> = {
   admin: "Administrador",
+  integrant: "Integrante",
+  consejo: "Consejo Científico",
   responsable_proyecto: "Responsable de Proyecto",
   responsable_grupo: "Responsable de Grupo",
   integrante_proyecto: "Integrante de Proyecto",
@@ -58,8 +70,10 @@ export const UserManagement = () => {
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const currentUser = useAuthStore((state) => state.user)
 
-  // Convertir roles del backend a UserRole[]
-  const roles: UserRole[] = availableRoles.map(r => mapRoleNameToUserRole(r.role_name))
+  // Convertir roles del backend a UserRole[] (eliminar duplicados)
+  const roles: UserRole[] = Array.from(
+    new Set(availableRoles.map(r => mapRoleNameToUserRole(r)))
+  )
 
   useEffect(() => {
     loadData()
@@ -107,18 +121,18 @@ export const UserManagement = () => {
     }
   }
 
-  const handleAddRole = async () => {
+  const handleModifyRole = async () => {
     if (!currentUser || !selectedUser) return
     try {
-      await userService.updateUserRole(selectedUser.id, newRole, currentUser)
+      await userService.modifyUserRole(selectedUser.id, newRole, currentUser)
       await loadUsers()
       setSelectedUser(null)
       setShowAddRoleModal(false)
       setNewRole("usuario")
-      showNotification("Rol agregado exitosamente", "success")
+      showNotification("Rol modificado exitosamente", "success")
     } catch (error) {
-      console.error("Error adding role:", error)
-      showNotification("Error al agregar el rol", "error")
+      console.error("Error modifying role:", error)
+      showNotification("Error al modificar el rol", "error")
     }
   }
 
@@ -151,7 +165,7 @@ export const UserManagement = () => {
     setShowViewRolesModal(true)
   }
 
-  const initiateAddRole = (user: IUser) => {
+  const initiateModifyRole = (user: IUser) => {
     setSelectedUser(user)
     setShowAddRoleModal(true)
   }
@@ -177,12 +191,14 @@ export const UserManagement = () => {
   const getPrimaryRole = (roles: UserRole[]): UserRole => {
     const rolePriority: UserRole[] = [
       "admin",
+      "consejo",
       "responsable_grupo",
       "responsable_proyecto",
       "consejo_cientifico",
       "autor_registro",
       "integrante_grupo",
       "integrante_proyecto",
+      "integrant",
       "usuario",
     ]
 
@@ -289,7 +305,9 @@ export const UserManagement = () => {
                     </div>
                   </td>
                   <td className="role-cell">
-                    <span className="role-tag">{roleLabels[getPrimaryRole(user.roles)]}</span>
+                    <span className="role-tag">
+                      {roleLabels[getPrimaryRole(user.roles)] || getPrimaryRole(user.roles)}
+                    </span>
                   </td>
                   <td className="actions-cell">
                     {isAdmin() && (
@@ -300,8 +318,8 @@ export const UserManagement = () => {
                             onClick: () => initiateViewRoles(user),
                           },
                           {
-                            label: "Agregar rol",
-                            onClick: () => initiateAddRole(user),
+                            label: "Modificar rol",
+                            onClick: () => initiateModifyRole(user),
                           },
                           {
                             label: "Eliminar rol",
@@ -336,11 +354,15 @@ export const UserManagement = () => {
               <p className="user-email-text">{selectedUser.correoElectronico}</p>
 
               <div className="roles-display">
-                {selectedUser.roles.map((role) => (
-                  <div key={role} className="role-badge">
-                    {roleLabels[role]}
-                  </div>
-                ))}
+                {selectedUser.roles.length > 0 ? (
+                  selectedUser.roles.map((role) => (
+                    <div key={role} className="role-badge">
+                      {roleLabels[role] || role}
+                    </div>
+                  ))
+                ) : (
+                  <p className="helper-text">El usuario no tiene roles asignados</p>
+                )}
               </div>
             </div>
             <div className="modal-footer">
@@ -356,7 +378,7 @@ export const UserManagement = () => {
         <div className="modal-overlay" onClick={() => setShowAddRoleModal(false)}>
           <div className="modal-content-clean" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Agregar Rol</h2>
+              <h2>Modificar Rol</h2>
               <button className="modal-close" onClick={() => setShowAddRoleModal(false)}>
                 ×
               </button>
@@ -367,17 +389,20 @@ export const UserManagement = () => {
                   {selectedUser.nombre} {selectedUser.apellidos}
                 </strong>
               </p>
+              <p className="helper-text" style={{ marginTop: '0.5rem', marginBottom: '1rem', color: '#666' }}>
+                El rol seleccionado reemplazará todos los roles actuales del usuario.
+              </p>
 
               <div className="form-group">
-                <label>Seleccionar Rol</label>
+                <label>Seleccionar Nuevo Rol</label>
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value as UserRole)}
                   className="form-select"
                 >
                   {roles.map((role) => (
-                    <option key={role} value={role} disabled={selectedUser.roles.includes(role)}>
-                      {roleLabels[role]}
+                    <option key={role} value={role}>
+                      {roleLabels[role] || role}
                     </option>
                   ))}
                 </select>
@@ -387,7 +412,7 @@ export const UserManagement = () => {
               <Button variant="secondary" onClick={() => setShowAddRoleModal(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleAddRole}>Agregar</Button>
+              <Button onClick={handleModifyRole}>Modificar</Button>
             </div>
           </div>
         </div>
@@ -420,7 +445,7 @@ export const UserManagement = () => {
                       initiateRemoveRole(selectedUser.id, role)
                     }}
                   >
-                    {roleLabels[role]}
+                    {roleLabels[role] || role}
                     <span className="remove-icon">×</span>
                   </button>
                 ))}

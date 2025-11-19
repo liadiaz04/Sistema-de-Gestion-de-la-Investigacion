@@ -28,20 +28,30 @@ const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
   const apellidos = nameParts.slice(1).join(' ') || '';
 
   // Mapear roles del backend al formato del frontend
+  // Backend roles: ADMIN (id:1), USUARIO (id:2), CONSEJO (id:3), AUTOR (id:4)
   const roleMap: Record<string, import('../../types').UserRole> = {
     'admin': 'admin',
+    'integrant': 'integrant',
+    'consejo': 'consejo',
+    // Mantener compatibilidad con roles antiguos si existen
     'responsable_proyecto': 'responsable_proyecto',
     'responsable_grupo': 'responsable_grupo',
     'integrante_proyecto': 'integrante_proyecto',
     'integrante_grupo': 'integrante_grupo',
-    'consejo_cientifico': 'consejo_cientifico',
+    'consejo_cientifico': 'consejo',
     'autor_registro': 'autor_registro',
     'usuario': 'usuario',
   };
 
-  const roles = integrant.roles?.map(r => 
-    roleMap[r.role_name.toLowerCase()] || 'usuario'
-  ) || [];
+  const roles = integrant.roles?.map(r => {
+    const roleName = r.role_name.toUpperCase();
+    // Mapear según los IDs o nombres
+    if (roleName === 'ADMIN' || r.id_role === 1) return 'admin';
+    if (roleName === 'USUARIO' || r.id_role === 2) return 'integrant';
+    if (roleName === 'CONSEJO' || r.id_role === 3) return 'consejo'
+    if (roleName === 'AUTOR' || r.id_role === 4) return 'autor_registro';
+    return roleMap[r.role_name.toLowerCase()] || 'usuario';
+  }) || [];
 
   return {
     id: integrant.id_integrant.toString(),
