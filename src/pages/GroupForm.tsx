@@ -1167,14 +1167,6 @@ export const GroupForm = () => {
               <div className="tab-content">
                 <div className="tab-header">
                   <h2>Gestión de Integrantes</h2>
-                  <div className="tab-actions">
-                    <Button type="button" variant="secondary" onClick={() => setShowDirectoryModal(true)}>
-                      Agregar integrante (Directorio CUJAE)
-                    </Button>
-                    <Button type="button" variant="secondary" onClick={() => setShowExternalModal(true)}>
-                      Agregar integrante (Externo de la CUJAE)
-                    </Button>
-                  </div>
                 </div>
 
                 <div className="members-table">

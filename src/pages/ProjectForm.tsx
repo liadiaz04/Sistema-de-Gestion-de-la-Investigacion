@@ -20,6 +20,7 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { projectService } from "../services/projectService"
+import { integrantService } from "../services/integrantService"
 
 type IntegrantSearchHook = {
   term: string
@@ -274,36 +275,76 @@ export const ProjectForm = () => {
           
           // Cargar miembros
           if (project.members) {
-            const memberIds = project.members.map(m => m.id_integrant)
+            const memberIds = project.members.map((m) => m.id_integrant)
             setSelectedMemberIds(memberIds)
-            
-            // Mapear miembros a formato del formulario
-            const mappedMembers = project.members.map((m, idx) => ({
-              id: `member-${m.id_project_member || idx}`,
-              integrantId: m.id_integrant,
-              usuario: m.integrant ? {
-                id: String(m.integrant.id_integrant),
-                nombre: m.integrant.name.split(" ")[0] || "",
-                apellidos: m.integrant.name.split(" ").slice(1).join(" ") || "",
-                correoElectronico: m.integrant.email || "",
-                nombreUsuario: "",
-                numeroIdentidad: "",
-                roles: [],
-                esExterno: false,
-                esAdministrador: false,
-              } : {
-                id: String(m.id_integrant),
-                nombre: "",
-                apellidos: "",
-                correoElectronico: "",
-                nombreUsuario: "",
-                numeroIdentidad: "",
-                roles: [],
-                esExterno: false,
-                esAdministrador: false,
-              },
-              rol: "integrante_proyecto",
-            }))
+
+            const integrantCache = new Map<
+              number,
+              { id_integrant: number; name: string; email?: string | null; external?: boolean }
+            >()
+
+            const resolveMemberIntegrant = async (
+              member: (typeof project.members)[number],
+            ): Promise<{ id_integrant: number; name: string; email?: string | null; external?: boolean } | null> => {
+              if (member.integrant) {
+                return {
+                  id_integrant: member.integrant.id_integrant,
+                  name: member.integrant.name,
+                  email: member.integrant.email,
+                  external: false,
+                }
+              }
+
+              if (integrantCache.has(member.id_integrant)) {
+                return integrantCache.get(member.id_integrant)!
+              }
+
+              try {
+                const integrant = await integrantService.getIntegrantById(member.id_integrant)
+                const summary = {
+                  id_integrant: integrant.id_integrant,
+                  name: integrant.name,
+                  email: integrant.email,
+                  external: integrant.external,
+                }
+                integrantCache.set(member.id_integrant, summary)
+                return summary
+              } catch (error) {
+                console.error("Error cargando integrante del proyecto:", error)
+                integrantCache.set(member.id_integrant, {
+                  id_integrant: member.id_integrant,
+                  name: "",
+                  email: "",
+                  external: false,
+                })
+                return null
+              }
+            }
+
+            const mappedMembers = await Promise.all(
+              project.members.map(async (m, idx) => {
+                const integrantInfo = await resolveMemberIntegrant(m)
+                const fullName = integrantInfo?.name?.trim() || ""
+                const [firstName, ...rest] = fullName.length > 0 ? fullName.split(" ") : ["Integrante", ""]
+
+                return {
+                  id: `member-${m.id_project_member || idx}`,
+                  integrantId: m.id_integrant,
+                  usuario: {
+                    id: String(m.id_integrant),
+                    nombre: firstName || "Integrante",
+                    apellidos: rest.join(" ").trim(),
+                    correoElectronico: integrantInfo?.email || "",
+                    nombreUsuario: "",
+                    numeroIdentidad: "",
+                    roles: [],
+                    esExterno: integrantInfo?.external ?? false,
+                    esAdministrador: false,
+                  },
+                  rol: m.has_administrative_permission ? "responsable_proyecto" : "integrante_proyecto",
+                }
+              }),
+            )
             setMembers(mappedMembers)
           }
           

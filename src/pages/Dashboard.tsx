@@ -3,41 +3,32 @@
 import type React from "react"
 import { useNavigate } from "react-router-dom"
 import { Card } from "../components/common/Card"
-import { Users, FolderKanban, FileText, TrendingUp } from "lucide-react"
-import { mockDashboardSummary } from "../services/mockData"
+import { Users, FolderKanban, FileText } from "lucide-react"
+import { usePermissions } from "../hooks/usePermissions"
 import "./Dashboard.css"
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate()
+  const { canCreateRecords, canCreateProjects, canCreateGroups } = usePermissions()
 
   const stats = [
     {
-      icon: FileText,
-      label: "Mis Registros",
-      value: mockDashboardSummary.misRegistros,
-      color: "var(--color-primary)",
-      path: "/records",
-    },
-    {
       icon: FolderKanban,
-      label: "Mis Proyectos",
-      value: mockDashboardSummary.misProyectos,
+      label: "Proyectos",
       color: "var(--color-accent)",
       path: "/projects",
     },
     {
       icon: Users,
-      label: "Mis Grupos",
-      value: mockDashboardSummary.misGrupos,
+      label: "Grupos",
       color: "var(--color-primary-dark)",
       path: "/groups",
     },
     {
-      icon: TrendingUp,
-      label: "Proyectos Activos",
-      value: mockDashboardSummary.proyectosActivos,
-      color: "var(--color-accent-light)",
-      path: "/projects",
+      icon: FileText,
+      label: "Registros",
+      color: "var(--color-primary)",
+      path: "/records",
     },
   ]
 
@@ -56,7 +47,6 @@ export const Dashboard: React.FC = () => {
             </div>
             <div className="dashboard-stat-content">
               <p className="dashboard-stat-label">{stat.label}</p>
-              <p className="dashboard-stat-value">{stat.value}</p>
             </div>
             <button className="dashboard-stat-action" onClick={() => navigate(stat.path)}>
               Ver más →
@@ -102,18 +92,24 @@ export const Dashboard: React.FC = () => {
         <Card className="dashboard-card">
           <h3>Accesos Rápidos</h3>
           <div className="dashboard-quick-actions">
-            <button className="dashboard-quick-action" onClick={() => navigate("/records/new")}>
-              <FileText size={20} />
-              <span>Nuevo Registro</span>
-            </button>
-            <button className="dashboard-quick-action" onClick={() => navigate("/projects/new")}>
-              <FolderKanban size={20} />
-              <span>Nuevo Proyecto</span>
-            </button>
-            <button className="dashboard-quick-action" onClick={() => navigate("/groups/new")}>
-              <Users size={20} />
-              <span>Nuevo Grupo</span>
-            </button>
+            {canCreateRecords() && (
+              <button className="dashboard-quick-action" onClick={() => navigate("/records/new")}>
+                <FileText size={20} />
+                <span>Nuevo Registro</span>
+              </button>
+            )}
+            {canCreateProjects() && (
+              <button className="dashboard-quick-action" onClick={() => navigate("/projects/new")}>
+                <FolderKanban size={20} />
+                <span>Nuevo Proyecto</span>
+              </button>
+            )}
+            {canCreateGroups() && (
+              <button className="dashboard-quick-action" onClick={() => navigate("/groups/new")}>
+                <Users size={20} />
+                <span>Nuevo Grupo</span>
+              </button>
+            )}
           </div>
         </Card>
       </div>

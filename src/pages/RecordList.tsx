@@ -77,6 +77,14 @@ const RecordList: React.FC = () => {
     if (!userId) return false;
     return record.autores.some((autor) => autor.id_integrant === userId);
   };
+  const buildRecordPath = (record: Registro) => `/records/${record.tipo}-${record.id}`;
+
+  const navigateWithRecord = (record: Registro, mode: "view" | "edit" = "view") => {
+    const basePath = buildRecordPath(record);
+    const targetPath = mode === "edit" ? `${basePath}/edit` : basePath;
+    navigate(targetPath, { state: { record } });
+  };
+
 
   const canEdit = (record: Registro): boolean => {
     return canModifyRecord(isAuthor(record));
@@ -142,19 +150,28 @@ const RecordList: React.FC = () => {
         if (canEditRecord || canDeleteRecord) {
           return (
             <OptionsMenu
-              onView={() => navigate(`/records/${record.id}`)}
-              onEdit={canEditRecord ? () => navigate(`/records/${record.id}/edit`) : undefined}
-              onDelete={canDeleteRecord ? () => setDeleteConfirm({ 
-                show: true, 
-                recordId: record.id,
-                recordType: record.tipo,
-              }) : undefined}
+              onView={() => navigateWithRecord(record)}
+              onEdit={
+                canEditRecord
+                  ? () => navigateWithRecord(record, "edit")
+                  : undefined
+              }
+              onDelete={
+                canDeleteRecord
+                  ? () =>
+                      setDeleteConfirm({
+                        show: true,
+                        recordId: record.id,
+                        recordType: record.tipo,
+                      })
+                  : undefined
+              }
             />
           );
         }
         
         return (
-          <Button variant="outline" onClick={() => navigate(`/records/${record.id}`)}>
+          <Button variant="outline" onClick={() => navigateWithRecord(record)}>
             Ver detalles
           </Button>
         );

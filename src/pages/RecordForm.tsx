@@ -21,12 +21,242 @@ import {
 import { recordService } from "../services/record/recordService"
 import type { ExternalAuthor, AuthorId } from "../types/record/types"
 import type { UserRole } from "../types"
+import type {
+  Registro,
+  ArticuloRegistro,
+  LibroRegistro,
+  MonografiaRegistro,
+  NormaRegistro,
+  PatenteRegistro,
+  SoftwareRegistro,
+  TesisRegistro,
+  EventoRegistro,
+  PremioRegistro,
+} from "../types/recordList/Registros"
+import { recordDetailService } from "../services/record/recordDetailService"
 type IntegrantSearchHook = {
   term: string
   setTerm: (value: string) => void
   results: IntegrantOption[]
   isLoading: boolean
   error: string | null
+}
+
+type RecordFormLocationState = {
+  record?: Registro
+}
+
+const RECORD_TYPES: RecordType[] = [
+  "articulo",
+  "libro",
+  "monografia",
+  "norma",
+  "patente",
+  "software",
+  "evento",
+  "premio",
+  "tesis",
+]
+
+const isRecordTypeValue = (value: string | null | undefined): value is RecordType =>
+  Boolean(value && RECORD_TYPES.includes(value as RecordType))
+
+const parseCompositeRecordId = (rawId?: string | null) => {
+  if (!rawId) return null
+  const [maybeType, ...rest] = rawId.split("-")
+  if (isRecordTypeValue(maybeType) && rest.length > 0) {
+    return {
+      type: maybeType,
+      id: rest.join("-"),
+    }
+  }
+  return {
+    type: null,
+    id: rawId,
+  }
+}
+
+const createInitialFormData = () => ({
+  titulo: "",
+  descripcion: "",
+  año: new Date().getFullYear(),
+  mes: new Date().getMonth() + 1,
+  resumen: "",
+  palabrasClave: "",
+  pais: "Cuba",
+  tipoArticulo: "",
+  tipoNorma: "",
+  revista: "",
+  baseDatos: "",
+  issn: "",
+  volumen: "",
+  numero: "",
+  paginas: "",
+  doi: "",
+  editorial: "",
+  isbn: "",
+  tipoTesis: "",
+  numeroRegistro: "",
+  estado: "",
+  registroCENDA: "",
+  nombreEvento: "",
+  organizador: "",
+  tipoEvento: "",
+  tipoPremio: "",
+  institucion: "",
+})
+
+type RecordFormState = ReturnType<typeof createInitialFormData>
+
+const splitFullName = (fullName: string) => {
+  if (!fullName.trim()) {
+    return { firstName: fullName, lastName: "" }
+  }
+  const [firstName, ...rest] = fullName.trim().split(" ")
+  return {
+    firstName,
+    lastName: rest.join(" "),
+  }
+}
+
+const mapAuthorsFromRecord = (record: Registro) => {
+  return (record.autores || []).map((author, index) => {
+    const { firstName, lastName } = splitFullName(author.name || "")
+    return {
+      id: `author-${author.id_integrant ?? index}`,
+      integrantId: author.id_integrant,
+      usuario: {
+        id: author.id_integrant ? String(author.id_integrant) : `author-${index}`,
+        nombre: firstName || "Autor",
+        apellidos: lastName,
+        correoElectronico: author.email || "",
+        nombreUsuario: "",
+        numeroIdentidad: "",
+        roles: [],
+        esExterno: false,
+        esAdministrador: false,
+      },
+      nombre: firstName || "Autor",
+      apellidos: lastName,
+      esExterno: false,
+      esPrincipal: index === 0,
+      orden: index + 1,
+    }
+  })
+}
+
+const mapTutorsFromRecord = (record: TesisRegistro) => {
+  return (record.tutors || []).map((tutor, index) => {
+    const { firstName, lastName } = splitFullName(tutor.name || "")
+    return {
+      id: `tutor-${tutor.id_integrant ?? index}`,
+      integrantId: tutor.id_integrant,
+      usuario: {
+        id: tutor.id_integrant ? String(tutor.id_integrant) : `tutor-${index}`,
+        nombre: firstName || "Tutor",
+        apellidos: lastName,
+        correoElectronico: "",
+        nombreUsuario: "",
+        numeroIdentidad: "",
+        roles: [],
+        esExterno: false,
+        esAdministrador: false,
+      },
+      nombre: firstName || "Tutor",
+      apellidos: lastName,
+      esExterno: false,
+      esPrincipal: index === 0,
+      orden: index + 1,
+    }
+  })
+}
+
+const mapRecordToFormData = (record: Registro): RecordFormState => {
+  const base = createInitialFormData()
+  base.titulo = record.titulo || base.titulo
+  base.descripcion = record.resume || base.descripcion
+  base.año = record.year_only || base.año
+  base.mes = record.month_only || base.mes
+  base.resumen = record.resume || base.resumen
+  base.palabrasClave = record.keywords || base.palabrasClave
+  base.pais = record.country?.name || base.pais
+
+  switch (record.tipo) {
+    case "articulo": {
+      const article = record as ArticuloRegistro
+      base.revista = article.journal || base.revista
+      base.volumen = article.voulume || base.volumen
+      base.paginas = article.pages || base.paginas
+      base.numero = article.number || base.numero
+      base.doi = article.doi || base.doi
+      base.issn = article.issn || base.issn
+      base.tipoArticulo =
+        (article.article_type && (article.article_type.name || article.article_type.description)) || base.tipoArticulo
+      break
+    }
+    case "libro": {
+      const book = record as LibroRegistro
+      base.descripcion = book.chapter_title || base.descripcion
+      base.editorial = book.publisher || book.editor || base.editorial
+      base.volumen = book.voulume || base.volumen
+      base.numero = book.number || base.numero
+      base.paginas = book.pages || base.paginas
+      base.isbn = book.isbn || base.isbn
+      break
+    }
+    case "monografia": {
+      const monograph = record as MonografiaRegistro
+      base.isbn = monograph.isbn || base.isbn
+      base.paginas = monograph.pages || base.paginas
+      base.numero = monograph.number || base.numero
+      base.registroCENDA = monograph.cenda || base.registroCENDA
+      break
+    }
+    case "norma": {
+      const norm = record as NormaRegistro
+      base.numeroRegistro = norm.registration_number || base.numeroRegistro
+      base.paginas = norm.pages || base.paginas
+      base.tipoNorma = (norm.norm_type && (norm.norm_type.name || norm.norm_type.description)) || base.tipoNorma
+      break
+    }
+    case "patente": {
+      const patent = record as PatenteRegistro
+      base.numeroRegistro = patent.reg_number || base.numeroRegistro
+      base.estado = patent.is_conceded ? "concedida" : "tramite"
+      break
+    }
+    case "software": {
+      const software = record as SoftwareRegistro
+      base.registroCENDA = software.number || base.registroCENDA
+      base.estado = software.is_conceded ? "registrado" : ""
+      break
+    }
+    case "evento": {
+      const encounter = record as EventoRegistro
+      base.nombreEvento = encounter.encounter_name || base.nombreEvento
+      base.organizador = encounter.organizer || base.organizador
+      base.tipoEvento =
+        (encounter.encounter_type && (encounter.encounter_type.name || encounter.encounter_type.description)) ||
+        base.tipoEvento
+      break
+    }
+    case "premio": {
+      const prize = record as PremioRegistro
+      base.tipoPremio = (prize.prize_type && (prize.prize_type.name || prize.prize_type.description)) || base.tipoPremio
+      base.institucion = prize.grant_institution || base.institucion
+      break
+    }
+    case "tesis": {
+      const thesis = record as TesisRegistro
+      base.institucion = thesis.institution || base.institucion
+      base.tipoTesis = (thesis.thesis_type && (thesis.thesis_type.name || thesis.thesis_type.description)) || base.tipoTesis
+      break
+    }
+    default:
+      break
+  }
+
+  return base
 }
 
 const useIntegrantSearch = (): IntegrantSearchHook => {
@@ -78,14 +308,26 @@ export const RecordForm = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { id } = useParams()
-  
+
+  const locationState = (location.state as RecordFormLocationState | null) ?? null
+  const recordFromLocation = locationState?.record ?? null
+  const parsedRecordKey = parseCompositeRecordId(id)
+  const recordNumericId = parsedRecordKey?.id ?? null
+
   const { user: currentUser } = useAuthStore()
   const isAdmin = currentUser?.roles?.includes("admin") || false
 
   const isEditMode = Boolean(id && location.pathname.includes("/edit"))
   const isViewMode = Boolean(id && !location.pathname.includes("/edit"))
 
-  const [recordType, setRecordType] = useState<RecordType>("articulo")
+  const [recordType, setRecordType] = useState<RecordType>(
+    (parsedRecordKey?.type as RecordType | undefined) ??
+      (recordFromLocation?.tipo as RecordType | undefined) ??
+      "articulo"
+  )
+  const [recordData, setRecordData] = useState<Registro | null>(recordFromLocation ?? null)
+  const [recordLoading, setRecordLoading] = useState(false)
+  const [recordLoadError, setRecordLoadError] = useState<string | null>(null)
   const [isSaved, setIsSaved] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
@@ -130,42 +372,7 @@ export const RecordForm = () => {
   const authorSearch = useIntegrantSearch()
   const tutorSearch = useIntegrantSearch()
 
-  const [formData, setFormData] = useState({
-    titulo: "",
-    descripcion: "",
-    año: new Date().getFullYear(),
-    mes: new Date().getMonth() + 1,
-    resumen: "",
-    palabrasClave: "",
-    pais: "Cuba",
-    tipoArticulo: "",
-    tipoNorma: "",
-    // Artículo
-    revista: "",
-    baseDatos: "",
-    issn: "",
-    volumen: "",
-    numero: "",
-    paginas: "",
-    doi: "",
-    // Libro
-    editorial: "",
-    isbn: "",
-    // Tesis
-    tipoTesis: "",
-    // Patente
-    numeroRegistro: "",
-    estado: "",
-    // Software
-    registroCENDA: "",
-    // Evento
-    nombreEvento: "",
-    organizador: "",
-    tipoEvento: "",
-    // Premio
-    tipoPremio: "",
-    institucion: "",
-  })
+  const [formData, setFormData] = useState<RecordFormState>(createInitialFormData)
 
   const recordTypes: { value: RecordType; label: string }[] = [
     { value: "articulo", label: "Artículo" },
@@ -178,47 +385,6 @@ export const RecordForm = () => {
     { value: "premio", label: "Premio" },
     { value: "tesis", label: "Tesis" },
   ]
-
-  useEffect(() => {
-    if (id) {
-      const record = mockRecords.find((r) => r.id === id)
-      if (record) {
-        setRecordType(record.tipo)
-        setFormData({
-          titulo: record.titulo,
-          descripcion: record.descripcion || "",
-          año: record.año,
-          mes: record.mes || new Date().getMonth() + 1,
-          resumen: record.resumen || "",
-          palabrasClave: record.palabrasClave?.join(", ") || "",
-          pais: record.pais || "Cuba",
-          tipoArticulo: "",
-          tipoNorma: "",
-          revista: "",
-          baseDatos: "",
-          issn: "",
-          volumen: "",
-          numero: "",
-          paginas: "",
-          doi: "",
-          editorial: "",
-          isbn: "",
-          tipoTesis: "",
-          numeroRegistro: "",
-          estado: "",
-          registroCENDA: "",
-          nombreEvento: "",
-          organizador: "",
-          tipoEvento: "",
-          tipoPremio: "",
-          institucion: "",
-        })
-        setAuthors(record.autores || [])
-        setAssociatedProjects([])
-        setIsSaved(true)
-      }
-    }
-  }, [id])
 
   useEffect(() => {
     const loadMetadata = async () => {
@@ -257,6 +423,155 @@ export const RecordForm = () => {
   }, [metadataReloadKey])
 
   useEffect(() => {
+    if (!parsedRecordKey?.id) return
+    setFormData(createInitialFormData())
+    setAuthors([])
+    setSelectedAuthorIds([])
+    setTutors([])
+    setSelectedTutorIds([])
+    setAssociatedProjects([])
+    setIsSaved(false)
+    setRecordLoadError(null)
+  }, [parsedRecordKey?.id])
+
+  useEffect(() => {
+    if (id) return
+    setRecordData(null)
+    setFormData(createInitialFormData())
+    setAuthors([])
+    setSelectedAuthorIds([])
+    setTutors([])
+    setSelectedTutorIds([])
+    setAssociatedProjects([])
+    setIsSaved(false)
+    setRecordLoadError(null)
+    setSelectedCountryId(null)
+    setSelectedArticleTypeId(null)
+    setSelectedNormTypeId(null)
+    setSelectedPrizeTypeId(null)
+    setSelectedThesisTypeId(null)
+    setSelectedEncounterTypeId(null)
+    setRecordType("articulo")
+  }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    if (parsedRecordKey?.type) return
+    setRecordLoadError("No se pudo determinar el tipo de registro. Acceda desde la lista e inténtelo nuevamente.")
+  }, [id, parsedRecordKey?.type])
+
+  useEffect(() => {
+    if (!recordFromLocation) return
+    setRecordData(recordFromLocation)
+    setRecordLoadError(null)
+    setRecordLoading(false)
+  }, [recordFromLocation])
+
+  useEffect(() => {
+    if (!parsedRecordKey?.id || !parsedRecordKey.type) return
+
+    if (
+      recordFromLocation &&
+      recordFromLocation.id === parsedRecordKey.id &&
+      recordFromLocation.tipo === parsedRecordKey.type
+    ) {
+      return
+    }
+
+    let isMounted = true
+    setRecordLoading(true)
+    setRecordLoadError(null)
+
+    recordDetailService
+      .getRecord(parsedRecordKey.type, parsedRecordKey.id)
+      .then((record) => {
+        if (!isMounted) return
+        setRecordData(record)
+      })
+      .catch((error) => {
+        if (!isMounted) return
+        setRecordLoadError(error.message || "No se pudo cargar la información del registro seleccionado")
+      })
+      .finally(() => {
+        if (!isMounted) return
+        setRecordLoading(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [parsedRecordKey?.id, parsedRecordKey?.type, recordFromLocation])
+
+  useEffect(() => {
+    if (!recordData) return
+
+    setRecordLoadError(null)
+    setRecordType(recordData.tipo as RecordType)
+    setIsSaved(true)
+
+    const hydratedForm = mapRecordToFormData(recordData)
+    setFormData(hydratedForm)
+
+    const mappedAuthors = mapAuthorsFromRecord(recordData)
+    setAuthors(mappedAuthors)
+    setSelectedAuthorIds(
+      mappedAuthors
+        .map((author) => author.integrantId)
+        .filter((value): value is number => typeof value === "number")
+    )
+
+    if (recordData.tipo === "tesis") {
+      const thesisTutors = mapTutorsFromRecord(recordData as TesisRegistro)
+      setTutors(thesisTutors)
+      setSelectedTutorIds(
+        thesisTutors
+          .map((tutor) => tutor.integrantId)
+          .filter((value): value is number => typeof value === "number")
+      )
+    } else {
+      setTutors([])
+      setSelectedTutorIds([])
+    }
+
+    setSelectedCountryId(recordData.id_country ?? null)
+
+    if (recordData.tipo === "articulo") {
+      const article = recordData as ArticuloRegistro
+      setSelectedArticleTypeId(article.article_type?.id_article_type ?? null)
+    } else {
+      setSelectedArticleTypeId(null)
+    }
+
+    if (recordData.tipo === "norma") {
+      const norm = recordData as NormaRegistro
+      setSelectedNormTypeId(norm.norm_type?.id_norm_type ?? null)
+    } else {
+      setSelectedNormTypeId(null)
+    }
+
+    if (recordData.tipo === "premio") {
+      const prize = recordData as PremioRegistro
+      setSelectedPrizeTypeId(prize.prize_type?.id_prize_type ?? null)
+    } else {
+      setSelectedPrizeTypeId(null)
+    }
+
+    if (recordData.tipo === "tesis") {
+      const thesis = recordData as TesisRegistro
+      setSelectedThesisTypeId(thesis.thesis_type?.id_thesis_type ?? null)
+    } else {
+      setSelectedThesisTypeId(null)
+    }
+
+    if (recordData.tipo === "evento") {
+      const encounter = recordData as EventoRegistro
+      setSelectedEncounterTypeId(encounter.encounter_type?.id_encounter_type ?? null)
+    } else {
+      setSelectedEncounterTypeId(null)
+    }
+  }, [recordData])
+
+  useEffect(() => {
     if (!countries.length || selectedCountryId) {
       return
     }
@@ -286,8 +601,8 @@ export const RecordForm = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (isEditMode && id) {
-      const index = mockRecords.findIndex((r) => r.id === id)
+    if (isEditMode && recordNumericId) {
+      const index = mockRecords.findIndex((r) => r.id === recordNumericId)
       if (index !== -1) {
         mockRecords[index] = {
           ...mockRecords[index],
@@ -308,17 +623,6 @@ export const RecordForm = () => {
       setActiveTab("autores")
       setSuccessMessage("Datos básicos guardados con éxito. Por favor, complete los autores y proyectos asociados.")
       setShowSuccessDialog(true)
-    }
-  }
-
-  const splitFullName = (fullName: string) => {
-    if (!fullName.trim()) {
-      return { firstName: fullName, lastName: "" }
-    }
-    const [firstName, ...rest] = fullName.trim().split(" ")
-    return {
-      firstName,
-      lastName: rest.join(" "),
     }
   }
 
@@ -816,8 +1120,8 @@ export const RecordForm = () => {
   }
 
   const handleUpdateRecord = () => {
-    if (!id) return
-    const index = mockRecords.findIndex((r) => r.id === id)
+    if (!recordNumericId) return
+    const index = mockRecords.findIndex((r) => r.id === recordNumericId)
     if (index !== -1) {
       mockRecords[index] = {
         ...mockRecords[index],
@@ -1415,6 +1719,18 @@ export const RecordForm = () => {
         </div>
       </Modal>
 
+      {(isViewMode || isEditMode) && recordLoading && (
+        <Card>
+          <p>Cargando datos del registro seleccionado...</p>
+        </Card>
+      )}
+
+      {recordLoadError && (
+        <Card>
+          <p className="error-message">{recordLoadError}</p>
+        </Card>
+      )}
+
       <div className="form-header">
         <h1>{id ? "Editar Registro Científico" : "Adicionar Registro Científico"}</h1>
         <p>Complete la información del registro</p>
@@ -1939,7 +2255,14 @@ export const RecordForm = () => {
               Volver a Registros
             </Button>
             {isAdmin && (
-              <Button type="button" onClick={() => navigate(`/records/${id}/edit`)}>
+              <Button
+                type="button"
+                onClick={() =>
+                  navigate(`/records/${id}/edit`, {
+                    state: recordData ? { record: recordData } : undefined,
+                  })
+                }
+              >
                 Editar Registro
               </Button>
             )}
