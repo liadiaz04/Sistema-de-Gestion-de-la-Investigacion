@@ -39,13 +39,14 @@ export const Statistics = () => {
 
   useEffect(() => {
     loadStatistics()
-  }, [view, selectedYear, category])
+  }, [view, selectedYear, category, selectedFacultad])
 
   const loadStatistics = async () => {
     setLoading(true)
     try {
       if (view === "tabular") {
-        const data = await statisticsService.getTabularStatistics()
+        const facultyName = selectedFacultad === "Todas" ? undefined : selectedFacultad
+        const data = await statisticsService.getTabularStatistics(facultyName)
         setTabularData(data)
       } else {
         const data = await statisticsService.getGraphicalStatistics(selectedYear)
@@ -105,9 +106,11 @@ export const Statistics = () => {
             <Button variant="secondary" onClick={handleExportPDF}>
               Exportar PDF
             </Button>
-            <Button variant="secondary" onClick={handleExportXLSX}>
-              Exportar XLSX
-            </Button>
+            {view === "tabular" && (
+              <Button variant="secondary" onClick={handleExportXLSX}>
+                Exportar XLSX
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -160,12 +163,10 @@ export const Statistics = () => {
                     </thead>
                     <tbody>
                       {Object.entries(tabularData.registros.porTipo).map(([tipo, total]) => {
-                        const totalFacultad = selectedFacultad === "Todas" 
-                          ? total 
-                          : Math.floor(total * 0.15) // Mock: 15% para facultad seleccionada
-                        const aporte = selectedFacultad === "Todas"
-                          ? 100
-                          : (totalFacultad / total) * 100
+                        const porcentaje =
+                          (tabularData.registros.porcentajeAportePorTipo as any)[tipo] ?? 0
+                        const totalFacultad = Math.round((total as number) * (porcentaje / 100))
+                        const aporte = porcentaje
                         return (
                           <tr key={tipo}>
                             <td className="tipo-label">{tipo}</td>
@@ -186,11 +187,40 @@ export const Statistics = () => {
                           <strong>
                             {selectedFacultad === "Todas"
                               ? tabularData.registros.total
-                              : Math.floor(tabularData.registros.total * 0.15)}
+                              : Object.entries(tabularData.registros.porTipo).reduce(
+                                  (acc, [tipo, total]) => {
+                                    const porcentaje =
+                                      (tabularData.registros.porcentajeAportePorTipo as any)[
+                                        tipo
+                                      ] ?? 0
+                                    return (
+                                      acc + Math.round((total as number) * (porcentaje / 100))
+                                    )
+                                  },
+                                  0,
+                                )}
                           </strong>
                         </td>
                         <td>
-                          <strong>{selectedFacultad === "Todas" ? "100.0" : "15.0"}%</strong>
+                          <strong>
+                            {selectedFacultad === "Todas"
+                              ? "100.0"
+                              : (
+                                  (Object.entries(tabularData.registros.porTipo).reduce(
+                                    (acc, [tipo, total]) => {
+                                      const porcentaje =
+                                        (tabularData.registros
+                                          .porcentajeAportePorTipo as any)[tipo] ?? 0
+                                      return (
+                                        acc +
+                                        Math.round((total as number) * (porcentaje / 100))
+                                      )
+                                    },
+                                    0,
+                                  ) / tabularData.registros.total) *
+                                  100
+                                ).toFixed(1)}
+                          </strong>
                         </td>
                       </tr>
                     </tbody>
