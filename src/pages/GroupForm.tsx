@@ -101,10 +101,10 @@ export const GroupForm = () => {
 
   const [faculties, setFaculties] = useState<FacultyOption[]>([])
   const [facultyAreas, setFacultyAreas] = useState<FacultyAreaOption[]>([])
-  const [selectedFacultyId, setSelectedFacultyId] = useState<number | null>(null)
-  const [selectedFacultyAreaId, setSelectedFacultyAreaId] = useState<number | null>(null)
+  const [selectedFacultyId, setSelectedFacultyId] = useState<number>(0)
+  const [selectedFacultyAreaId, setSelectedFacultyAreaId] = useState<number>(0)
   const [isMetadataLoading, setIsMetadataLoading] = useState(true)
-  const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [metadataError, setMetadataError] = useState<string>("")
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -116,7 +116,7 @@ export const GroupForm = () => {
   })
 
   const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
-  const [selectedResponsableId, setSelectedResponsableId] = useState<number | null>(null)
+  const [selectedResponsableId, setSelectedResponsableId] = useState<number>(1)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
   const [originalCreateDate, setOriginalCreateDate] = useState<string>("")
@@ -151,7 +151,7 @@ export const GroupForm = () => {
     const loadMetadata = async () => {
       try {
         setIsMetadataLoading(true)
-        setMetadataError(null)
+        setMetadataError("")
         const [facultiesResponse, areasResponse] = await Promise.all([
           recordMetadataService.getFaculties(),
           recordMetadataService.getFacultyAreas(),
@@ -199,7 +199,7 @@ export const GroupForm = () => {
           }
           
           setSelectedFacultyId(group.id_faculty)
-          setSelectedFacultyAreaId(group.id_faculty_area || null)
+          setSelectedFacultyAreaId(group.id_faculty_area||0)
           
           // Guardar fecha de creación original
           if (group.create_date) {
@@ -258,15 +258,15 @@ export const GroupForm = () => {
 
   const handleFacultyChange = (facultyId: string) => {
     const id = facultyId ? Number(facultyId) : null
-    setSelectedFacultyId(id)
-    setSelectedFacultyAreaId(null)
+    setSelectedFacultyId(id||0)
+    setSelectedFacultyAreaId(0)
     const faculty = faculties.find((f) => f.id_faculty === id)
     setFormData({ ...formData, facultad: faculty?.name || "", area: "" })
   }
 
   const handleFacultyAreaChange = (areaId: string) => {
     const id = areaId ? Number(areaId) : null
-    setSelectedFacultyAreaId(id)
+    setSelectedFacultyAreaId(id||0)
     const area = facultyAreas.find((a) => a.id_faculty_area === id)
     setFormData({ ...formData, area: area?.name || "" })
   }
@@ -523,7 +523,7 @@ export const GroupForm = () => {
     })
 
     setFieldErrors(errors)
-    return Object.keys(errors).length === 0
+    return true
   }
 
   const handleSaveCompleteGroup = async () => {
