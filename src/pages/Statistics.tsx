@@ -73,16 +73,21 @@ export const Statistics = () => {
 
   useEffect(() => {
     loadStatistics()
-  }, [view, selectedYear, category])
+  }, [view, selectedYear, category, selectedFacultad])
 
   const loadStatistics = async () => {
     setLoading(true)
     try {
       if (view === "tabular") {
-        const data = await statisticsService.getTabularStatistics()
+        const data = await statisticsService.getTabularStatistics(
+          selectedFacultad === "Todas" ? undefined : selectedFacultad,
+        )
         setTabularData(data)
       } else {
-        const data = await statisticsService.getGraphicalStatistics(selectedYear)
+        const data = await statisticsService.getGraphicalStatistics(
+          selectedYear,
+          selectedFacultad === "Todas" ? undefined : selectedFacultad,
+        )
         setGraphicalData(data)
       }
     } catch (error) {
@@ -160,7 +165,7 @@ export const Statistics = () => {
 
   const handleExportPDF = async () => {
     const data = view === "tabular" ? tabularData : graphicalData
-    const blob = await statisticsService.generateReport("pdf", data)
+    const blob = await statisticsService.generateReport("pdf", data, category, view)
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -172,8 +177,11 @@ export const Statistics = () => {
   }
 
   const handleExportXLSX = async () => {
-    const data = view === "tabular" ? tabularData : graphicalData
-    const blob = await statisticsService.generateReport("xlsx", data)
+    // XLSX solo disponible para vista tabular
+    if (view !== "tabular") return
+    const data = tabularData
+    if (!data) return
+    const blob = await statisticsService.generateReport("xlsx", data, category, view)
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -205,9 +213,11 @@ export const Statistics = () => {
             <Button variant="secondary" onClick={handleExportPDF}>
               Exportar PDF
             </Button>
-            <Button variant="secondary" onClick={handleExportXLSX}>
-              Exportar XLSX
-            </Button>
+            {view === "tabular" && (
+              <Button variant="secondary" onClick={handleExportXLSX}>
+                Exportar XLSX
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -437,6 +447,20 @@ export const Statistics = () => {
               </select>
             </div>
 
+            {category === "registros" && (
+              <div className="facultad-selector">
+                <label>Facultad:</label>
+                <select value={selectedFacultad} onChange={(e) => handleFacultadChange(e.target.value)}>
+                  <option value="Todas">Todas</option>
+                  {faculties.map((faculty) => (
+                    <option key={faculty.id_faculty} value={faculty.name}>
+                      {faculty.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {category === "grupos" && (
               <div className="group-visualization-selector">
                 <label>Ver:</label>
@@ -475,17 +499,26 @@ export const Statistics = () => {
               <ResponsiveContainer width="100%" height={500}>
                 <ComposedChart
                   data={Object.entries(graphicalData.indicadoresRegistrosPorAño[selectedYear] || {}).map(
-                    ([tipo, total]) => ({
-                      tipo,
-                      total,
-                      Industrial: Math.floor(total * 0.15),
-                      Eléctrica: Math.floor(total * 0.12),
-                      Civil: Math.floor(total * 0.1),
-                      Mecánica: Math.floor(total * 0.08),
-                      Arquitectura: Math.floor(total * 0.07),
-                      Informática: Math.floor(total * 0.18),
-                      Química: Math.floor(total * 0.14),
-                    }),
+                    ([tipo, total]) => {
+                      const dataPoint: any = {
+                        tipo,
+                        total,
+                      }
+                      // Si hay una facultad seleccionada, mostrar solo esa facultad
+                      if (selectedFacultad !== "Todas" && (graphicalData as any).registrosPorFacultadEnAño?.[selectedFacultad]) {
+                        const facultadData = (graphicalData as any).registrosPorFacultadEnAño[selectedFacultad]
+                        dataPoint[selectedFacultad] = facultadData[tipo] || 0
+                      } else {
+                        // Si no hay facultad seleccionada, mostrar todas las facultades
+                        faculties.forEach((faculty) => {
+                          const facultadData = (graphicalData as any).registrosPorFacultadEnAño?.[faculty.name]
+                          if (facultadData) {
+                            dataPoint[faculty.name] = facultadData[tipo] || 0
+                          }
+                        })
+                      }
+                      return dataPoint
+                    },
                   )}
                   margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
                 >
@@ -500,13 +533,29 @@ export const Statistics = () => {
                   <Tooltip />
                   <Legend wrapperStyle={{ paddingTop: "20px" }} />
                   <Bar yAxisId="left" dataKey="total" fill="#4A9EFF" name="Total" />
-                  <Line yAxisId="right" type="monotone" dataKey="Industrial" stroke="#FFB347" name="Industrial" />
-                  <Line yAxisId="right" type="monotone" dataKey="Eléctrica" stroke="#90EE90" name="Eléctrica" />
-                  <Line yAxisId="right" type="monotone" dataKey="Civil" stroke="#FF6B6B" name="Civil" />
-                  <Line yAxisId="right" type="monotone" dataKey="Mecánica" stroke="#C77DFF" name="Mecánica" />
-                  <Line yAxisId="right" type="monotone" dataKey="Arquitectura" stroke="#FF8FAB" name="Arquitectura" />
-                  <Line yAxisId="right" type="monotone" dataKey="Informática" stroke="#4ECDC4" name="Informática" />
-                  <Line yAxisId="right" type="monotone" dataKey="Química" stroke="#95E1D3" name="Química" />
+                  {selectedFacultad !== "Todas" ? (
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey={selectedFacultad}
+                      stroke="#FFB347"
+                      name={selectedFacultad}
+                    />
+                  ) : (
+                    faculties.slice(0, 7).map((faculty, index) => {
+                      const colors = ["#FFB347", "#90EE90", "#FF6B6B", "#C77DFF", "#FF8FAB", "#4ECDC4", "#95E1D3"]
+                      return (
+                        <Line
+                          key={faculty.id_faculty}
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey={faculty.name}
+                          stroke={colors[index % colors.length]}
+                          name={faculty.name}
+                        />
+                      )
+                    })
+                  )}
                 </ComposedChart>
               </ResponsiveContainer>
             </Card>
@@ -538,7 +587,11 @@ export const Statistics = () => {
                       <Bar dataKey="value" name="Grupos" fill="#7BA05B" />
                     </BarChart>
                   ) : (
-                    <BarChart data={graphicalData.gruposConMasEstudiantes} layout="vertical">
+                    <BarChart
+                      data={graphicalData.gruposConMasEstudiantes || []}
+                      layout="vertical"
+                      margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis type="number" label={{ value: "Integrantes", position: "insideBottom" }} />
                       <YAxis dataKey="label" type="category" width={200} />
@@ -568,7 +621,7 @@ export const Statistics = () => {
                   <ResponsiveContainer width={projectVisualizationType === "porFacultad" ? "100%" : 600} height={400} minWidth={projectVisualizationType === "porFacultad" ? 600 : undefined}>
                     {projectVisualizationType === "porFacultad" ? (
                       <BarChart
-                        data={graphicalData.gruposPorFacultad}
+                        data={(graphicalData as any).proyectosPorFacultad || graphicalData.gruposPorFacultad}
                         margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
@@ -602,12 +655,7 @@ export const Statistics = () => {
                       </BarChart>
                     ) : (
                       <BarChart
-                        data={[
-                          { label: "Activos", value: 28 },
-                          { label: "Finalizados", value: 15 },
-                          { label: "En Pausa", value: 5 },
-                          { label: "Cancelados", value: 2 },
-                        ]}
+                        data={(graphicalData as any).proyectosPorEstado || []}
                         margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
