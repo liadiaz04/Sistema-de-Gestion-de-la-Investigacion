@@ -21,6 +21,14 @@ import {
 } from "../services/record/recordMetadataService"
 import { projectService } from "../services/projectService"
 import { integrantService } from "../services/integrantService"
+import {
+  validateRequired,
+  validateEmail,
+  validateLength,
+  validateDateRange,
+  validateKeywords,
+  extractErrorMessage,
+} from "../utils/validation"
 
 type IntegrantSearchHook = {
   term: string
@@ -136,6 +144,8 @@ export const ProjectForm = () => {
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -362,11 +372,29 @@ export const ProjectForm = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Validar campos básicos
+    const errors: Record<string, string> = {}
+    const nombreError = validateRequired(formData.nombre, "Título del proyecto")
+    if (nombreError) errors.nombre = nombreError
+
+    const descripcionError = validateRequired(formData.descripcion, "Descripción")
+    if (descripcionError) errors.descripcion = descripcionError
+
+    const tematicaError = validateRequired(formData.tematica, "Temática")
+    if (tematicaError) errors.tematica = tematicaError
+
     if (!selectedResponsable) {
-      setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
+      errors.responsable = "Debe seleccionar un responsable para el proyecto"
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setSuccessMessage("Por favor, complete todos los campos requeridos")
       setShowSuccessDialog(true)
       return
     }
+
+    setFieldErrors({})
 
     if (isEditMode && id) {
       const index = mockProjects.findIndex((p) => p.id === id)
@@ -511,15 +539,77 @@ export const ProjectForm = () => {
     return value && value.trim() ? value.trim() : null
   }
 
-  const handleSaveCompleteProject = async () => {
+  // Función para validar el formulario de proyecto
+  const validateProjectForm = (): boolean => {
+    const errors: Record<string, string> = {}
+
+    // Validar nombre del proyecto
+    const nombreError = validateRequired(formData.nombre, "Título del proyecto")
+    if (nombreError) errors.nombre = nombreError
+
+    // Validar longitud del nombre
+    if (formData.nombre) {
+      const nombreLengthError = validateLength(formData.nombre, 5, 200, "Título del proyecto")
+      if (nombreLengthError) errors.nombre = nombreLengthError
+    }
+
+    // Validar descripción
+    const descripcionError = validateRequired(formData.descripcion, "Descripción")
+    if (descripcionError) errors.descripcion = descripcionError
+
+    if (formData.descripcion) {
+      const descripcionLengthError = validateLength(formData.descripcion, 20, 2000, "Descripción")
+      if (descripcionLengthError) errors.descripcion = descripcionLengthError
+    }
+
+    // Validar temática
+    const tematicaError = validateRequired(formData.tematica, "Temática")
+    if (tematicaError) errors.tematica = tematicaError
+
+    // Validar palabras clave si están presentes
+    if (formData.palabrasClave) {
+      const keywordsError = validateKeywords(formData.palabrasClave)
+      if (keywordsError) errors.palabrasClave = keywordsError
+    }
+
+    // Validar responsable
     if (!selectedResponsableId) {
-      setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
+      errors.responsable = "Debe seleccionar un responsable para el proyecto"
+    }
+
+    // Validar fechas
+    if (formData.fechaInicio && formData.fechaFin) {
+      const dateError = validateDateRange(formData.fechaInicio, formData.fechaFin)
+      if (dateError) errors.fechaFin = dateError
+    }
+
+    // Validar emails de miembros externos
+    externalMembers.forEach((member, index) => {
+      if (member.usuario?.correoElectronico) {
+        const emailError = validateEmail(member.usuario.correoElectronico)
+        if (emailError) {
+          errors[`externalMemberEmail_${index}`] = emailError
+        }
+      }
+    })
+
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleSaveCompleteProject = async () => {
+    // Validar formulario antes de enviar
+    if (!validateProjectForm()) {
+      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
       setShowSuccessDialog(true)
       return
     }
 
     try {
       setIsSubmitting(true)
+      setSubmitError(null)
+      setFieldErrors({})
 
       const now = new Date().toISOString().split("T")[0]
       const initialDate = formData.fechaInicio
@@ -583,8 +673,9 @@ export const ProjectForm = () => {
       setTimeout(() => {
         navigate("/projects")
       }, 1500)
-    } catch (error) {
-      const errorMessage = (error as Error).message || "Error al guardar el proyecto"
+    } catch (error: any) {
+      const errorMessage = extractErrorMessage(error) || "Error al guardar el proyecto"
+      setSubmitError(errorMessage)
       setSuccessMessage(errorMessage)
       setShowSuccessDialog(true)
     } finally {
@@ -595,8 +686,10 @@ export const ProjectForm = () => {
   const handleSaveAllUpdates = async () => {
     if (!id) return
 
-    if (!selectedResponsableId) {
-      setSuccessMessage("Por favor, seleccione un responsable para el proyecto")
+    // Validar formulario antes de actualizar
+    if (!validateProjectForm()) {
+      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
       setShowSuccessDialog(true)
       return
     }
@@ -915,6 +1008,7 @@ export const ProjectForm = () => {
                     required
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
+                  {fieldErrors.nombre && <span className="field-error">{fieldErrors.nombre}</span>}
                 </div>
 
                 <div className="form-group">
@@ -946,6 +1040,7 @@ export const ProjectForm = () => {
                     className="form-textarea"
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
+                  {fieldErrors.descripcion && <span className="field-error">{fieldErrors.descripcion}</span>}
                 </div>
 
                 <div className="form-group full-width">
@@ -993,6 +1088,7 @@ export const ProjectForm = () => {
                     required
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
+                  {fieldErrors.tematica && <span className="field-error">{fieldErrors.tematica}</span>}
                 </div>
 
                 <div className="form-group">
@@ -1180,6 +1276,7 @@ export const ProjectForm = () => {
                       )}
                     </div>
                   )}
+                  {fieldErrors.responsable && <span className="field-error">{fieldErrors.responsable}</span>}
                 </div>
 
               </div>
@@ -1391,6 +1488,7 @@ export const ProjectForm = () => {
                     onChange={handleChange}
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
+                  {fieldErrors.fechaFin && <span className="field-error">{fieldErrors.fechaFin}</span>}
                 </div>
                 <div className="form-group full-width">
                   <label>Clasificación del Proyecto</label>

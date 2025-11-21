@@ -77,11 +77,6 @@ export const AuthForm: React.FC = () => {
           <Button type="submit" fullWidth disabled={loading}>
             {loading ? "Iniciando sesión..." : "Entrar"}
           </Button>
-
-          <div className="auth-links">
-            <a href="/register">Registrarse</a>
-            <a href="/forgot-password">¿Olvidó su contraseña?</a>
-          </div>
         </form>
 
         <div className="auth-demo-info">

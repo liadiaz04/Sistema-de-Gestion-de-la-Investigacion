@@ -20,6 +20,12 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { groupService } from "../services/groupService"
+import {
+  validateRequired,
+  validateEmail,
+  validateLength,
+  extractErrorMessage,
+} from "../utils/validation"
 
 type IntegrantSearchHook = {
   term: string
@@ -139,6 +145,7 @@ export const GroupForm = () => {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const loadMetadata = async () => {
@@ -318,11 +325,31 @@ export const GroupForm = () => {
   const handleSaveInitialData = (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Validar campos básicos
+    const errors: Record<string, string> = {}
+    const nombreError = validateRequired(formData.nombre, "Nombre del grupo")
+    if (nombreError) errors.nombre = nombreError
+
     if (!selectedResponsable) {
-      setSuccessMessage("Por favor, seleccione un responsable para el grupo")
+      errors.responsable = "Debe seleccionar un responsable para el grupo"
+    }
+
+    if (!selectedFacultyId) {
+      errors.facultad = "Debe seleccionar una facultad"
+    }
+
+    if (!selectedFacultyAreaId) {
+      errors.area = "Debe seleccionar un área"
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setSuccessMessage("Por favor, complete todos los campos requeridos")
       setShowSuccessDialog(true)
       return
     }
+
+    setFieldErrors({})
 
     if (isEditMode && id) {
       const groupIndex = mockGroups.findIndex((g) => g.id === id)
@@ -404,8 +431,10 @@ export const GroupForm = () => {
   const handleSaveAllUpdates = async () => {
     if (!id) return
 
-    if (!selectedResponsableId || !selectedFacultyId || !selectedFacultyAreaId) {
-      setSuccessMessage("Por favor, complete todos los campos requeridos (responsable, facultad y área)")
+    // Validar formulario antes de actualizar
+    if (!validateGroupForm()) {
+      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
       setShowSuccessDialog(true)
       return
     }
@@ -442,9 +471,66 @@ export const GroupForm = () => {
     }
   }
 
+  // Función para validar el formulario de grupo
+  const validateGroupForm = (): boolean => {
+    const errors: Record<string, string> = {}
+
+    // Validar nombre del grupo
+    const nombreError = validateRequired(formData.nombre, "Nombre del grupo")
+    if (nombreError) errors.nombre = nombreError
+
+    // Validar longitud del nombre
+    if (formData.nombre) {
+      const nombreLengthError = validateLength(formData.nombre, 3, 200, "Nombre del grupo")
+      if (nombreLengthError) errors.nombre = nombreLengthError
+    }
+
+    // Validar descripción
+    if (formData.descripcion) {
+      const descripcionError = validateLength(formData.descripcion, 20, 1000, "Descripción")
+      if (descripcionError) errors.descripcion = descripcionError
+    }
+
+    // Validar temáticas
+    if (formData.tematicas) {
+      const tematicasError = validateLength(formData.tematicas, 5, 500, "Temáticas")
+      if (tematicasError) errors.tematicas = tematicasError
+    }
+
+    // Validar responsable
+    if (!selectedResponsableId) {
+      errors.responsable = "Debe seleccionar un responsable para el grupo"
+    }
+
+    // Validar facultad
+    if (!selectedFacultyId) {
+      errors.facultad = "Debe seleccionar una facultad"
+    }
+
+    // Validar área
+    if (!selectedFacultyAreaId) {
+      errors.area = "Debe seleccionar un área"
+    }
+
+    // Validar emails de miembros externos
+    externalMembers.forEach((member, index) => {
+      if (member.usuario?.correoElectronico) {
+        const emailError = validateEmail(member.usuario.correoElectronico)
+        if (emailError) {
+          errors[`externalMemberEmail_${index}`] = emailError
+        }
+      }
+    })
+
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const handleSaveCompleteGroup = async () => {
-    if (!selectedResponsableId || !selectedFacultyId || !selectedFacultyAreaId) {
-      setSuccessMessage("Por favor, complete todos los campos requeridos (responsable, facultad y área)")
+    // Validar formulario antes de enviar
+    if (!validateGroupForm()) {
+      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
       setShowSuccessDialog(true)
       return
     }
@@ -452,6 +538,7 @@ export const GroupForm = () => {
     try {
       setIsSubmitting(true)
       setSubmitError(null)
+      setFieldErrors({})
 
       const now = new Date().toISOString()
       const payload = {
@@ -480,8 +567,8 @@ export const GroupForm = () => {
       setTimeout(() => {
         navigate("/groups")
       }, 1500)
-    } catch (error) {
-      const errorMessage = (error as Error).message || "Error al guardar el grupo"
+    } catch (error: any) {
+      const errorMessage = extractErrorMessage(error) || "Error al guardar el grupo"
       setSubmitError(errorMessage)
       setSuccessMessage(errorMessage)
       setShowSuccessDialog(true)
@@ -744,6 +831,7 @@ export const GroupForm = () => {
                     placeholder="Ej: Grupo de Investigación en IA"
                     required
                   />
+                  {fieldErrors.nombre && <span className="field-error">{fieldErrors.nombre}</span>}
                 </div>
                 <div className="form-group">
                   <label>Descripción</label>
@@ -776,6 +864,7 @@ export const GroupForm = () => {
                       ))}
                     </select>
                   )}
+                  {fieldErrors.facultad && <span className="field-error">{fieldErrors.facultad}</span>}
                 </div>
                 <div className="form-group">
                   <label>Área</label>
@@ -857,6 +946,7 @@ export const GroupForm = () => {
                       </p>
                     )}
                   </div>
+                  {fieldErrors.responsable && <span className="field-error">{fieldErrors.responsable}</span>}
                 </div>
                 <div className="form-actions">
                   <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
@@ -1297,6 +1387,7 @@ export const GroupForm = () => {
                     placeholder="Ej: Grupo de Investigación en IA"
                     required
                   />
+                  {fieldErrors.nombre && <span className="field-error">{fieldErrors.nombre}</span>}
                 </div>
                 <div className="form-group">
                   <label>Descripción</label>

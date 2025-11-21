@@ -34,6 +34,21 @@ import type {
   PremioRegistro,
 } from "../types/recordList/Registros"
 import { recordDetailService } from "../services/record/recordDetailService"
+import {
+  validateRequired,
+  validateEmail,
+  validateDOI,
+  validateISSN,
+  validateISBN,
+  validateYear,
+  validateAuthors,
+  validateKeywords,
+  validateName,
+  validateLength,
+  extractErrorMessage,
+  isDuplicateIdentifierError,
+  getDuplicateIdentifierMessage,
+} from "../utils/validation"
 type IntegrantSearchHook = {
   term: string
   setTerm: (value: string) => void
@@ -368,6 +383,7 @@ export const RecordForm = () => {
   const [selectedTutorIds, setSelectedTutorIds] = useState<number[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const authorSearch = useIntegrantSearch()
   const tutorSearch = useIntegrantSearch()
@@ -886,10 +902,79 @@ export const RecordForm = () => {
     return false
   }
 
+  // Función para validar todos los campos antes de enviar
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
+
+    // Validar campos requeridos comunes
+    const tituloError = validateRequired(formData.titulo, "Título")
+    if (tituloError) errors.titulo = tituloError
+
+    const añoError = validateYear(formData.año)
+    if (añoError) errors.año = añoError
+
+    // Validar autores
+    const authorsError = validateAuthors(authors)
+    if (authorsError) errors.authors = authorsError
+
+    // Validar palabras clave si están presentes
+    if (formData.palabrasClave) {
+      const keywordsError = validateKeywords(formData.palabrasClave)
+      if (keywordsError) errors.palabrasClave = keywordsError
+    }
+
+    // Validaciones específicas por tipo de registro
+    switch (recordType) {
+      case "articulo":
+        if (formData.issn) {
+          const issnError = validateISSN(formData.issn)
+          if (issnError) errors.issn = issnError
+        }
+        if (formData.doi) {
+          const doiError = validateDOI(formData.doi)
+          if (doiError) errors.doi = doiError
+        }
+        break
+      case "libro":
+        if (formData.isbn) {
+          const isbnError = validateISBN(formData.isbn)
+          if (isbnError) errors.isbn = isbnError
+        }
+        break
+      case "monografia":
+        if (formData.isbn) {
+          const isbnError = validateISBN(formData.isbn)
+          if (isbnError) errors.isbn = isbnError
+        }
+        break
+    }
+
+    // Validar emails de autores externos
+    externalAuthors.forEach((author, index) => {
+      if (author.usuario?.correoElectronico) {
+        const emailError = validateEmail(author.usuario.correoElectronico)
+        if (emailError) {
+          errors[`externalAuthorEmail_${index}`] = emailError
+        }
+      }
+    })
+
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const handleSaveCompleteRecord = async () => {
+    // Validar formulario antes de enviar
+    if (!validateForm()) {
+      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
+      setShowSuccessDialog(true)
+      return
+    }
+
     try {
       setIsSubmitting(true)
       setSubmitError(null)
+      setFieldErrors({})
 
       const authorIds = buildAuthorIds()
       const keywords = toNullIfEmpty(formData.palabrasClave)
@@ -1109,11 +1194,19 @@ export const RecordForm = () => {
       setTimeout(() => {
         navigate("/records")
       }, 1500)
-    } catch (error) {
-      const errorMessage = (error as Error).message || "Error al guardar el registro"
-      setSubmitError(errorMessage)
-      setSuccessMessage(errorMessage)
-      setShowSuccessDialog(true)
+    } catch (error: any) {
+      // Manejar error 409 (conflicto) para ISSN/ISBN/DOI duplicados
+      if (isDuplicateIdentifierError(error)) {
+        const friendlyMessage = getDuplicateIdentifierMessage(error)
+        setSubmitError(friendlyMessage)
+        setSuccessMessage(friendlyMessage)
+        setShowSuccessDialog(true)
+      } else {
+        const errorMessage = extractErrorMessage(error) || "Error al guardar el registro"
+        setSubmitError(errorMessage)
+        setSuccessMessage(errorMessage)
+        setShowSuccessDialog(true)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -1227,6 +1320,7 @@ export const RecordForm = () => {
                 placeholder="0000-0000"
                 disabled={isViewMode ? true : false}
               />
+              {fieldErrors.issn && <span className="field-error">{fieldErrors.issn}</span>}
             </div>
             <div className="form-group">
               <label htmlFor="volumen">Volumen</label>
@@ -1273,6 +1367,7 @@ export const RecordForm = () => {
                 placeholder="10.1000/xyz123"
                 disabled={isViewMode ? true : false}
               />
+              {fieldErrors.doi && <span className="field-error">{fieldErrors.doi}</span>}
             </div>
           </>
         )
@@ -1304,6 +1399,7 @@ export const RecordForm = () => {
                 onChange={handleChange}
                 disabled={isViewMode ? true : false}
               />
+              {fieldErrors.isbn && <span className="field-error">{fieldErrors.isbn}</span>}
             </div>
             <div className="form-group">
               <label htmlFor="paginas">Páginas</label>
@@ -1791,6 +1887,7 @@ export const RecordForm = () => {
                       required
                       disabled={isViewMode ? true : false}
                     />
+                    {fieldErrors.titulo && <span className="field-error">{fieldErrors.titulo}</span>}
                   </div>
 
                   <div className="form-group full-width">
@@ -1822,6 +1919,7 @@ export const RecordForm = () => {
                       required
                       disabled={isViewMode ? true : false}
                     />
+                    {fieldErrors.año && <span className="field-error">{fieldErrors.año}</span>}
                   </div>
 
                   <div className="form-group">
@@ -1911,7 +2009,8 @@ export const RecordForm = () => {
                       placeholder="Separe las palabras clave con comas"
                       disabled={isViewMode ? true : false}
                     />
-                    <small className="form-hint">Separe múltiples palabras clave con comas</small>
+                    <small className="form-hint">Separe múltiples palabras clave con comas (mínimo 3, máximo 10)</small>
+                    {fieldErrors.palabrasClave && <span className="field-error">{fieldErrors.palabrasClave}</span>}
                   </div>
                 </div>
               </div>
@@ -1995,6 +2094,7 @@ export const RecordForm = () => {
                 </div>
               )}
 
+              {fieldErrors.authors && <p className="error-message">{fieldErrors.authors}</p>}
               {authors.length === 0 ? (
                 <p className="empty-state">No hay autores agregados aún</p>
               ) : (
