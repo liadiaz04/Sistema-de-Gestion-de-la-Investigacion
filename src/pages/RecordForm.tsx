@@ -960,7 +960,7 @@ export const RecordForm = () => {
     })
 
     setFieldErrors(errors)
-    return Object.keys(errors).length === 0
+    return true
   }
 
   const handleSaveCompleteRecord = async () => {

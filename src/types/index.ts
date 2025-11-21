@@ -136,7 +136,7 @@ export interface IProject {
   id: string
   nombre: string
   descripcion: string
-  responsable: IUser  // Made responsable optional to fix TypeScript error
+  responsable: IUser | undefined  // Made responsable optional to fix TypeScript error
   tematica: string
   programa: string
   tipoProyecto?: string // New field for project type

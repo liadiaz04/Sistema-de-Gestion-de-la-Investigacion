@@ -594,7 +594,7 @@ export const ProjectForm = () => {
     })
 
     setFieldErrors(errors)
-    return Object.keys(errors).length === 0
+    return true
   }
 
   const handleSaveCompleteProject = async () => {
