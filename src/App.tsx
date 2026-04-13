@@ -13,6 +13,7 @@ import { Statistics } from "./pages/Statistics"
 import { GroupForm } from "./pages/GroupForm"
 import { ProjectForm } from "./pages/ProjectForm"
 import { RecordForm } from "./pages/RecordForm"
+import { AssistantChat } from "./pages/AssistantChat"
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -49,6 +50,7 @@ function App() {
           <Route path="users" element={<UserManagement />} />
           <Route path="audit" element={<AuditLog />} />
           <Route path="statistics" element={<Statistics />} />
+          <Route path="assistant" element={<AssistantChat />} />
         </Route>
       </Routes>
     </BrowserRouter>

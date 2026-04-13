@@ -4,7 +4,7 @@ import React from "react"
 import { Outlet, useNavigate } from "react-router-dom"
 import { useAuthStore } from "../../stores/authStore"
 import { usePermissions } from "../../hooks/usePermissions"
-import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3, UserCog, ClipboardList, PieChart } from 'lucide-react'
+import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3, UserCog, ClipboardList, PieChart, MessageCircle } from 'lucide-react'
 import "./Layout.css"
 
 export const Layout: React.FC = () => {
@@ -23,6 +23,7 @@ export const Layout: React.FC = () => {
     { icon: Users, label: "Grupos", path: "/groups" },
     { icon: FolderKanban, label: "Proyectos", path: "/projects" },
     { icon: FileText, label: "Registros", path: "/records" },
+    { icon: MessageCircle, label: "Asistente", path: "/assistant" },
     ...(canViewStatistics() ? [
       { icon: PieChart, label: "Estadísticas", path: "/statistics" },
     ] : []),

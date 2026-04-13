@@ -83,26 +83,15 @@ export const projectService = {
     const response = await apiClient.post<Project>('/projects/', data);
     return response.data;
   },
-
-  /**
-   * Actualiza un proyecto existente
-   */
   async updateProject(projectId: number, project: ProjectUpdate): Promise<Project> {
     const response = await apiClient.put<Project>(`/projects/${projectId}`, project);
     return response.data;
   },
-
-  /**
-   * Actualiza un proyecto usando el mismo payload que createProject
-   */
   async updateProjectWithPayload(projectId: number, data: CreateProjectPayload): Promise<Project> {
     const response = await apiClient.put<Project>(`/projects/${projectId}`, data);
     return response.data;
   },
 
-  /**
-   * Elimina un proyecto
-   */
   async deleteProject(projectId: number): Promise<Project> {
     const response = await apiClient.delete<Project>(`/projects/${projectId}`);
     return response.data;
