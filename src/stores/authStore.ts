@@ -31,8 +31,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 }))
 
-// Initialize auth state from localStorage
-const token = localStorage.getItem("token")
+// Initialize auth state from localStorage (login guarda auth_token; compatibilidad con token)
+const token = localStorage.getItem("token") || localStorage.getItem("auth_token")
 const userStr = localStorage.getItem("user")
 if (token && userStr) {
   try {

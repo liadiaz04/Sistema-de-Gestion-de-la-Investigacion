@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
@@ -12,7 +12,30 @@ import "./GroupForm.css"
 import { mockGroups } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
 import { usePermissions } from "../hooks/usePermissions"
+import { evaluationService } from "../services/evaluationService"
+import { integrantGroupEvaluationService } from "../services/integrantGroupEvaluationService"
+import type { Evaluation } from "../types/api/evaluation"
+import type { IntegrantGroupEvaluation } from "../types/api/integrantGroupEvaluation"
 import type { IUser } from "../types/index"
+
+const readUserFromLocalStorage = (): IUser | null => {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem("user")
+    if (!raw) return null
+    return JSON.parse(raw) as IUser
+  } catch {
+    return null
+  }
+}
+
+const parseStoredIntegrantId = (): number | null => {
+  if (typeof window === "undefined") return null
+  const uid = localStorage.getItem("user_id")
+  if (!uid) return null
+  const n = parseInt(uid, 10)
+  return Number.isNaN(n) ? null : n
+}
 import {
   recordMetadataService,
   type FacultyOption,
@@ -85,7 +108,8 @@ export const GroupForm = () => {
   const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
-  const { user: currentUser } = useAuthStore()
+  const { user: currentUserFromStore } = useAuthStore()
+  const currentUser = currentUserFromStore ?? readUserFromLocalStorage()
   const { isAutor } = usePermissions()
 
   const isAutorUser = isAutor()
@@ -97,7 +121,7 @@ export const GroupForm = () => {
   const [isSaved, setIsSaved] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
-  const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "evaluaciones">("datos")
+  const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "evaluacion_integrantes">("datos")
 
   const [faculties, setFaculties] = useState<FacultyOption[]>([])
   const [facultyAreas, setFacultyAreas] = useState<FacultyAreaOption[]>([])
@@ -116,7 +140,7 @@ export const GroupForm = () => {
   })
 
   const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
-  const [selectedResponsableId, setSelectedResponsableId] = useState<number>(1)
+  const [selectedResponsableId, setSelectedResponsableId] = useState<number>(0)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
   const [originalCreateDate, setOriginalCreateDate] = useState<string>("")
@@ -146,6 +170,225 @@ export const GroupForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
+  const [groupEvaluationsList, setGroupEvaluationsList] = useState<IntegrantGroupEvaluation[]>([])
+  const [evaluationTypesCatalog, setEvaluationTypesCatalog] = useState<Evaluation[]>([])
+  const [evaluationsTabLoading, setEvaluationsTabLoading] = useState(false)
+  const [evaluationsTabError, setEvaluationsTabError] = useState("")
+
+  const [showAddEvaluationModal, setShowAddEvaluationModal] = useState(false)
+  const [evalMemberSearchTerm, setEvalMemberSearchTerm] = useState("")
+  const [evalFormSelectedMember, setEvalFormSelectedMember] = useState<{
+    integrantId: number
+    label: string
+  } | null>(null)
+  const [evalFormEvaluationId, setEvalFormEvaluationId] = useState<number | "">("")
+  const [evalFormDescription, setEvalFormDescription] = useState("")
+  const [evalFormSubmitting, setEvalFormSubmitting] = useState(false)
+
+  const canManageGroupEvaluations = useMemo(() => {
+    const roles = currentUser?.roles || []
+    if (roles.includes("admin") || roles.includes("consejo")) return true
+
+    const uidFromProfile = currentUser?.id ? parseInt(currentUser.id, 10) : NaN
+    const uidFromStorage = parseStoredIntegrantId()
+    const uid = !Number.isNaN(uidFromProfile) ? uidFromProfile : uidFromStorage ?? NaN
+    if (Number.isNaN(uid)) return false
+
+    /** Coincide con el responsable del grupo (`id_admin` / líder cargado desde la API). */
+    const isAdministrativeResponsible =
+      selectedResponsableId > 0 && uid === selectedResponsableId
+
+    /** Responsable marcado en la tabla intermedia grupo–integrante (`admin` en miembro). */
+    const isGroupResponsibleMember = members.some(
+      (m) => m.integrantId === uid && m.admin === true,
+    )
+
+    /** Rol explícito de responsable de grupo en el mismo integrante que administra este grupo. */
+    const hasResponsableGrupoRoleForThisGroup =
+      roles.includes("responsable_grupo") &&
+      (isAdministrativeResponsible || isGroupResponsibleMember)
+
+    return (
+      isAdministrativeResponsible ||
+      isGroupResponsibleMember ||
+      hasResponsableGrupoRoleForThisGroup
+    )
+  }, [currentUser, selectedResponsableId, members])
+
+  const loadEvaluationsTabData = useCallback(async () => {
+    if (!id) return
+    const groupId = parseInt(id, 10)
+    if (Number.isNaN(groupId)) return
+    setEvaluationsTabLoading(true)
+    setEvaluationsTabError("")
+    try {
+      const [list, catalog] = await Promise.all([
+        integrantGroupEvaluationService.getByFilters({ id_group: groupId }),
+        evaluationService.getEvaluations(),
+      ])
+      setGroupEvaluationsList(list)
+      setEvaluationTypesCatalog(catalog)
+    } catch (err) {
+      setEvaluationsTabError((err as Error).message || "No se pudieron cargar las evaluaciones")
+    } finally {
+      setEvaluationsTabLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    if (activeTab !== "evaluacion_integrantes" || !id || !canManageGroupEvaluations) return
+    void loadEvaluationsTabData()
+  }, [activeTab, id, canManageGroupEvaluations, loadEvaluationsTabData])
+
+  useEffect(() => {
+    if (activeTab === "evaluacion_integrantes" && !canManageGroupEvaluations) {
+      setActiveTab("datos")
+    }
+  }, [activeTab, canManageGroupEvaluations])
+
+  const getIntegrantDisplayNameById = useCallback(
+    (integrantId: number) => {
+      const member = members.find((m) => m.integrantId === integrantId)
+      if (!member?.usuario) return `Integrante #${integrantId}`
+      return `${member.usuario.nombre || ""} ${member.usuario.apellidos || ""}`.trim() || `Integrante #${integrantId}`
+    },
+    [members],
+  )
+
+  const getEvaluationNameById = useCallback(
+    (evaluationId: number) => evaluationTypesCatalog.find((e) => e.id_evaluation === evaluationId)?.name || "—",
+    [evaluationTypesCatalog],
+  )
+
+  const handleOpenAddEvaluationModal = () => {
+    setEvalMemberSearchTerm("")
+    setEvalFormSelectedMember(null)
+    setEvalFormEvaluationId("")
+    setEvalFormDescription("")
+    setShowAddEvaluationModal(true)
+  }
+
+  const handleCloseAddEvaluationModal = () => {
+    setShowAddEvaluationModal(false)
+  }
+
+  const handleSubmitIntegrantEvaluation = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!id) return
+
+    if (!evalFormSelectedMember?.integrantId) {
+      setSuccessMessage("Debe buscar y seleccionar un integrante del grupo.")
+      setShowSuccessDialog(true)
+      return
+    }
+
+    if (evalFormEvaluationId === "" || evalFormEvaluationId === null) {
+      setSuccessMessage("Debe seleccionar obligatoriamente una evaluación del catálogo.")
+      setShowSuccessDialog(true)
+      return
+    }
+
+    const groupId = parseInt(id, 10)
+    if (Number.isNaN(groupId)) return
+
+    try {
+      setEvalFormSubmitting(true)
+      await integrantGroupEvaluationService.create({
+        id_integrant: evalFormSelectedMember.integrantId,
+        id_group: groupId,
+        id_evaluation: Number(evalFormEvaluationId),
+        description: evalFormDescription.trim() ? evalFormDescription.trim() : null,
+      })
+      setSuccessMessage("Evaluación registrada correctamente.")
+      setShowSuccessDialog(true)
+      handleCloseAddEvaluationModal()
+      await loadEvaluationsTabData()
+    } catch (err) {
+      setSuccessMessage(extractErrorMessage(err) || "Error al crear la evaluación")
+      setShowSuccessDialog(true)
+    } finally {
+      setEvalFormSubmitting(false)
+    }
+  }
+
+  const filteredMembersForEvaluationSearch = useMemo(() => {
+    const withId = members.filter((m) => m.integrantId != null) as Array<
+      (typeof members)[0] & { integrantId: number }
+    >
+    const q = evalMemberSearchTerm.trim().toLowerCase()
+    if (q.length < 2) return []
+    return withId.filter((m) => {
+      const label = `${m.usuario?.nombre || ""} ${m.usuario?.apellidos || ""} ${m.usuario?.correoElectronico || ""}`.toLowerCase()
+      return label.includes(q)
+    })
+  }, [members, evalMemberSearchTerm])
+
+  useEffect(() => {
+    if (!showAddEvaluationModal || evaluationTypesCatalog.length > 0) return
+    const load = async () => {
+      try {
+        const catalog = await evaluationService.getEvaluations()
+        setEvaluationTypesCatalog(catalog)
+      } catch {
+        /* el usuario verá el error al enviar o al abrir la pestaña */
+      }
+    }
+    void load()
+  }, [showAddEvaluationModal, evaluationTypesCatalog.length])
+
+  const renderEvaluacionIntegrantesTab = () => (
+    <Card>
+      <div className="tab-content">
+        <div className="tab-header">
+          <div>
+            <h2>Evaluación de los integrantes</h2>
+            <p>Registros de evaluación asociados a este grupo</p>
+          </div>
+          {canManageGroupEvaluations && (
+            <div className="tab-actions">
+              <Button type="button" variant="secondary" onClick={handleOpenAddEvaluationModal}>
+                Agregar evaluación
+              </Button>
+            </div>
+          )}
+        </div>
+        {evaluationsTabError ? <p className="error-message">{evaluationsTabError}</p> : null}
+        {evaluationsTabLoading ? (
+          <p className="empty-state">Cargando evaluaciones…</p>
+        ) : (
+          <div className="evaluations-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Integrante</th>
+                  <th>Evaluación</th>
+                  <th>Descripción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupEvaluationsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="empty-state">
+                      No hay evaluaciones registradas para este grupo.
+                    </td>
+                  </tr>
+                ) : (
+                  groupEvaluationsList.map((row) => (
+                    <tr key={row.id_integrant_group_evaluation}>
+                      <td>{getIntegrantDisplayNameById(row.id_integrant)}</td>
+                      <td>{getEvaluationNameById(row.id_evaluation)}</td>
+                      <td>{row.description?.trim() ? row.description : "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+  )
 
   useEffect(() => {
     const loadMetadata = async () => {
@@ -196,6 +439,23 @@ export const GroupForm = () => {
               esExterno: false,
               esAdministrador: false,
             } as IUser)
+          } else if (group.id_admin != null && group.id_admin !== undefined) {
+            setSelectedResponsableId(group.id_admin)
+            const responsableMember = group.members?.find((m) => m.id_integrant === group.id_admin)
+            const displayName = responsableMember?.name || ""
+            setSelectedResponsable({
+              id: String(group.id_admin),
+              nombre: displayName.split(" ")[0] || "",
+              apellidos: displayName.split(" ").slice(1).join(" ") || "",
+              correoElectronico: responsableMember?.integrant?.email || "",
+              nombreUsuario: "",
+              numeroIdentidad: "",
+              roles: [],
+              esExterno: false,
+              esAdministrador: false,
+            } as IUser)
+          } else if (group.id_integrant) {
+            setSelectedResponsableId(group.id_integrant)
           }
           
           setSelectedFacultyId(group.id_faculty)
@@ -214,6 +474,7 @@ export const GroupForm = () => {
             const mappedMembers = group.members.map((m, idx) => ({
               id: `member-${m.id_integrant || idx}`,
               integrantId: m.id_integrant,
+              admin: m.admin,
               usuario: m.integrant ? {
                 id: String(m.integrant.id_integrant),
                 nombre: m.integrant.name.split(" ")[0] || "",
@@ -799,6 +1060,107 @@ export const GroupForm = () => {
         )}
       </Modal>
 
+      <Modal
+        isOpen={showAddEvaluationModal}
+        onClose={handleCloseAddEvaluationModal}
+        title="Agregar evaluación a integrante"
+      >
+        <form onSubmit={handleSubmitIntegrantEvaluation} className="modal-form">
+          <div className="form-group">
+            <label htmlFor="evalMemberSearch">Buscar integrante del grupo</label>
+            <Input
+              id="evalMemberSearch"
+              placeholder="Escribe al menos 2 caracteres (nombre, apellidos o correo)"
+              value={evalMemberSearchTerm}
+              onChange={(e) => {
+                setEvalMemberSearchTerm(e.target.value)
+                setEvalFormSelectedMember(null)
+              }}
+              aria-label="Campo para buscar entre los integrantes del grupo"
+            />
+            <small className="form-hint">Solo integrantes CUJAE del grupo (con identificador en el sistema).</small>
+          </div>
+          {evalFormSelectedMember ? (
+            <p className="form-hint" style={{ marginBottom: "0.75rem" }}>
+              Seleccionado: <strong>{evalFormSelectedMember.label}</strong>
+            </p>
+          ) : null}
+          <div className="record-list" role="listbox" aria-label="Resultados de búsqueda de integrantes del grupo">
+            {evalMemberSearchTerm.trim().length < 2 ? (
+              <p className="empty-state">Escriba al menos 2 caracteres para filtrar integrantes del grupo.</p>
+            ) : filteredMembersForEvaluationSearch.length === 0 ? (
+              <p className="empty-state">No hay coincidencias entre los integrantes de este grupo.</p>
+            ) : (
+              filteredMembersForEvaluationSearch.map((m) => {
+                const label = `${m.usuario?.nombre || ""} ${m.usuario?.apellidos || ""}`.trim()
+                return (
+                  <div key={m.id} className="record-item">
+                    <div className="record-item-info">
+                      <strong>{label || "Sin nombre"}</strong>
+                      <span>{m.usuario?.correoElectronico || "Sin correo"}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      aria-label={`Seleccionar ${label} para la evaluación`}
+                      onClick={() =>
+                        setEvalFormSelectedMember({
+                          integrantId: m.integrantId as number,
+                          label: label || `Integrante #${m.integrantId}`,
+                        })
+                      }
+                    >
+                      Seleccionar
+                    </Button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+          <div className="form-group">
+            <label htmlFor="evalCatalogSelect">Evaluación *</label>
+            <select
+              id="evalCatalogSelect"
+              className="form-select"
+              value={evalFormEvaluationId === "" ? "" : String(evalFormEvaluationId)}
+              onChange={(e) => {
+                const v = e.target.value
+                setEvalFormEvaluationId(v === "" ? "" : Number(v))
+              }}
+              aria-required="true"
+              aria-label="Seleccionar tipo de evaluación del catálogo"
+            >
+              <option value="">Seleccione una evaluación…</option>
+              {evaluationTypesCatalog.map((ev) => (
+                <option key={ev.id_evaluation} value={ev.id_evaluation}>
+                  {ev.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="evalDescription">Descripción (opcional)</label>
+            <textarea
+              id="evalDescription"
+              className="form-textarea"
+              rows={3}
+              value={evalFormDescription}
+              onChange={(e) => setEvalFormDescription(e.target.value)}
+              placeholder="Comentarios adicionales sobre la evaluación"
+              aria-label="Descripción opcional de la evaluación"
+            />
+          </div>
+          <div className="modal-actions">
+            <Button type="button" variant="secondary" onClick={handleCloseAddEvaluationModal}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={evalFormSubmitting}>
+              {evalFormSubmitting ? "Creando…" : "Crear"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       <div className="form-header">
         <h1>{pageTitle}</h1>
         <p>{isViewMode ? "Detalles del grupo de investigación" : "Complete la información del grupo"}</p>
@@ -1186,23 +1548,28 @@ export const GroupForm = () => {
         <>
           <div className="form-tabs">
             <button
+              type="button"
               className={`tab-button ${activeTab === "datos" ? "active" : ""}`}
               onClick={() => setActiveTab("datos")}
             >
               Datos Iniciales
             </button>
             <button
+              type="button"
               className={`tab-button ${activeTab === "integrantes" ? "active" : ""}`}
               onClick={() => setActiveTab("integrantes")}
             >
               Integrantes
             </button>
-            {/* <button
-              className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
-              onClick={() => setActiveTab("evaluaciones")}
-            >
-              Evaluaciones
-            </button> */}
+            {canManageGroupEvaluations ? (
+              <button
+                type="button"
+                className={`tab-button ${activeTab === "evaluacion_integrantes" ? "active" : ""}`}
+                onClick={() => setActiveTab("evaluacion_integrantes")}
+              >
+                Evaluación de los integrantes
+              </button>
+            ) : null}
           </div>
 
           {activeTab === "datos" && (
@@ -1306,42 +1673,7 @@ export const GroupForm = () => {
             </Card>
           )}
 
-          {/* {activeTab === "evaluaciones" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Evaluaciones de Integrantes</h2>
-                </div>
-                {members.length === 0 ? (
-                  <p className="empty-state">No hay integrantes para mostrar evaluaciones.</p>
-                ) : (
-                  <div className="evaluations-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Integrante</th>
-                          <th>Evaluación</th>
-                          <th>Descripción</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {members.map((member) => {
-                          const evaluation = { evaluacion: "no_evaluado", descripcion: "" }
-                          return (
-                            <tr key={member.id}>
-                              <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
-                              <td>{evaluation.evaluacion.replace(/_/g, " ")}</td>
-                              <td>{evaluation.descripcion || "Sin descripción"}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </Card>
-          )} */}
+          {activeTab === "evaluacion_integrantes" && canManageGroupEvaluations && renderEvaluacionIntegrantesTab()}
 
           <Card>
             <div className="form-actions">
@@ -1356,23 +1688,28 @@ export const GroupForm = () => {
         <>
           <div className="form-tabs">
             <button
+              type="button"
               className={`tab-button ${activeTab === "datos" ? "active" : ""}`}
               onClick={() => setActiveTab("datos")}
             >
               Datos Iniciales
             </button>
             <button
+              type="button"
               className={`tab-button ${activeTab === "integrantes" ? "active" : ""}`}
               onClick={() => setActiveTab("integrantes")}
             >
               Integrantes
             </button>
-            {/* <button
-              className={`tab-button ${activeTab === "evaluaciones" ? "active" : ""}`}
-              onClick={() => setActiveTab("evaluaciones")}
-            >
-              Evaluaciones
-            </button> */}
+            {canManageGroupEvaluations ? (
+              <button
+                type="button"
+                className={`tab-button ${activeTab === "evaluacion_integrantes" ? "active" : ""}`}
+                onClick={() => setActiveTab("evaluacion_integrantes")}
+              >
+                Evaluación de los integrantes
+              </button>
+            ) : null}
           </div>
 
           {activeTab === "datos" && (
@@ -1564,77 +1901,7 @@ export const GroupForm = () => {
             </Card>
           )}
 
-          {/* {activeTab === "evaluaciones" && (
-            <Card>
-              <div className="tab-content">
-                <div className="tab-header">
-                  <h2>Evaluaciones de Integrantes</h2>
-                  <p>Evalúe el desempeño de los integrantes del grupo</p>
-                </div>
-
-                <div className="evaluations-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Integrante</th>
-                        <th>Evaluación</th>
-                        <th>Descripción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {members.length === 0 ? (
-                        <tr>
-                          <td colSpan={3} className="empty-state">
-                            No hay integrantes para evaluar. Agregue integrantes primero.
-                          </td>
-                        </tr>
-                      ) : (
-                        members.map((member) => {
-                          const evaluation = evaluations[member.id] || { evaluacion: "no_evaluado", descripcion: "" }
-                          return (
-                            <tr key={member.id}>
-                              <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
-                              <td>
-                                <select
-                                  className="form-select"
-                                  value={evaluation.evaluacion}
-                                  onChange={(e) =>
-                                    setEvaluations({
-                                      ...evaluations,
-                                      [member.id]: { ...evaluation, evaluacion: e.target.value },
-                                    })
-                                  }
-                                >
-                                  <option value="no_evaluado">No evaluado</option>
-                                  <option value="mal">Mal</option>
-                                  <option value="regular">Regular</option>
-                                  <option value="bien">Bien</option>
-                                  <option value="excelente">Excelente</option>
-                                </select>
-                              </td>
-                              <td>
-                                <Input
-                                  type="text"
-                                  placeholder="Descripción de la evaluación"
-                                  value={evaluation.descripcion}
-                                  onChange={(e) =>
-                                    setEvaluations({
-                                      ...evaluations,
-                                      [member.id]: { ...evaluation, descripcion: e.target.value },
-                                    })
-                                  }
-                                />
-                              </td>
-                            </tr>
-                          )
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Card>
-          )} */}
+          {activeTab === "evaluacion_integrantes" && canManageGroupEvaluations && renderEvaluacionIntegrantesTab()}
 
           <Card>
             <div className="form-actions">
