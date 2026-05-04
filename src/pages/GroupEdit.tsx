@@ -18,6 +18,7 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { groupService } from "../services/groupService"
+import { validateEmailRequired } from "../utils/validation"
 import "./GroupForm.css"
 
 type IntegrantSearchHook = {
@@ -105,8 +106,6 @@ export const GroupEdit = () => {
   const [selectedResponsableId, setSelectedResponsableId] = useState<number | null>(null)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
-  const [originalCreateDate, setOriginalCreateDate] = useState<string>("")
-
   const [members, setMembers] = useState<any[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([])
   const [externalMembers, setExternalMembers] = useState<any[]>([])
@@ -123,6 +122,7 @@ export const GroupEdit = () => {
     entidad: "",
     email: "",
   })
+  const [externalMemberEmailError, setExternalMemberEmailError] = useState<string | null>(null)
 
   // Verificar si el usuario actual es responsable y es autor
   const isCurrentUserResponsable = Boolean(isAutorUser && selectedResponsableId && currentUser && 
@@ -182,11 +182,6 @@ export const GroupEdit = () => {
           
           setSelectedFacultyId(group.id_faculty)
           setSelectedFacultyAreaId(group.id_faculty_area || null)
-          
-          // Guardar fecha de creación original
-          if (group.create_date) {
-            setOriginalCreateDate(group.create_date)
-          }
           
           // Cargar miembros
           if (group.members) {
@@ -303,6 +298,12 @@ export const GroupEdit = () => {
 
   const handleAddExternalMember = (e: React.FormEvent) => {
     e.preventDefault()
+    setExternalMemberEmailError(null)
+    const emailErr = validateEmailRequired(externalMember.email, "Correo electrónico")
+    if (emailErr) {
+      setExternalMemberEmailError(emailErr)
+      return
+    }
     const newMember = {
       id: `external-${Date.now()}`,
       integrantId: null,
@@ -323,6 +324,7 @@ export const GroupEdit = () => {
     setExternalMembers([...externalMembers, newMember])
     setShowExternalModal(false)
     setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
+    setExternalMemberEmailError(null)
     setSuccessMessage("Integrante externo agregado con éxito")
     setShowSuccessDialog(true)
   }
@@ -376,9 +378,8 @@ export const GroupEdit = () => {
         id_admin: selectedResponsableId,
         id_faculty: selectedFacultyId,
         id_faculty_area: selectedFacultyAreaId,
-        create_date: originalCreateDate || now, // Mantener la fecha original
         update_date: now,
-        member_ids: selectedMemberIds, // Solo IDs de integrantes CUJAE, no externos
+        member_update_ids: selectedMemberIds,
       }
 
       await groupService.updateGroupWithPayload(parseInt(id), payload)
@@ -550,7 +551,14 @@ export const GroupEdit = () => {
                   <Button type="button" variant="secondary" onClick={() => setShowDirectoryModal(true)}>
                     Agregar integrante (Directorio CUJAE)
                   </Button>
-                  <Button type="button" variant="secondary" onClick={() => setShowExternalModal(true)}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setExternalMemberEmailError(null)
+                      setShowExternalModal(true)
+                    }}
+                  >
                     Agregar integrante (Externo de la CUJAE)
                   </Button>
                 </div>
@@ -720,6 +728,7 @@ export const GroupEdit = () => {
         isOpen={showExternalModal}
         onClose={() => {
           setShowExternalModal(false)
+          setExternalMemberEmailError(null)
           setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
         }}
         title="Agregar Integrante Externo"
@@ -760,15 +769,28 @@ export const GroupEdit = () => {
             />
           </div>
           <div className="form-group">
-            <label>Email</label>
             <Input
+              label="Correo electrónico *"
               type="email"
               value={externalMember.email}
-              onChange={(e) => setExternalMember({ ...externalMember, email: e.target.value })}
+              onChange={(e) => {
+                setExternalMemberEmailError(null)
+                setExternalMember({ ...externalMember, email: e.target.value })
+              }}
+              placeholder="ejemplo@universidad.edu"
+              error={externalMemberEmailError ?? undefined}
+              autoComplete="email"
             />
           </div>
           <div className="form-actions">
-            <Button type="button" variant="secondary" onClick={() => setShowExternalModal(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowExternalModal(false)
+                setExternalMemberEmailError(null)
+              }}
+            >
               Cancelar
             </Button>
             <Button type="submit">Agregar</Button>

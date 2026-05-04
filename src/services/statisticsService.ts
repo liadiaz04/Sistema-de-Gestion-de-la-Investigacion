@@ -1,6 +1,12 @@
 import type { IStatisticsTabular, IStatisticsGraphical, IStatisticData, RecordType } from "../types"
 import { apiClient } from "./api/client"
 import { recordMetadataService } from "./record/recordMetadataService"
+import {
+  buildEmptyXlsxInfoBlob,
+  buildStatisticsPlainText,
+  buildTabularStatisticsXlsxBlob,
+  plainTextToPdfBlob,
+} from "./statisticsReportExport"
 
 // Cache de facultades para evitar múltiples llamadas
 let facultiesCache: { id_faculty: number; name: string }[] | null = null
@@ -95,6 +101,7 @@ class StatisticsService {
                 data.total_articles ??
                 data.total_books ??
                 data.total_monographs ??
+                data.total_monograph ??
                 data.total_norms ??
                 data.total_patents ??
                 data.total_softwares ??
@@ -112,6 +119,7 @@ class StatisticsService {
                 data.articles_in_faculty ??
                 data.books_in_faculty ??
                 data.monographs_in_faculty ??
+                data.monograph_in_faculty ??
                 data.norms_in_faculty ??
                 data.patents_in_faculty ??
                 data.softwares_in_faculty ??
@@ -280,6 +288,7 @@ class StatisticsService {
                 data.articles_in_faculty ??
                 data.books_in_faculty ??
                 data.monographs_in_faculty ??
+                data.monograph_in_faculty ??
                 data.norms_in_faculty ??
                 data.patents_in_faculty ??
                 data.softwares_in_faculty ??
@@ -427,173 +436,20 @@ class StatisticsService {
     })
 
     if (tipo === "pdf") {
-      // Generar contenido PDF (texto formateado)
-      let content = `REPORTE DE ESTADÍSTICAS\n`
-      content += `========================\n\n`
-      content += `Fecha de generación: ${fecha}\n`
-      content += `Categoría: ${category || "General"}\n`
-      content += `Vista: ${view || "General"}\n\n`
-
-      if (view === "tabular" && data.registros) {
-        content += `REGISTROS CIENTÍFICOS\n`
-        content += `----------------------\n`
-        content += `Tipo\tTotal del Centro\tTotal de la Facultad\t% Aporte\n`
-        Object.entries(data.registros.porTipo || {}).forEach(([tipo, total]: [string, any]) => {
-          const porcentaje = data.registros.porcentajeAportePorTipo?.[tipo] ?? 0
-          const totalFacultad = Math.round((total * porcentaje) / 100)
-          content += `${tipo}\t${total}\t${totalFacultad}\t${porcentaje.toFixed(1)}%\n`
-        })
-        const totalRegistros = Object.values(data.registros.porTipo || {}).reduce(
-          (acc: number, v: any) => acc + v,
-          0,
-        )
-        const totalFacultad = Object.values(data.registros.porTipo || {}).reduce(
-          (acc: number, tipo: any) => {
-            const porcentaje = data.registros.porcentajeAportePorTipo?.[tipo] ?? 0
-            return acc + Math.round((data.registros.porTipo[tipo] * porcentaje) / 100)
-          },
-          0,
-        )
-        const porcentajeTotal = totalRegistros > 0 ? (totalFacultad / totalRegistros) * 100 : 0
-        content += `TOTAL\t${totalRegistros}\t${totalFacultad}\t${porcentajeTotal.toFixed(1)}%\n\n`
-      }
-
-      if (view === "tabular" && data.grupos) {
-        content += `GRUPOS DE INVESTIGACIÓN\n`
-        content += `------------------------\n`
-        content += `Facultad\tCantidad de Grupos\tTotal de Integrantes\n`
-        Object.entries(data.grupos.porFacultad || {}).forEach(([facultad, cantidad]: [string, any]) => {
-          // Sumar integrantes de todos los grupos de esta facultad
-          const integrantes = Object.entries(data.grupos.integrantesPorGrupo || {})
-            .filter(([groupName]) => {
-              // Si tenemos información de grupos por facultad, usarla
-              return true // Por ahora sumamos todos
-            })
-            .reduce((acc, [, count]: [string, any]) => acc + (count || 0), 0)
-          content += `${facultad}\t${cantidad}\t${integrantes}\n`
-        })
-        content += `TOTAL\t${data.grupos.total || 0}\t${Object.values(data.grupos.integrantesPorGrupo || {}).reduce((acc: number, v: any) => acc + v, 0)}\n\n`
-      }
-
-      if (view === "tabular" && data.proyectos) {
-        content += `PROYECTOS DE INVESTIGACIÓN\n`
-        content += `--------------------------\n`
-        content += `Facultad\tCantidad de Proyectos\tTotal de Integrantes\n`
-        Object.entries(data.proyectos.porFacultad || {}).forEach(([facultad, cantidad]: [string, any]) => {
-          const integrantes = data.proyectos.integrantesPorProyecto?.[facultad] || 0
-          content += `${facultad}\t${cantidad}\t${integrantes}\n`
-        })
-        content += `TOTAL\t${data.proyectos.total || 0}\t${Object.values(data.proyectos.integrantesPorProyecto || {}).reduce((acc: number, v: any) => acc + v, 0)}\n\n`
-      }
-
-      if (view === "graphical") {
-        if (data.indicadoresRegistrosPorAño) {
-          content += `REGISTROS POR AÑO\n`
-          content += `------------------\n`
-          Object.entries(data.indicadoresRegistrosPorAño).forEach(([año, registros]: [string, any]) => {
-            content += `Año ${año}:\n`
-            Object.entries(registros).forEach(([tipo, total]: [string, any]) => {
-              content += `  ${tipo}: ${total}\n`
-            })
-          })
-          content += `\n`
-        }
-
-        if (data.gruposPorFacultad) {
-          content += `GRUPOS POR FACULTAD\n`
-          content += `--------------------\n`
-          data.gruposPorFacultad.forEach((item: IStatisticData) => {
-            content += `${item.label}: ${item.value}\n`
-          })
-          content += `\n`
-        }
-
-        if (data.gruposConMasEstudiantes) {
-          content += `GRUPOS CON MÁS INTEGRANTES\n`
-          content += `--------------------------\n`
-          data.gruposConMasEstudiantes.forEach((item: IStatisticData) => {
-            content += `${item.label}: ${item.value} integrantes\n`
-          })
-          content += `\n`
-        }
-
-        if (data.proyectosPorFacultad) {
-          content += `PROYECTOS POR FACULTAD\n`
-          content += `----------------------\n`
-          data.proyectosPorFacultad.forEach((item: IStatisticData) => {
-            content += `${item.label}: ${item.value}\n`
-          })
-          content += `\n`
-        }
-
-        if (data.proyectosPorEstado) {
-          content += `PROYECTOS POR ESTADO\n`
-          content += `--------------------\n`
-          data.proyectosPorEstado.forEach((item: IStatisticData) => {
-            content += `${item.label}: ${item.value}\n`
-          })
-          content += `\n`
-        }
-      }
-
-      return new Blob([content], { type: "application/pdf" })
-    } else {
-      // Generar CSV para Excel
-      let csvContent = "Reporte de Estadísticas\n"
-      csvContent += `Fecha de generación: ${fecha}\n`
-      csvContent += `Categoría: ${category || "General"}\n`
-      csvContent += `Vista: ${view || "General"}\n\n`
-
-      if (view === "tabular" && data.registros) {
-        csvContent += "REGISTROS CIENTÍFICOS\n"
-        csvContent += "Tipo,Total del Centro,Total de la Facultad,% Aporte\n"
-        Object.entries(data.registros.porTipo || {}).forEach(([tipo, total]: [string, any]) => {
-          const porcentaje = data.registros.porcentajeAportePorTipo?.[tipo] ?? 0
-          const totalFacultad = Math.round((total * porcentaje) / 100)
-          csvContent += `${tipo},${total},${totalFacultad},${porcentaje.toFixed(1)}%\n`
-        })
-        const totalRegistros = Object.values(data.registros.porTipo || {}).reduce(
-          (acc: number, v: any) => acc + v,
-          0,
-        )
-        const totalFacultad = Object.values(data.registros.porTipo || {}).reduce(
-          (acc: number, tipo: any) => {
-            const porcentaje = data.registros.porcentajeAportePorTipo?.[tipo] ?? 0
-            return acc + Math.round((data.registros.porTipo[tipo] * porcentaje) / 100)
-          },
-          0,
-        )
-        const porcentajeTotal = totalRegistros > 0 ? (totalFacultad / totalRegistros) * 100 : 0
-        csvContent += `TOTAL,${totalRegistros},${totalFacultad},${porcentajeTotal.toFixed(1)}%\n\n`
-      }
-
-      if (view === "tabular" && data.grupos) {
-        csvContent += "GRUPOS DE INVESTIGACIÓN\n"
-        csvContent += "Facultad,Cantidad de Grupos,Total de Integrantes\n"
-        Object.entries(data.grupos.porFacultad || {}).forEach(([facultad, cantidad]: [string, any]) => {
-          const integrantes = Object.values(data.grupos.integrantesPorGrupo || {}).reduce(
-            (acc: number, v: any) => acc + v,
-            0,
-          )
-          csvContent += `${facultad},${cantidad},${integrantes}\n`
-        })
-        csvContent += `TOTAL,${data.grupos.total || 0},${Object.values(data.grupos.integrantesPorGrupo || {}).reduce((acc: number, v: any) => acc + v, 0)}\n\n`
-      }
-
-      if (view === "tabular" && data.proyectos) {
-        csvContent += "PROYECTOS DE INVESTIGACIÓN\n"
-        csvContent += "Facultad,Cantidad de Proyectos,Total de Integrantes\n"
-        Object.entries(data.proyectos.porFacultad || {}).forEach(([facultad, cantidad]: [string, any]) => {
-          const integrantes = data.proyectos.integrantesPorProyecto?.[facultad] || 0
-          csvContent += `${facultad},${cantidad},${integrantes}\n`
-        })
-        csvContent += `TOTAL,${data.proyectos.total || 0},${Object.values(data.proyectos.integrantesPorProyecto || {}).reduce((acc: number, v: any) => acc + v, 0)}\n\n`
-      }
-
-      return new Blob([csvContent], {
-        type: "application/vnd.ms-excel",
-      })
+      const text = buildStatisticsPlainText(data, category, view, fecha)
+      return plainTextToPdfBlob(text)
     }
+
+    if (view !== "tabular" || !data) {
+      return buildEmptyXlsxInfoBlob()
+    }
+
+    return buildTabularStatisticsXlsxBlob(
+      data as IStatisticsTabular,
+      fecha,
+      category,
+      view,
+    )
   }
 }
 

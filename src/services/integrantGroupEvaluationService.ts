@@ -12,14 +12,16 @@ export const integrantGroupEvaluationService = {
     skip?: number
     limit?: number
   }): Promise<IntegrantGroupEvaluation[]> {
+    const query: Record<string, number> = {
+      skip: params.skip ?? 0,
+      limit: params.limit ?? 200,
+    }
+    if (params.id_group != null) query.id_group = params.id_group
+    if (params.id_integrant != null) query.id_integrant = params.id_integrant
+    if (params.id_evaluation != null) query.id_evaluation = params.id_evaluation
+
     const response = await apiClient.get<IntegrantGroupEvaluation[]>("/integrant-group-evaluations/", {
-      params: {
-        id_group: params.id_group,
-        id_integrant: params.id_integrant,
-        id_evaluation: params.id_evaluation,
-        skip: params.skip ?? 0,
-        limit: params.limit ?? 200,
-      },
+      params: query,
     })
     return response.data
   },

@@ -7,7 +7,8 @@ export interface TraceCreate {
   date: string | null; // ISO 8601
   route: string | null;
   message: string | null;
-  response: string | null;
+  /** Código HTTP de la petición trazada (coincide con `TraceCreate` del backend). */
+  response: number | null;
 }
 
 // Tipo para la respuesta de traza
@@ -18,7 +19,7 @@ export interface Trace {
   date: string | null;
   route: string | null;
   message: string | null;
-  response: string | null;
+  response: number | null;
   integrant?: {
     id_integrant: number;
     name: string;

@@ -23,7 +23,7 @@ import { projectService } from "../services/projectService"
 import { integrantService } from "../services/integrantService"
 import {
   validateRequired,
-  validateEmail,
+  validateEmailRequired,
   validateLength,
   validateDateRange,
   validateKeywords,
@@ -142,6 +142,7 @@ export const ProjectForm = () => {
     entidad: "",
     email: "",
   })
+  const [externalMemberEmailError, setExternalMemberEmailError] = useState<string | null>(null)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -488,6 +489,12 @@ export const ProjectForm = () => {
 
   const handleAddExternalMember = (e: React.FormEvent) => {
     e.preventDefault()
+    setExternalMemberEmailError(null)
+    const emailErr = validateEmailRequired(externalMember.email, "Correo electrónico")
+    if (emailErr) {
+      setExternalMemberEmailError(emailErr)
+      return
+    }
     const newMember = {
       id: `external-${Date.now()}`,
       integrantId: null,
@@ -506,6 +513,7 @@ export const ProjectForm = () => {
     setExternalMembers([...externalMembers, newMember])
     setShowExternalModal(false)
     setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
+    setExternalMemberEmailError(null)
     setSuccessMessage("Integrante externo agregado con éxito")
     setShowSuccessDialog(true)
   }
@@ -540,7 +548,7 @@ export const ProjectForm = () => {
   }
 
   // Función para validar el formulario de proyecto
-  const validateProjectForm = (): boolean => {
+  const validateProjectForm = (): Record<string, string> => {
     const errors: Record<string, string> = {}
 
     // Validar nombre del proyecto
@@ -585,23 +593,24 @@ export const ProjectForm = () => {
 
     // Validar emails de miembros externos
     externalMembers.forEach((member, index) => {
-      if (member.usuario?.correoElectronico) {
-        const emailError = validateEmail(member.usuario.correoElectronico)
-        if (emailError) {
-          errors[`externalMemberEmail_${index}`] = emailError
-        }
+      const emailError = validateEmailRequired(
+        member.usuario?.correoElectronico,
+        `Correo electrónico (integrante externo ${index + 1})`,
+      )
+      if (emailError) {
+        errors[`externalMemberEmail_${index}`] = emailError
       }
     })
 
     setFieldErrors(errors)
-    return true
+    return errors
   }
 
   const handleSaveCompleteProject = async () => {
-    // Validar formulario antes de enviar
-    if (!validateProjectForm()) {
+    const projectValidationErrors = validateProjectForm()
+    if (Object.keys(projectValidationErrors).length > 0) {
       setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage(Object.values(projectValidationErrors).join(" · "))
       setShowSuccessDialog(true)
       return
     }
@@ -686,10 +695,10 @@ export const ProjectForm = () => {
   const handleSaveAllUpdates = async () => {
     if (!id) return
 
-    // Validar formulario antes de actualizar
-    if (!validateProjectForm()) {
+    const projectValidationErrors = validateProjectForm()
+    if (Object.keys(projectValidationErrors).length > 0) {
       setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage(Object.values(projectValidationErrors).join(" · "))
       setShowSuccessDialog(true)
       return
     }
@@ -877,7 +886,14 @@ export const ProjectForm = () => {
         </div>
       </Modal>
 
-      <Modal isOpen={showExternalModal} onClose={() => setShowExternalModal(false)} title="Agregar Integrante Externo">
+      <Modal
+        isOpen={showExternalModal}
+        onClose={() => {
+          setShowExternalModal(false)
+          setExternalMemberEmailError(null)
+        }}
+        title="Agregar Integrante Externo"
+      >
         <form onSubmit={handleAddExternalMember} className="modal-form">
           <div className="form-group">
             <label>Nombre *</label>
@@ -913,16 +929,28 @@ export const ProjectForm = () => {
             />
           </div>
           <div className="form-group">
-            <label>Email</label>
             <Input
+              label="Correo electrónico *"
               type="email"
               value={externalMember.email}
-              onChange={(e) => setExternalMember({ ...externalMember, email: e.target.value })}
+              onChange={(e) => {
+                setExternalMemberEmailError(null)
+                setExternalMember({ ...externalMember, email: e.target.value })
+              }}
               placeholder="ejemplo@email.com"
+              error={externalMemberEmailError ?? undefined}
+              autoComplete="email"
             />
           </div>
           <div className="modal-actions">
-            <Button type="button" variant="secondary" onClick={() => setShowExternalModal(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowExternalModal(false)
+                setExternalMemberEmailError(null)
+              }}
+            >
               Cancelar
             </Button>
             <Button type="submit">Agregar</Button>
@@ -1603,7 +1631,14 @@ export const ProjectForm = () => {
                   <Button type="button" variant="secondary" onClick={handleOpenDirectoryModal}>
                     Agregar desde Directorio CUJAE
                   </Button>
-                  <Button type="button" variant="secondary" onClick={() => setShowExternalModal(true)}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setExternalMemberEmailError(null)
+                      setShowExternalModal(true)
+                    }}
+                  >
                     Agregar Externo
                   </Button>
                 </div>

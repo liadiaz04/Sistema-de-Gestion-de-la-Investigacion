@@ -36,7 +36,7 @@ import type {
 import { recordDetailService } from "../services/record/recordDetailService"
 import {
   validateRequired,
-  validateEmail,
+  validateEmailRequired,
   validateDOI,
   validateISSN,
   validateISBN,
@@ -361,6 +361,7 @@ export const RecordForm = () => {
     entidad: "",
     email: "",
   })
+  const [externalPersonEmailError, setExternalPersonEmailError] = useState<string | null>(null)
   const [projectSearch, setProjectSearch] = useState("")
 
   const [countries, setCountries] = useState<CountryOption[]>([])
@@ -788,6 +789,12 @@ export const RecordForm = () => {
 
   const handleAddExternal = (e: React.FormEvent) => {
     e.preventDefault()
+    setExternalPersonEmailError(null)
+    const emailErr = validateEmailRequired(externalPerson.email, "Correo electrónico")
+    if (emailErr) {
+      setExternalPersonEmailError(emailErr)
+      return
+    }
     const newPerson = {
       id: `external-${Date.now()}`,
       integrantId: null,
@@ -816,6 +823,7 @@ export const RecordForm = () => {
     }
     setShowExternalModal(false)
     setExternalPerson({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
+    setExternalPersonEmailError(null)
     setShowSuccessDialog(true)
   }
 
@@ -903,7 +911,7 @@ export const RecordForm = () => {
   }
 
   // Función para validar todos los campos antes de enviar
-  const validateForm = (): boolean => {
+  const validateForm = (): Record<string, string> => {
     const errors: Record<string, string> = {}
 
     // Validar campos requeridos comunes
@@ -951,22 +959,35 @@ export const RecordForm = () => {
 
     // Validar emails de autores externos
     externalAuthors.forEach((author, index) => {
-      if (author.usuario?.correoElectronico) {
-        const emailError = validateEmail(author.usuario.correoElectronico)
-        if (emailError) {
-          errors[`externalAuthorEmail_${index}`] = emailError
-        }
+      const emailError = validateEmailRequired(
+        author.usuario?.correoElectronico,
+        `Correo electrónico (autor externo ${index + 1})`,
+      )
+      if (emailError) {
+        errors[`externalAuthorEmail_${index}`] = emailError
+      }
+    })
+
+    tutors.forEach((tutor, index) => {
+      if (!tutor.usuario?.esExterno) return
+      const emailError = validateEmailRequired(
+        tutor.usuario?.correoElectronico,
+        `Correo electrónico (tutor externo ${index + 1})`,
+      )
+      if (emailError) {
+        errors[`externalTutorEmail_${index}`] = emailError
       }
     })
 
     setFieldErrors(errors)
-    return true
+    return errors
   }
 
   const handleSaveCompleteRecord = async () => {
-    // Validar formulario antes de enviar
-    if (!validateForm()) {
+    const recordValidationErrors = validateForm()
+    if (Object.keys(recordValidationErrors).length > 0) {
       setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage(Object.values(recordValidationErrors).join(" · "))
       setShowSuccessDialog(true)
       return
     }
@@ -1730,7 +1751,10 @@ export const RecordForm = () => {
 
       <Modal
         isOpen={showExternalModal}
-        onClose={() => setShowExternalModal(false)}
+        onClose={() => {
+          setShowExternalModal(false)
+          setExternalPersonEmailError(null)
+        }}
         title={`Agregar ${modalType === "author" ? "Autor" : "Tutor"} Externo`}
       >
         <form onSubmit={handleAddExternal} className="modal-form">
@@ -1768,16 +1792,28 @@ export const RecordForm = () => {
             />
           </div>
           <div className="form-group">
-            <label>Correo Electrónico</label>
             <Input
+              label="Correo electrónico *"
               type="email"
               value={externalPerson.email}
-              onChange={(e) => setExternalPerson({ ...externalPerson, email: e.target.value })}
+              onChange={(e) => {
+                setExternalPersonEmailError(null)
+                setExternalPerson({ ...externalPerson, email: e.target.value })
+              }}
               placeholder="ejemplo@universidad.edu"
+              error={externalPersonEmailError ?? undefined}
+              autoComplete="email"
             />
           </div>
           <div className="modal-actions">
-            <Button type="button" variant="secondary" onClick={() => setShowExternalModal(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowExternalModal(false)
+                setExternalPersonEmailError(null)
+              }}
+            >
               Cancelar
             </Button>
             <Button type="submit">Agregar</Button>
@@ -2038,6 +2074,7 @@ export const RecordForm = () => {
                       aria-label="Agregar autor externo"
                       onClick={() => {
                         setModalType("author")
+                        setExternalPersonEmailError(null)
                         setShowExternalModal(true)
                       }}
                     >
@@ -2165,6 +2202,7 @@ export const RecordForm = () => {
                       aria-label="Agregar tutor externo"
                       onClick={() => {
                         setModalType("tutor")
+                        setExternalPersonEmailError(null)
                         setShowExternalModal(true)
                       }}
                     >

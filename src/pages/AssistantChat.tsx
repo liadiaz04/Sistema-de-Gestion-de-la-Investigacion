@@ -139,7 +139,7 @@ export const AssistantChat: React.FC = () => {
           />
           <button
             type="button"
-            className="assistant-send-icon"
+            className={`assistant-send-icon${input.trim() && !loading ? " assistant-send-icon--ready" : ""}`}
             onClick={handleSend}
             disabled={loading}
             aria-label={loading ? "Enviando mensaje" : "Enviar mensaje"}

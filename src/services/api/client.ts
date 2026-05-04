@@ -1,5 +1,26 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 import type { ApiError } from '../../types/api/auth';
+import { logHttpRequest, logHttpResponseError, logHttpResponseOk } from '../../utils/httpConsoleLogger';
+import { print } from '../../utils/print';
+
+/** Mensaje legible desde respuestas FastAPI (`detail`) u otros formatos. */
+export const getMessageFromResponseData = (data: unknown): string => {
+  if (data == null || typeof data !== 'object') return 'Error en la petición';
+  const d = data as Record<string, unknown>;
+  if (typeof d.message === 'string' && d.message.trim()) return d.message;
+  const detail = d.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((item) => {
+      if (typeof item === 'object' && item !== null && 'msg' in item) {
+        return String((item as { msg?: string }).msg ?? JSON.stringify(item));
+      }
+      return typeof item === 'string' ? item : JSON.stringify(item);
+    });
+    return parts.join('; ') || 'Error en la petición';
+  }
+  return 'Error en la petición';
+};
 
 // Función para registrar trazas de forma asíncrona sin bloquear
 const registerTrace = async (traceData: {
@@ -8,7 +29,7 @@ const registerTrace = async (traceData: {
   date: string;
   route: string | null;
   message: string | null;
-  response: string | null;
+  response: number | null;
 }) => {
   try {
     // Importar dinámicamente para evitar dependencia circular
@@ -16,7 +37,7 @@ const registerTrace = async (traceData: {
     await traceService.createTrace(traceData);
   } catch (error) {
     // Silenciar errores de trazas para no interrumpir el flujo principal
-    console.warn('Error registrando traza:', error);
+    print('Error registrando traza:', error);
   }
 };
 
@@ -36,22 +57,13 @@ apiClient.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
-    // Log de la petición
-    console.log('🚀 API CALL:', {
-      method: config.method?.toUpperCase(),
-      endpoint: config.url,
-      baseURL: config.baseURL,
-      fullURL: `${config.baseURL}${config.url}`,
-      headers: config.headers,
-      body: config.data,
-      params: config.params,
-    });
-    
+
+    logHttpRequest('API principal', config);
+
     return config;
   },
   (error) => {
-    console.error('❌ API REQUEST ERROR:', error);
+    print('❌ API REQUEST ERROR:', error);
     return Promise.reject(error);
   }
 );
@@ -59,16 +71,8 @@ apiClient.interceptors.request.use(
 // Interceptor para manejar respuestas y errores
 apiClient.interceptors.response.use(
   async (response: AxiosResponse) => {
-    // Log de la respuesta exitosa
-    console.log('✅ API RESPONSE:', {
-      status: response.status,
-      statusText: response.statusText,
-      endpoint: response.config.url,
-      method: response.config.method?.toUpperCase(),
-      data: response.data,
-      headers: response.headers,
-    });
-    
+    logHttpResponseOk('API principal', response);
+
     // Registrar traza de forma asíncrona (no bloquear el flujo)
     const userId = localStorage.getItem('user_id');
     if (userId && response.config.url) {
@@ -78,8 +82,7 @@ apiClient.interceptors.response.use(
         const route = response.config.url || null;
         const date = new Date().toISOString();
         const message = `Request successful: ${method} ${route}`;
-        const responseData = JSON.stringify(response.data).substring(0, 500); // Limitar tamaño
-        
+
         // Registrar de forma asíncrona sin esperar
         registerTrace({
           id_integrant: parseInt(userId),
@@ -87,7 +90,7 @@ apiClient.interceptors.response.use(
           date,
           route,
           message,
-          response: response.status.toString(),
+          response: response.status,
         }).catch(() => {
           // Error ya manejado en registerTrace
         });
@@ -97,16 +100,8 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiError>) => {
-    // Log del error
-    console.error('❌ API ERROR:', {
-      endpoint: error.config?.url,
-      method: error.config?.method?.toUpperCase(),
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      errorData: error.response?.data,
-      message: error.message,
-    });
-    
+    logHttpResponseError('API principal', error);
+
     // Registrar traza del error de forma asíncrona (no bloquear el flujo)
     const userId = localStorage.getItem('user_id');
     if (userId && error.config?.url) {
@@ -117,10 +112,7 @@ apiClient.interceptors.response.use(
         const date = new Date().toISOString();
         const status = error.response?.status || null;
         const message = `Request failed: ${method} ${route} - Status: ${status || 'Network Error'}`;
-        const errorData = error.response?.data 
-          ? JSON.stringify(error.response.data).substring(0, 500)
-          : error.message.substring(0, 500);
-        
+
         // Registrar de forma asíncrona sin esperar
         registerTrace({
           id_integrant: parseInt(userId),
@@ -128,7 +120,7 @@ apiClient.interceptors.response.use(
           date,
           route,
           message,
-          response: errorData,
+          response: typeof status === 'number' ? status : null,
         }).catch(() => {
           // Error ya manejado en registerTrace
         });
@@ -146,7 +138,7 @@ apiClient.interceptors.response.use(
       }
       
       // Lanzar el mensaje de error del servidor
-      const message = data?.message || 'Error en la petición';
+      const message = getMessageFromResponseData(data);
       throw new Error(message);
     } else if (error.request) {
       // Error de red
@@ -157,3 +149,11 @@ apiClient.interceptors.response.use(
     }
   }
 );
+
+if (import.meta.env.DEV) {
+  print(
+    "%c[HTTP]%c Cliente axios listo: peticiones/respuestas visibles aquí (print → consola).",
+    "font-weight:bold;color:#06c;",
+    "",
+  );
+}

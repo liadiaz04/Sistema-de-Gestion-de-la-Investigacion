@@ -106,24 +106,63 @@ export const Statistics = () => {
 
     setLoadingRecords(true)
     try {
-      // Mapeo de tipos de registros a sus endpoints
-      const recordTypes = [
-        { key: "articulo", endpoint: "articles", totalKey: "total_articles", inFacultyKey: "articles_in_faculty" },
-        { key: "libro", endpoint: "books", totalKey: "total_books", inFacultyKey: "books_in_faculty" },
-        { key: "monografia", endpoint: "monographs", totalKey: "total_monographs", inFacultyKey: "monographs_in_faculty" },
-        { key: "norma", endpoint: "norms", totalKey: "total_norms", inFacultyKey: "norms_in_faculty" },
-        { key: "patente", endpoint: "patents", totalKey: "total_patents", inFacultyKey: "patents_in_faculty" },
-        { key: "software", endpoint: "softwares", totalKey: "total_softwares", inFacultyKey: "softwares_in_faculty" },
-        { key: "tesis", endpoint: "theses", totalKey: "total_theses", inFacultyKey: "theses_in_faculty" },
-        { key: "evento", endpoint: "encounters", totalKey: "total_encounters", inFacultyKey: "encounters_in_faculty" },
-        { key: "premio", endpoint: "prizes", totalKey: "total_prizes", inFacultyKey: "prizes_in_faculty" },
+      // Rutas alineadas con backend/modules/*/routes.py (conteos por facultad)
+      const recordTypes: {
+        key: string
+        buildCountUrl: (facultyId: number) => string
+        totalKey: string
+        inFacultyKey: string
+      }[] = [
+        {
+          key: "articulo",
+          buildCountUrl: (id) => `/articles/count/faculty/${id}`,
+          totalKey: "total_articles",
+          inFacultyKey: "articles_in_faculty",
+        },
+        {
+          key: "libro",
+          buildCountUrl: (id) => `/books/count/faculty/${id}`,
+          totalKey: "total_books",
+          inFacultyKey: "books_in_faculty",
+        },
+        {
+          key: "monografia",
+          buildCountUrl: (id) => `/monographs/count/${id}`,
+          totalKey: "total_monograph",
+          inFacultyKey: "monograph_in_faculty",
+        },
+        { key: "norma", buildCountUrl: (id) => `/norms/count/${id}`, totalKey: "total_norms", inFacultyKey: "norms_in_faculty" },
+        {
+          key: "patente",
+          buildCountUrl: (id) => `/patents/count/${id}`,
+          totalKey: "total_patents",
+          inFacultyKey: "patents_in_faculty",
+        },
+        {
+          key: "software",
+          buildCountUrl: (id) => `/softwares/count/${id}`,
+          totalKey: "total_softwares",
+          inFacultyKey: "softwares_in_faculty",
+        },
+        {
+          key: "tesis",
+          buildCountUrl: (id) => `/theses/count/${id}`,
+          totalKey: "total_theses",
+          inFacultyKey: "theses_in_faculty",
+        },
+        {
+          key: "evento",
+          buildCountUrl: (id) => `/encounters/count/faculty/${id}`,
+          totalKey: "total_encounters",
+          inFacultyKey: "encounters_in_faculty",
+        },
+        { key: "premio", buildCountUrl: (id) => `/prizes/count/${id}`, totalKey: "total_prizes", inFacultyKey: "prizes_in_faculty" },
       ]
 
       // Hacer todas las peticiones en paralelo
       const promises = recordTypes.map(async (recordType) => {
         try {
-          const response = await apiClient.get(`/${recordType.endpoint}/count/${selectedFacultadId}`, {
-          })
+          const response = await apiClient.get(recordType.buildCountUrl(selectedFacultadId))
           const data = response.data
           return {
             key: recordType.key,

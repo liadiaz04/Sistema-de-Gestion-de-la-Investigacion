@@ -8,6 +8,7 @@ import { Button } from "../common/Button"
 import { Card } from "../common/Card"
 import { useAuthStore } from "../../stores/authStore"
 import { authService } from "../../services/auth/authService"
+import { validateEmailRequired } from "../../utils/validation"
 import "./AuthForm.css"
 
 export const AuthForm: React.FC = () => {
@@ -21,10 +22,16 @@ export const AuthForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+    const emailValidation = validateEmailRequired(username, "Correo electrónico")
+    if (emailValidation) {
+      setError(emailValidation)
+      return
+    }
+
     setLoading(true)
 
     try {
-      const response = await authService.login({ email: username, password })
+      const response = await authService.login({ email: username.trim(), password })
       login(response.token)
       // Actualizar el usuario en el store (el authService ya lo guarda en localStorage)
       // Pero necesitamos actualizar el store también
@@ -55,12 +62,13 @@ export const AuthForm: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="auth-form">
           <Input
-            label="Nombre de Usuario"
-            type="text"
+            label="Correo electrónico"
+            type="email"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="Ingrese su nombre de usuario"
+            placeholder="usuario@institucion.edu"
             required
+            autoComplete="username email"
           />
 
           <Input
@@ -81,7 +89,7 @@ export const AuthForm: React.FC = () => {
 
         <div className="auth-demo-info">
           <p>
-            <strong>Demo:</strong> Usuario: jperez | Contraseña: password123
+            <strong>Demo:</strong> Correo: jperez@cujae.edu.cu | Contraseña: password123
           </p>
         </div>
       </Card>

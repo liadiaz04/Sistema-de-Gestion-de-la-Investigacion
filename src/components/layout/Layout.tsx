@@ -39,9 +39,16 @@ export const Layout: React.FC = () => {
     <div className="layout">
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
         <div className="sidebar-header">
-          <h2>SGI</h2>
-          <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
-            <Menu size={20} />
+          {sidebarOpen ? (
+            <h2 className="sidebar-brand-title">SGI</h2>
+          ) : null}
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? "Contraer menú lateral" : "Expandir menú lateral"}
+          >
+            <Menu size={20} aria-hidden />
           </button>
         </div>
 

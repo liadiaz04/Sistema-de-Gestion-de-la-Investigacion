@@ -1,5 +1,7 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
-import type { ApiError } from '../../types/api/auth';
+import { getMessageFromResponseData } from './client';
+import { logHttpRequest, logHttpResponseError, logHttpResponseOk } from '../../utils/httpConsoleLogger';
+import { print } from '../../utils/print';
 
 // Función para registrar trazas de forma asíncrona sin bloquear
 const registerTrace = async (traceData: {
@@ -8,7 +10,7 @@ const registerTrace = async (traceData: {
   date: string;
   route: string | null;
   message: string | null;
-  response: string | null;
+  response: number | null;
 }) => {
   try {
     // Importar dinámicamente para evitar dependencia circular
@@ -16,7 +18,7 @@ const registerTrace = async (traceData: {
     await traceService.createTrace(traceData);
   } catch (error) {
     // Silenciar errores de trazas para no interrumpir el flujo principal
-    console.warn('Error registrando traza:', error);
+    print('Error registrando traza:', error);
   }
 };
 
@@ -36,22 +38,13 @@ chatApiClient.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
-    // Log de la petición
-    console.log('🚀 CHAT API CALL:', {
-      method: config.method?.toUpperCase(),
-      endpoint: config.url,
-      baseURL: config.baseURL,
-      fullURL: `${config.baseURL}${config.url}`,
-      headers: config.headers,
-      body: config.data,
-      params: config.params,
-    });
-    
+
+    logHttpRequest('Chat API', config);
+
     return config;
   },
   (error) => {
-    console.error('❌ CHAT API REQUEST ERROR:', error);
+    print('❌ CHAT API REQUEST ERROR:', error);
     return Promise.reject(error);
   }
 );
@@ -59,16 +52,8 @@ chatApiClient.interceptors.request.use(
 // Interceptor para manejar respuestas y errores
 chatApiClient.interceptors.response.use(
   async (response: AxiosResponse) => {
-    // Log de la respuesta exitosa
-    console.log('✅ CHAT API RESPONSE:', {
-      status: response.status,
-      statusText: response.statusText,
-      endpoint: response.config.url,
-      method: response.config.method?.toUpperCase(),
-      data: response.data,
-      headers: response.headers,
-    });
-    
+    logHttpResponseOk('Chat API', response);
+
     // Registrar traza de forma asíncrona (no bloquear el flujo)
     const userId = localStorage.getItem('user_id');
     if (userId && response.config.url) {
@@ -86,7 +71,7 @@ chatApiClient.interceptors.response.use(
           date,
           route,
           message,
-          response: response.status.toString(),
+          response: response.status,
         }).catch(() => {
           // Error ya manejado en registerTrace
         });
@@ -95,17 +80,9 @@ chatApiClient.interceptors.response.use(
     
     return response;
   },
-  async (error: AxiosError<ApiError>) => {
-    // Log del error
-    console.error('❌ CHAT API ERROR:', {
-      endpoint: error.config?.url,
-      method: error.config?.method?.toUpperCase(),
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      errorData: error.response?.data,
-      message: error.message,
-    });
-    
+  async (error: AxiosError) => {
+    logHttpResponseError('Chat API', error);
+
     // Registrar traza del error de forma asíncrona (no bloquear el flujo)
     const userId = localStorage.getItem('user_id');
     if (userId && error.config?.url) {
@@ -116,10 +93,7 @@ chatApiClient.interceptors.response.use(
         const date = new Date().toISOString();
         const status = error.response?.status || null;
         const message = `Chat request failed: ${method} ${route} - Status: ${status || 'Network Error'}`;
-        const errorData = error.response?.data 
-          ? JSON.stringify(error.response.data).substring(0, 500)
-          : error.message.substring(0, 500);
-        
+
         // Registrar de forma asíncrona sin esperar
         registerTrace({
           id_integrant: parseInt(userId),
@@ -127,7 +101,7 @@ chatApiClient.interceptors.response.use(
           date,
           route,
           message,
-          response: errorData,
+          response: typeof status === 'number' ? status : null,
         }).catch(() => {
           // Error ya manejado en registerTrace
         });
@@ -137,7 +111,7 @@ chatApiClient.interceptors.response.use(
     // Manejo centralizado de errores
     if (error.response) {
       const { data } = error.response;
-      const message = (data as ApiError)?.message || 'Error en la petición';
+      const message = getMessageFromResponseData(data);
       throw new Error(message);
     } else if (error.request) {
       throw new Error('No se pudo conectar con el servidor de chat. Verifica tu conexión.');

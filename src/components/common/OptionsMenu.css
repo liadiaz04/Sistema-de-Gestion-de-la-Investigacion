@@ -8,7 +8,7 @@
   border: none;
   font-size: 20px;
   font-weight: bold;
-  color: var(--text-secondary);
+  color: var(--text-secondary, var(--color-text-secondary));
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
@@ -17,22 +17,24 @@
 }
 
 .options-menu-trigger:hover {
-  background-color: var(--surface-hover);
-  color: var(--text-primary);
+  background-color: var(--surface-hover, var(--color-bg-secondary));
+  color: var(--text-primary, var(--color-text-primary));
 }
 
 .options-menu-dropdown {
-  position: absolute;
-  right: 0;
-  top: 100%;
-  margin-top: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border, var(--border, #e5e5e5));
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   min-width: 150px;
-  z-index: 1000;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Fondo opaco: evita ver la tabla a través del menú si --surface no está definido */
+  background-color: var(--color-bg-primary, #ffffff);
+}
+
+.options-menu-dropdown--portal {
+  position: fixed;
+  overscroll-behavior: contain;
 }
 
 .options-menu-item {
@@ -43,13 +45,13 @@
   border: none;
   text-align: left;
   font-size: 14px;
-  color: var(--text-primary);
+  color: var(--text-primary, var(--color-text-primary));
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
 .options-menu-item:hover {
-  background-color: var(--surface-hover);
+  background-color: var(--surface-hover, var(--color-bg-secondary));
 }
 
 .options-menu-item.delete {

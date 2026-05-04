@@ -45,7 +45,7 @@ import {
 import { groupService } from "../services/groupService"
 import {
   validateRequired,
-  validateEmail,
+  validateEmailRequired,
   validateLength,
   extractErrorMessage,
 } from "../utils/validation"
@@ -143,7 +143,6 @@ export const GroupForm = () => {
   const [selectedResponsableId, setSelectedResponsableId] = useState<number>(0)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
-  const [originalCreateDate, setOriginalCreateDate] = useState<string>("")
   
   // Verificar si el usuario actual es responsable y es autor
   const isCurrentUserResponsable = Boolean(isEditMode && isAutorUser && selectedResponsableId && currentUser && 
@@ -166,6 +165,7 @@ export const GroupForm = () => {
     entidad: "",
     email: "",
   })
+  const [externalMemberEmailError, setExternalMemberEmailError] = useState<string | null>(null)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -461,11 +461,6 @@ export const GroupForm = () => {
           setSelectedFacultyId(group.id_faculty)
           setSelectedFacultyAreaId(group.id_faculty_area||0)
           
-          // Guardar fecha de creación original
-          if (group.create_date) {
-            setOriginalCreateDate(group.create_date)
-          }
-          
           // Cargar miembros
           if (group.members) {
             const memberIds = group.members.map(m => m.id_integrant)
@@ -640,6 +635,12 @@ export const GroupForm = () => {
 
   const handleAddExternalMember = (e: React.FormEvent) => {
     e.preventDefault()
+    setExternalMemberEmailError(null)
+    const emailErr = validateEmailRequired(externalMember.email, "Correo electrónico")
+    if (emailErr) {
+      setExternalMemberEmailError(emailErr)
+      return
+    }
     const newMember = {
       id: `external-${Date.now()}`,
       integrantId: null,
@@ -660,6 +661,7 @@ export const GroupForm = () => {
     setExternalMembers([...externalMembers, newMember])
     setShowExternalModal(false)
     setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
+    setExternalMemberEmailError(null)
     setSuccessMessage("Integrante externo agregado con éxito")
     setShowSuccessDialog(true)
   }
@@ -692,10 +694,10 @@ export const GroupForm = () => {
   const handleSaveAllUpdates = async () => {
     if (!id) return
 
-    // Validar formulario antes de actualizar
-    if (!validateGroupForm()) {
+    const groupValidationErrors = validateGroupForm()
+    if (Object.keys(groupValidationErrors).length > 0) {
       setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage(Object.values(groupValidationErrors).join(" · "))
       setShowSuccessDialog(true)
       return
     }
@@ -711,9 +713,9 @@ export const GroupForm = () => {
         id_admin: selectedResponsableId,
         id_faculty: selectedFacultyId,
         id_faculty_area: selectedFacultyAreaId,
-        create_date: originalCreateDate || now, // Mantener la fecha original
         update_date: now,
-        member_ids: selectedMemberIds, // Solo IDs de integrantes CUJAE, no externos
+        /** Ver `GroupUpdate` en backend/modules/group/schemas.py */
+        member_update_ids: selectedMemberIds,
       }
 
       await groupService.updateGroupWithPayload(parseInt(id), payload)
@@ -733,7 +735,7 @@ export const GroupForm = () => {
   }
 
   // Función para validar el formulario de grupo
-  const validateGroupForm = (): boolean => {
+  const validateGroupForm = (): Record<string, string> => {
     const errors: Record<string, string> = {}
 
     // Validar nombre del grupo
@@ -775,23 +777,24 @@ export const GroupForm = () => {
 
     // Validar emails de miembros externos
     externalMembers.forEach((member, index) => {
-      if (member.usuario?.correoElectronico) {
-        const emailError = validateEmail(member.usuario.correoElectronico)
-        if (emailError) {
-          errors[`externalMemberEmail_${index}`] = emailError
-        }
+      const emailError = validateEmailRequired(
+        member.usuario?.correoElectronico,
+        `Correo electrónico (integrante externo ${index + 1})`,
+      )
+      if (emailError) {
+        errors[`externalMemberEmail_${index}`] = emailError
       }
     })
 
     setFieldErrors(errors)
-    return true
+    return errors
   }
 
   const handleSaveCompleteGroup = async () => {
-    // Validar formulario antes de enviar
-    if (!validateGroupForm()) {
+    const groupValidationErrors = validateGroupForm()
+    if (Object.keys(groupValidationErrors).length > 0) {
       setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage("Por favor, corrija los errores en el formulario antes de continuar")
+      setSuccessMessage(Object.values(groupValidationErrors).join(" · "))
       setShowSuccessDialog(true)
       return
     }
@@ -802,25 +805,33 @@ export const GroupForm = () => {
       setFieldErrors({})
 
       const now = new Date().toISOString()
-      const payload = {
-        name: formData.nombre,
-        subjects: formData.tematicas || "",
-        problems: formData.descripcion || "",
-        id_admin: selectedResponsableId,
-        id_faculty: selectedFacultyId,
-        create_date: now,
-        update_date: now,
-        member_ids: selectedMemberIds,
-        id_faculty_area: selectedFacultyAreaId,
-      }
 
       if (isEditMode && id) {
-        // Modo edición: actualizar grupo existente
-        await groupService.updateGroupWithPayload(parseInt(id), payload)
+        const updatePayload = {
+          name: formData.nombre,
+          subjects: formData.tematicas || "",
+          problems: formData.descripcion || "",
+          id_admin: selectedResponsableId,
+          id_faculty: selectedFacultyId,
+          update_date: now,
+          member_update_ids: selectedMemberIds,
+          id_faculty_area: selectedFacultyAreaId,
+        }
+        await groupService.updateGroupWithPayload(parseInt(id), updatePayload)
         setSuccessMessage("Grupo actualizado con éxito")
       } else {
-        // Modo creación: crear nuevo grupo
-        await groupService.createGroup(payload)
+        const createPayload = {
+          name: formData.nombre,
+          subjects: formData.tematicas || "",
+          problems: formData.descripcion || "",
+          id_admin: selectedResponsableId,
+          id_faculty: selectedFacultyId,
+          create_date: now,
+          update_date: now,
+          member_ids: selectedMemberIds,
+          id_faculty_area: selectedFacultyAreaId,
+        }
+        await groupService.createGroup(createPayload)
         setSuccessMessage("Grupo completado y guardado con éxito")
       }
 
@@ -950,7 +961,14 @@ export const GroupForm = () => {
         </div>
       </Modal>
 
-      <Modal isOpen={showExternalModal} onClose={() => setShowExternalModal(false)} title="Agregar Integrante Externo">
+      <Modal
+        isOpen={showExternalModal}
+        onClose={() => {
+          setShowExternalModal(false)
+          setExternalMemberEmailError(null)
+        }}
+        title="Agregar Integrante Externo"
+      >
         <form onSubmit={handleAddExternalMember} className="modal-form">
           <div className="form-group">
             <label>Nombre *</label>
@@ -986,16 +1004,28 @@ export const GroupForm = () => {
             />
           </div>
           <div className="form-group">
-            <label>Correo Electrónico</label>
             <Input
+              label="Correo electrónico *"
               type="email"
               value={externalMember.email}
-              onChange={(e) => setExternalMember({ ...externalMember, email: e.target.value })}
+              onChange={(e) => {
+                setExternalMemberEmailError(null)
+                setExternalMember({ ...externalMember, email: e.target.value })
+              }}
               placeholder="ejemplo@universidad.edu"
+              error={externalMemberEmailError ?? undefined}
+              autoComplete="email"
             />
           </div>
           <div className="modal-actions">
-            <Button type="button" variant="secondary" onClick={() => setShowExternalModal(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowExternalModal(false)
+                setExternalMemberEmailError(null)
+              }}
+            >
               Cancelar
             </Button>
             <Button type="submit">Agregar</Button>
@@ -1406,7 +1436,7 @@ export const GroupForm = () => {
                     <Button variant="secondary" onClick={() => setShowDirectoryModal(true)}>
                       Agregar integrante (Directorio CUJAE)
                     </Button>
-                    <Button variant="secondary" onClick={() => setShowExternalModal(true)}>
+                    <Button variant="secondary" onClick={() => { setExternalMemberEmailError(null); setShowExternalModal(true) }}>
                       Agregar integrante (Externo de la CUJAE)
                     </Button>
                   </div>
@@ -1844,7 +1874,7 @@ export const GroupForm = () => {
                     <Button variant="secondary" onClick={() => setShowDirectoryModal(true)}>
                       Agregar integrante (Directorio CUJAE)
                     </Button>
-                    <Button variant="secondary" onClick={() => setShowExternalModal(true)}>
+                    <Button variant="secondary" onClick={() => { setExternalMemberEmailError(null); setShowExternalModal(true) }}>
                       Agregar integrante (Externo de la CUJAE)
                     </Button>
                   </div>

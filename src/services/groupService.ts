@@ -18,6 +18,18 @@ export interface CreateGroupPayload {
   id_faculty_area: number
 }
 
+/** Cuerpo PUT según `GroupUpdate` en backend/modules/group/schemas.py */
+export interface UpdateGroupPayload {
+  name: string
+  subjects: string
+  problems: string
+  id_admin: number
+  id_faculty: number
+  update_date: string
+  member_update_ids: number[]
+  id_faculty_area: number
+}
+
 export const groupService = {
   /**
    * Obtiene todos los grupos con filtros opcionales
@@ -73,7 +85,7 @@ export const groupService = {
   /**
    * Actualiza un grupo usando el mismo payload que createGroup
    */
-  async updateGroupWithPayload(groupId: number, data: CreateGroupPayload) {
+  async updateGroupWithPayload(groupId: number, data: UpdateGroupPayload) {
     return apiClient.put(`/groups/${groupId}`, data)
   },
 }

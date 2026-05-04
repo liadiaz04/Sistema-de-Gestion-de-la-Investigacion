@@ -33,6 +33,21 @@ export const validateEmail = (email: string | null | undefined): string | null =
 }
 
 /**
+ * Valida correo obligatorio (contacto externo, inicio de sesión, etc.)
+ */
+export const validateEmailRequired = (
+  email: string | null | undefined,
+  fieldName = "El correo electrónico",
+): string | null => {
+  const requiredError = validateRequired(
+    typeof email === "string" ? email.trim() : email ?? "",
+    fieldName,
+  )
+  if (requiredError) return requiredError
+  return validateEmail(email)
+}
+
+/**
  * Valida formato de DOI (10.xxxx/xxxxx)
  */
 export const validateDOI = (doi: string | null | undefined): string | null => {
@@ -177,11 +192,21 @@ export const validatePages = (startPage: string | null | undefined, endPage: str
  * Extrae el mensaje de error de una respuesta HTTP
  */
 export const extractErrorMessage = (error: any): string => {
-  if (error?.response?.data?.detail) {
-    return error.response.data.detail
+  const data = error?.response?.data
+  if (data?.detail != null) {
+    if (typeof data.detail === "string") return data.detail
+    if (Array.isArray(data.detail)) {
+      const parts = data.detail.map((item: unknown) => {
+        if (typeof item === "object" && item !== null && "msg" in item) {
+          return String((item as { msg?: string }).msg ?? JSON.stringify(item))
+        }
+        return typeof item === "string" ? item : JSON.stringify(item)
+      })
+      return parts.join("; ") || "Ocurrió un error inesperado"
+    }
   }
-  if (error?.response?.data?.message) {
-    return error.response.data.message
+  if (typeof data?.message === "string" && data.message.trim()) {
+    return data.message
   }
   if (error?.message) {
     return error.message
