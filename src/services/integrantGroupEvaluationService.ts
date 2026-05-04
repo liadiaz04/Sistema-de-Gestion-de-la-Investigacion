@@ -2,6 +2,7 @@ import { apiClient } from "./api/client"
 import type {
   IntegrantGroupEvaluation,
   IntegrantGroupEvaluationCreate,
+  IntegrantGroupEvaluationUpdate,
 } from "../types/api/integrantGroupEvaluation"
 
 export const integrantGroupEvaluationService = {
@@ -28,6 +29,19 @@ export const integrantGroupEvaluationService = {
 
   async create(payload: IntegrantGroupEvaluationCreate): Promise<IntegrantGroupEvaluation> {
     const response = await apiClient.post<IntegrantGroupEvaluation>("/integrant-group-evaluations/", payload)
+    return response.data
+  },
+
+  async update(id: number, payload: IntegrantGroupEvaluationUpdate): Promise<IntegrantGroupEvaluation> {
+    const response = await apiClient.put<IntegrantGroupEvaluation>(
+      `/integrant-group-evaluations/${id}`,
+      payload,
+    )
+    return response.data
+  },
+
+  async remove(id: number): Promise<IntegrantGroupEvaluation> {
+    const response = await apiClient.delete<IntegrantGroupEvaluation>(`/integrant-group-evaluations/${id}`)
     return response.data
   },
 }

@@ -8,6 +8,7 @@ import { Button } from "../components/common/Button"
 import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
+import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import "./GroupForm.css"
 import { mockGroups } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
@@ -185,6 +186,10 @@ export const GroupForm = () => {
   const [evalFormEvaluationId, setEvalFormEvaluationId] = useState<number | "">("")
   const [evalFormDescription, setEvalFormDescription] = useState("")
   const [evalFormSubmitting, setEvalFormSubmitting] = useState(false)
+  const [evaluationModalMode, setEvaluationModalMode] = useState<"create" | "edit">("create")
+  const [editingEvaluationRow, setEditingEvaluationRow] = useState<IntegrantGroupEvaluation | null>(null)
+  const [deleteEvaluationDialogOpen, setDeleteEvaluationDialogOpen] = useState(false)
+  const [evaluationPendingDelete, setEvaluationPendingDelete] = useState<IntegrantGroupEvaluation | null>(null)
 
   const canManageGroupEvaluations = useMemo(() => {
     const roles = currentUser?.roles || []
@@ -262,6 +267,8 @@ export const GroupForm = () => {
   )
 
   const handleOpenAddEvaluationModal = () => {
+    setEvaluationModalMode("create")
+    setEditingEvaluationRow(null)
     setEvalMemberSearchTerm("")
     setEvalFormSelectedMember(null)
     setEvalFormEvaluationId("")
@@ -271,11 +278,74 @@ export const GroupForm = () => {
 
   const handleCloseAddEvaluationModal = () => {
     setShowAddEvaluationModal(false)
+    setEvaluationModalMode("create")
+    setEditingEvaluationRow(null)
+  }
+
+  const handleOpenEditEvaluation = useCallback(
+    (row: IntegrantGroupEvaluation) => {
+      setEvaluationModalMode("edit")
+      setEditingEvaluationRow(row)
+      setEvalMemberSearchTerm("")
+      setEvalFormSelectedMember({
+        integrantId: row.id_integrant,
+        label: getIntegrantDisplayNameById(row.id_integrant),
+      })
+      setEvalFormEvaluationId(row.id_evaluation)
+      setEvalFormDescription(row.description ?? "")
+      setShowAddEvaluationModal(true)
+    },
+    [getIntegrantDisplayNameById],
+  )
+
+  const handleAskDeleteEvaluation = (row: IntegrantGroupEvaluation) => {
+    setEvaluationPendingDelete(row)
+    setDeleteEvaluationDialogOpen(true)
+  }
+
+  const handleConfirmDeleteEvaluation = async () => {
+    if (!evaluationPendingDelete) return
+    try {
+      await integrantGroupEvaluationService.remove(evaluationPendingDelete.id_integrant_group_evaluation)
+      setSuccessMessage("Evaluación eliminada correctamente.")
+      setShowSuccessDialog(true)
+      setDeleteEvaluationDialogOpen(false)
+      setEvaluationPendingDelete(null)
+      await loadEvaluationsTabData()
+    } catch (err) {
+      setSuccessMessage(extractErrorMessage(err) || "Error al eliminar la evaluación")
+      setShowSuccessDialog(true)
+    }
   }
 
   const handleSubmitIntegrantEvaluation = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!id) return
+
+    if (evaluationModalMode === "edit" && editingEvaluationRow) {
+      if (evalFormEvaluationId === "" || evalFormEvaluationId === null) {
+        setSuccessMessage("Debe seleccionar obligatoriamente una evaluación del catálogo.")
+        setShowSuccessDialog(true)
+        return
+      }
+      try {
+        setEvalFormSubmitting(true)
+        await integrantGroupEvaluationService.update(editingEvaluationRow.id_integrant_group_evaluation, {
+          id_evaluation: Number(evalFormEvaluationId),
+          description: evalFormDescription.trim() ? evalFormDescription.trim() : null,
+        })
+        setSuccessMessage("Evaluación actualizada correctamente.")
+        setShowSuccessDialog(true)
+        handleCloseAddEvaluationModal()
+        await loadEvaluationsTabData()
+      } catch (err) {
+        setSuccessMessage(extractErrorMessage(err) || "Error al actualizar la evaluación")
+        setShowSuccessDialog(true)
+      } finally {
+        setEvalFormSubmitting(false)
+      }
+      return
+    }
 
     if (!evalFormSelectedMember?.integrantId) {
       setSuccessMessage("Debe buscar y seleccionar un integrante del grupo.")
@@ -364,12 +434,13 @@ export const GroupForm = () => {
                   <th>Integrante</th>
                   <th>Evaluación</th>
                   <th>Descripción</th>
+                  {canManageGroupEvaluations ? <th>Acciones</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {groupEvaluationsList.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="empty-state">
+                    <td colSpan={canManageGroupEvaluations ? 4 : 3} className="empty-state">
                       No hay evaluaciones registradas para este grupo.
                     </td>
                   </tr>
@@ -379,6 +450,23 @@ export const GroupForm = () => {
                       <td>{getIntegrantDisplayNameById(row.id_integrant)}</td>
                       <td>{getEvaluationNameById(row.id_evaluation)}</td>
                       <td>{row.description?.trim() ? row.description : "—"}</td>
+                      {canManageGroupEvaluations ? (
+                        <td>
+                          <OptionsMenu
+                            options={[
+                              {
+                                label: "Modificar",
+                                onClick: () => handleOpenEditEvaluation(row),
+                              },
+                              {
+                                label: "Eliminar",
+                                className: "delete",
+                                onClick: () => handleAskDeleteEvaluation(row),
+                              },
+                            ]}
+                          />
+                        </td>
+                      ) : null}
                     </tr>
                   ))
                 )}
@@ -1093,60 +1181,78 @@ export const GroupForm = () => {
       <Modal
         isOpen={showAddEvaluationModal}
         onClose={handleCloseAddEvaluationModal}
-        title="Agregar evaluación a integrante"
+        title={
+          evaluationModalMode === "edit"
+            ? "Modificar evaluación"
+            : "Agregar evaluación a integrante"
+        }
       >
         <form onSubmit={handleSubmitIntegrantEvaluation} className="modal-form">
-          <div className="form-group">
-            <label htmlFor="evalMemberSearch">Buscar integrante del grupo</label>
-            <Input
-              id="evalMemberSearch"
-              placeholder="Escribe al menos 2 caracteres (nombre, apellidos o correo)"
-              value={evalMemberSearchTerm}
-              onChange={(e) => {
-                setEvalMemberSearchTerm(e.target.value)
-                setEvalFormSelectedMember(null)
-              }}
-              aria-label="Campo para buscar entre los integrantes del grupo"
-            />
-            <small className="form-hint">Solo integrantes CUJAE del grupo (con identificador en el sistema).</small>
-          </div>
-          {evalFormSelectedMember ? (
-            <p className="form-hint" style={{ marginBottom: "0.75rem" }}>
-              Seleccionado: <strong>{evalFormSelectedMember.label}</strong>
-            </p>
-          ) : null}
-          <div className="record-list" role="listbox" aria-label="Resultados de búsqueda de integrantes del grupo">
-            {evalMemberSearchTerm.trim().length < 2 ? (
-              <p className="empty-state">Escriba al menos 2 caracteres para filtrar integrantes del grupo.</p>
-            ) : filteredMembersForEvaluationSearch.length === 0 ? (
-              <p className="empty-state">No hay coincidencias entre los integrantes de este grupo.</p>
-            ) : (
-              filteredMembersForEvaluationSearch.map((m) => {
-                const label = `${m.usuario?.nombre || ""} ${m.usuario?.apellidos || ""}`.trim()
-                return (
-                  <div key={m.id} className="record-item">
-                    <div className="record-item-info">
-                      <strong>{label || "Sin nombre"}</strong>
-                      <span>{m.usuario?.correoElectronico || "Sin correo"}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      aria-label={`Seleccionar ${label} para la evaluación`}
-                      onClick={() =>
-                        setEvalFormSelectedMember({
-                          integrantId: m.integrantId as number,
-                          label: label || `Integrante #${m.integrantId}`,
-                        })
-                      }
-                    >
-                      Seleccionar
-                    </Button>
-                  </div>
-                )
-              })
-            )}
-          </div>
+          {evaluationModalMode === "create" ? (
+            <>
+              <div className="form-group">
+                <label htmlFor="evalMemberSearch">Buscar integrante del grupo</label>
+                <Input
+                  id="evalMemberSearch"
+                  placeholder="Escribe al menos 2 caracteres (nombre, apellidos o correo)"
+                  value={evalMemberSearchTerm}
+                  onChange={(e) => {
+                    setEvalMemberSearchTerm(e.target.value)
+                    setEvalFormSelectedMember(null)
+                  }}
+                  aria-label="Campo para buscar entre los integrantes del grupo"
+                />
+                <small className="form-hint">
+                  Solo integrantes CUJAE del grupo (con identificador en el sistema).
+                </small>
+              </div>
+              {evalFormSelectedMember ? (
+                <p className="form-hint" style={{ marginBottom: "0.75rem" }}>
+                  Seleccionado: <strong>{evalFormSelectedMember.label}</strong>
+                </p>
+              ) : null}
+              <div className="record-list" role="listbox" aria-label="Resultados de búsqueda de integrantes del grupo">
+                {evalMemberSearchTerm.trim().length < 2 ? (
+                  <p className="empty-state">Escriba al menos 2 caracteres para filtrar integrantes del grupo.</p>
+                ) : filteredMembersForEvaluationSearch.length === 0 ? (
+                  <p className="empty-state">No hay coincidencias entre los integrantes de este grupo.</p>
+                ) : (
+                  filteredMembersForEvaluationSearch.map((m) => {
+                    const label = `${m.usuario?.nombre || ""} ${m.usuario?.apellidos || ""}`.trim()
+                    return (
+                      <div key={m.id} className="record-item">
+                        <div className="record-item-info">
+                          <strong>{label || "Sin nombre"}</strong>
+                          <span>{m.usuario?.correoElectronico || "Sin correo"}</span>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          aria-label={`Seleccionar ${label} para la evaluación`}
+                          onClick={() =>
+                            setEvalFormSelectedMember({
+                              integrantId: m.integrantId as number,
+                              label: label || `Integrante #${m.integrantId}`,
+                            })
+                          }
+                        >
+                          Seleccionar
+                        </Button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="form-group">
+              <span className="input-label">Integrante</span>
+              <p className="form-hint" style={{ marginTop: "0.35rem" }}>
+                <strong>{evalFormSelectedMember?.label ?? "—"}</strong>
+              </p>
+              <small className="form-hint">Para cambiar el integrante, elimine esta evaluación y cree una nueva.</small>
+            </div>
+          )}
           <div className="form-group">
             <label htmlFor="evalCatalogSelect">Evaluación *</label>
             <select
@@ -1185,11 +1291,35 @@ export const GroupForm = () => {
               Cancelar
             </Button>
             <Button type="submit" disabled={evalFormSubmitting}>
-              {evalFormSubmitting ? "Creando…" : "Crear"}
+              {evalFormSubmitting
+                ? evaluationModalMode === "edit"
+                  ? "Guardando…"
+                  : "Creando…"
+                : evaluationModalMode === "edit"
+                  ? "Guardar cambios"
+                  : "Crear"}
             </Button>
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={deleteEvaluationDialogOpen}
+        title="Eliminar evaluación"
+        message={
+          evaluationPendingDelete
+            ? `¿Eliminar la evaluación de «${getIntegrantDisplayNameById(evaluationPendingDelete.id_integrant)}» (${getEvaluationNameById(evaluationPendingDelete.id_evaluation)})? Esta acción no se puede deshacer.`
+            : ""
+        }
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        confirmVariant="danger"
+        onConfirm={() => void handleConfirmDeleteEvaluation()}
+        onCancel={() => {
+          setDeleteEvaluationDialogOpen(false)
+          setEvaluationPendingDelete(null)
+        }}
+      />
 
       <div className="form-header">
         <h1>{pageTitle}</h1>

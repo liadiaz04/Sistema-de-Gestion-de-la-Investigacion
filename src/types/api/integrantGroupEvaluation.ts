@@ -13,3 +13,11 @@ export interface IntegrantGroupEvaluationCreate {
   id_evaluation: number
   description?: string | null
 }
+
+/** Payload para PUT (campos opcionales según backend). */
+export interface IntegrantGroupEvaluationUpdate {
+  id_integrant?: number
+  id_group?: number
+  id_evaluation?: number
+  description?: string | null
+}
