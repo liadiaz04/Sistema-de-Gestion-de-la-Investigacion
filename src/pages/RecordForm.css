@@ -1,4 +1,12 @@
 .record-form {
+  --primary-green: var(--color-primary, #00835c);
+  --light-green: var(--color-bg-tertiary, #f0f4f3);
+  --surface: var(--color-bg-secondary, #f8f9fa);
+  --border-color: var(--color-border, #e5e5e5);
+  --text-primary: var(--color-text-primary, #000000);
+  --text-secondary: var(--color-text-secondary, #666666);
+  --record-selection-accent: var(--color-primary, #00835c);
+
   padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
@@ -34,9 +42,11 @@
 .record-type-menu {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
   gap: 0.75rem;
   margin-bottom: 2rem;
-  padding: 1rem;
+  padding: 1rem 1.25rem;
   background: var(--surface);
   border-radius: 0.5rem;
   border: 1px solid var(--border-color);
@@ -62,18 +72,33 @@
   transform: translateY(-2px);
 }
 
-/* New styling for selected state with better text contrast */
+/* Estado seleccionado: paleta institucional (verde CUJAE) + texto legible */
 .type-menu-item.selected {
   border-color: var(--primary-green);
-  background: linear-gradient(135deg, var(--primary-green) 0%, #00a85a 100%);
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 131, 83, 0.4);
+  border-left-width: 4px;
+  background: var(--light-green);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 131, 83, 0.18);
   font-weight: 600;
-  transform: translateY(-2px);
+  transform: translateY(-1px);
+}
+
+.type-menu-item.selected:hover {
+  background: var(--light-green);
+  color: var(--text-primary);
+  border-color: var(--primary-green);
 }
 
 .type-menu-item:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.type-menu-item.selected:disabled {
+  opacity: 1;
+  background: var(--light-green);
+  color: var(--text-primary);
+  border-color: var(--primary-green);
   cursor: not-allowed;
 }
 
@@ -223,10 +248,6 @@
 }
 
 /* —— Listas de asociación (autores, tutores, proyectos) —— */
-:root {
-  --record-selection-accent: #004b87;
-}
-
 .record-list,
 .association-list {
   display: flex;
@@ -259,12 +280,12 @@
 .record-item:hover:not(.record-item--selected),
 .association-item:hover {
   border-color: var(--color-primary-light);
-  background: #f8fafc;
+  background: var(--color-bg-secondary);
 }
 
 .record-item--selected,
 .association-item--selected {
-  background: #f1f5f9;
+  background: var(--light-green);
   border-left-color: var(--record-selection-accent);
 }
 
@@ -279,7 +300,7 @@
 
 .record-item-info strong,
 .association-item-content strong {
-  color: #0f172a;
+  color: var(--text-primary);
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.35;
@@ -287,7 +308,7 @@
 
 .record-item-info span,
 .association-item-content span {
-  color: #64748b;
+  color: var(--text-secondary);
   font-size: 0.875rem;
   line-height: 1.4;
 }
@@ -298,15 +319,15 @@
 
 .association-item--dragging {
   cursor: grabbing;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(0, 131, 83, 0.15);
+  background: var(--color-white);
   border-left-color: var(--record-selection-accent);
   opacity: 0.95;
 }
 
 .association-item-grip {
   flex-shrink: 0;
-  color: #94a3b8;
+  color: var(--color-gray);
   width: 1rem;
   height: 1rem;
 }
@@ -320,7 +341,7 @@
   border: none;
   border-radius: 0.375rem;
   background: transparent;
-  color: #64748b;
+  color: var(--text-secondary);
   opacity: 0;
   transition: opacity 0.2s, color 0.2s, background-color 0.2s;
   cursor: pointer;
@@ -333,7 +354,7 @@
 }
 
 .association-item-action:hover:not(:disabled) {
-  color: #dc2626;
+  color: var(--color-error);
   background: #fef2f2;
 }
 
@@ -351,7 +372,7 @@
   border: none;
   border-left: 4px solid transparent;
   background: transparent;
-  color: #0f172a;
+  color: var(--text-primary);
   font-size: 0.875rem;
   text-align: left;
   cursor: pointer;
@@ -360,7 +381,7 @@
 
 .autocomplete-option:hover,
 .autocomplete-option:focus-visible {
-  background: #f1f5f9;
+  background: var(--light-green);
   border-left-color: var(--record-selection-accent);
   outline: none;
 }
@@ -371,7 +392,12 @@
   }
 
   .record-type-menu {
-    grid-template-columns: repeat(2, 1fr);
+    justify-content: center;
+  }
+
+  .type-menu-item {
+    flex: 0 1 auto;
+    min-width: calc(50% - 0.375rem);
   }
 
   .form-tabs {
