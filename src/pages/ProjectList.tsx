@@ -320,7 +320,7 @@ const ProjectList: React.FC = () => {
       <div className="group-list-header">
         <div>
           <h1>Proyectos de Investigación</h1>
-          <p>Gestión de proyectos de investigación (Copérnico)</p>
+          <p>Gestión de proyectos de investigación</p>
         </div>
         {canCreateProjects() && (
           <Button onClick={() => navigate("/projects/new")}>
@@ -349,7 +349,7 @@ const ProjectList: React.FC = () => {
                 onChange={(e) => setShowOnlyMyProjects(e.target.checked)}
                 style={{ cursor: 'pointer' }}
               />
-              <span>Proyectos de los que soy responsable</span>
+              <span>Mis proyectos</span>
             </label>
           </div>
         </div>

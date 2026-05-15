@@ -326,7 +326,7 @@ export const GroupList: React.FC = () => {
       <div className="group-list-header">
         <div>
           <h1>Grupos de Investigación</h1>
-          <p>Gestión de grupos de investigación (Quorum)</p>
+          <p>Gestión de grupos de investigación</p>
         </div>
         {canCreateGroups() && (
           <Button onClick={() => navigate("/groups/new")}>
@@ -355,7 +355,7 @@ export const GroupList: React.FC = () => {
                 onChange={(e) => setShowOnlyMyGroups(e.target.checked)}
                 style={{ cursor: 'pointer' }}
               />
-              <span>Grupos de los que soy responsable</span>
+              <span>Mis grupos</span>
             </label>
           </div>
         </div>
