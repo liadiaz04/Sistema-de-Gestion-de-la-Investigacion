@@ -136,7 +136,7 @@ const mapGroupToIGroup = (group: Group): IGroup => {
 
 export const GroupList: React.FC = () => {
   const navigate = useNavigate()
-  const { canCreateGroups, canManageAllGroups } = usePermissions()
+  const { canCreateGroups, canManageAllGroups, isIntegrant } = usePermissions()
   
   const [searchTerm, setSearchTerm] = useState("")
   const [groups, setGroups] = useState<IGroup[]>([])
@@ -347,17 +347,19 @@ export const GroupList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="filter-group">
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={showOnlyMyGroups}
-                onChange={(e) => setShowOnlyMyGroups(e.target.checked)}
-                style={{ cursor: 'pointer' }}
-              />
-              <span>Mis grupos</span>
-            </label>
-          </div>
+          {!isIntegrant() ? (
+            <div className="filter-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showOnlyMyGroups}
+                  onChange={(e) => setShowOnlyMyGroups(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>Mis grupos</span>
+              </label>
+            </div>
+          ) : null}
         </div>
 
         {loading && (

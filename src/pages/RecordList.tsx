@@ -205,7 +205,7 @@ const RecordList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          {isIntegrant() && (
+          {!isIntegrant() ? (
             <div className="filter-group">
               <label>Filtrar:</label>
               <select
@@ -217,7 +217,7 @@ const RecordList: React.FC = () => {
                 <option value="mine">Mis registros</option>
               </select>
             </div>
-          )}
+          ) : null}
         </div>
 
         {loading && (

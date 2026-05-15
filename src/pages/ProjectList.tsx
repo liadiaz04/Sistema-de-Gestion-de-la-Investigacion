@@ -127,7 +127,7 @@ const mapStateToFrontend = (state: string): "propuesta" | "activo" | "finalizado
 
 const ProjectList: React.FC = () => {
   const navigate = useNavigate()
-  const { canCreateProjects, canManageAllProjects } = usePermissions()
+  const { canCreateProjects, canManageAllProjects, isIntegrant } = usePermissions()
   const [searchTerm, setSearchTerm] = useState("")
   const [projects, setProjects] = useState<IProject[]>([])
   const [loading, setLoading] = useState(true)
@@ -341,17 +341,19 @@ const ProjectList: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="filter-group">
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={showOnlyMyProjects}
-                onChange={(e) => setShowOnlyMyProjects(e.target.checked)}
-                style={{ cursor: 'pointer' }}
-              />
-              <span>Mis proyectos</span>
-            </label>
-          </div>
+          {!isIntegrant() ? (
+            <div className="filter-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showOnlyMyProjects}
+                  onChange={(e) => setShowOnlyMyProjects(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>Mis proyectos</span>
+              </label>
+            </div>
+          ) : null}
         </div>
 
         {loading && (

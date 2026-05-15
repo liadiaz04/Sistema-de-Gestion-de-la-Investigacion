@@ -111,9 +111,10 @@ export const GroupForm = () => {
   const location = useLocation()
   const { user: currentUserFromStore } = useAuthStore()
   const currentUser = currentUserFromStore ?? readUserFromLocalStorage()
-  const { isAutor } = usePermissions()
+  const { isAutor, isIntegrant, canManageAllGroups } = usePermissions()
 
   const isAutorUser = isAutor()
+  const isUsuarioReadOnly = isIntegrant()
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
@@ -191,6 +192,18 @@ export const GroupForm = () => {
   const [deleteEvaluationDialogOpen, setDeleteEvaluationDialogOpen] = useState(false)
   const [evaluationPendingDelete, setEvaluationPendingDelete] = useState<IntegrantGroupEvaluation | null>(null)
 
+  const canEditGroupInView = useMemo(() => {
+    if (isUsuarioReadOnly) return false
+    if (canManageAllGroups()) return true
+
+    const uidFromProfile = currentUser?.id ? parseInt(currentUser.id, 10) : NaN
+    const uidFromStorage = parseStoredIntegrantId()
+    const uid = !Number.isNaN(uidFromProfile) ? uidFromProfile : uidFromStorage ?? NaN
+    if (Number.isNaN(uid)) return false
+
+    return selectedResponsableId > 0 && uid === selectedResponsableId
+  }, [isUsuarioReadOnly, canManageAllGroups, currentUser, selectedResponsableId])
+
   const canManageGroupEvaluations = useMemo(() => {
     const roles = currentUser?.roles || []
     if (roles.includes("admin") || roles.includes("consejo")) return true
@@ -251,6 +264,12 @@ export const GroupForm = () => {
       setActiveTab("datos")
     }
   }, [activeTab, canManageGroupEvaluations])
+
+  useEffect(() => {
+    if (isEditMode && isUsuarioReadOnly && id) {
+      navigate(`/groups/${id}`, { replace: true })
+    }
+  }, [isEditMode, isUsuarioReadOnly, id, navigate])
 
   const getIntegrantDisplayNameById = useCallback(
     (integrantId: number) => {
@@ -1783,7 +1802,10 @@ export const GroupForm = () => {
             <Card>
               <div className="tab-content">
                 <div className="tab-header">
-                  <h2>Gestión de Integrantes</h2>
+                  <h2>{canEditGroupInView ? "Gestión de Integrantes" : "Integrantes del Grupo"}</h2>
+                  {!canEditGroupInView ? (
+                    <p className="form-hint">Consulta de miembros del grupo (solo lectura).</p>
+                  ) : null}
                 </div>
 
                 <div className="members-table">
@@ -1793,14 +1815,14 @@ export const GroupForm = () => {
                         <th>Nombre</th>
                         <th>Rol</th>
                         <th>Tipo</th>
-                        <th>Opciones</th>
+                        {canEditGroupInView ? <th>Opciones</th> : null}
                       </tr>
                     </thead>
                     <tbody>
                       {members.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="empty-state">
-                            No hay integrantes asociados. Haga clic en "Agregar integrante" para comenzar.
+                          <td colSpan={canEditGroupInView ? 4 : 3} className="empty-state">
+                            No hay integrantes asociados a este grupo.
                           </td>
                         </tr>
                       ) : (
@@ -1809,20 +1831,22 @@ export const GroupForm = () => {
                             <td>{`${member.usuario?.nombre || ""} ${member.usuario?.apellidos || ""}`}</td>
                             <td>{member.rol?.replace(/_/g, " ") || "integrante_grupo"}</td>
                             <td>{member.usuario?.esExterno ? "Externo" : "CUJAE"}</td>
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Modificar",
-                                    onClick: () => handleModifyMember(member),
-                                  },
-                                  {
-                                    label: "Eliminar integrante",
-                                    onClick: () => handleRemoveMember(member.id),
-                                  },
-                                ]}
-                              />
-                            </td>
+                            {canEditGroupInView ? (
+                              <td>
+                                <OptionsMenu
+                                  options={[
+                                    {
+                                      label: "Modificar",
+                                      onClick: () => handleModifyMember(member),
+                                    },
+                                    {
+                                      label: "Eliminar integrante",
+                                      onClick: () => handleRemoveMember(member.id),
+                                    },
+                                  ]}
+                                />
+                              </td>
+                            ) : null}
                           </tr>
                         ))
                       )}
@@ -1838,7 +1862,9 @@ export const GroupForm = () => {
           <Card>
             <div className="form-actions">
               <Button onClick={() => navigate("/groups")}>Volver a Grupos</Button>
-              <Button onClick={() => navigate(`/groups/${id}/edit`)}>Editar Grupo</Button>
+              {canEditGroupInView ? (
+                <Button onClick={() => navigate(`/groups/${id}/edit`)}>Editar Grupo</Button>
+              ) : null}
             </div>
           </Card>
         </>
