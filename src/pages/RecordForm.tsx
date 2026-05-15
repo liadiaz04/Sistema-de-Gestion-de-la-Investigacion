@@ -7,7 +7,7 @@ import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
 import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
-import { OptionsMenu } from "../components/common/OptionsMenu"
+import { GripVertical, Trash2 } from "lucide-react"
 import type { RecordType } from "../types"
 import { mockRecords, mockProjects } from "../services/mockData"
 import "./RecordForm.css"
@@ -382,6 +382,7 @@ export const RecordForm = () => {
   const [externalAuthors, setExternalAuthors] = useState<any[]>([])
   const [selectedAuthorIds, setSelectedAuthorIds] = useState<number[]>([])
   const [selectedTutorIds, setSelectedTutorIds] = useState<number[]>([])
+  const [draggingAuthorId, setDraggingAuthorId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -776,7 +777,7 @@ export const RecordForm = () => {
           <li key={option.id}>
             <button
               type="button"
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100"
+              className="autocomplete-option"
               onMouseDown={() => onSelect(option)}
             >
               {option.name}
@@ -866,6 +867,46 @@ export const RecordForm = () => {
 
   const handleDisassociateProject = (projectId: string) => {
     setAssociatedProjects(associatedProjects.filter((p) => p.id !== projectId))
+  }
+
+  const handleAuthorDragStart = (authorId: string) => {
+    setDraggingAuthorId(authorId)
+  }
+
+  const handleAuthorDragEnd = () => {
+    setDraggingAuthorId(null)
+  }
+
+  const handleAuthorDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+  }
+
+  const handleAuthorDrop = (targetAuthorId: string) => {
+    if (!draggingAuthorId || draggingAuthorId === targetAuthorId) {
+      setDraggingAuthorId(null)
+      return
+    }
+
+    const fromIndex = authors.findIndex((author) => author.id === draggingAuthorId)
+    const toIndex = authors.findIndex((author) => author.id === targetAuthorId)
+
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggingAuthorId(null)
+      return
+    }
+
+    const reordered = [...authors]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+
+    setAuthors(
+      reordered.map((author, index) => ({
+        ...author,
+        orden: index + 1,
+        esPrincipal: index === 0,
+      })),
+    )
+    setDraggingAuthorId(null)
   }
 
   // Helper para construir author_ids (IDs de integrantes + objetos de autores externos)
@@ -1834,18 +1875,31 @@ export const RecordForm = () => {
             {filteredProjects.length === 0 ? (
               <p className="empty-state">No hay proyectos disponibles para asociar</p>
             ) : (
-              filteredProjects.map((project) => (
-                <div key={project.id} className="record-item">
-                  <div className="record-item-info">
-                    <strong>{project.nombre}</strong>
-                    <span>{project.descripcion}</span>
-                    <span>Temática: {project.tematica}</span>
+              filteredProjects.map((project) => {
+                const isAssociated = associatedProjects.some((item) => item.id === project.id)
+                return (
+                  <div
+                    key={project.id}
+                    className={`record-item ${isAssociated ? "record-item--selected" : ""}`}
+                  >
+                    <div className="record-item-info">
+                      <strong>{project.nombre}</strong>
+                      <span>{project.descripcion}</span>
+                      <span>Temática: {project.tematica}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => handleAssociateProject(project)}
+                      disabled={isAssociated}
+                      aria-label={
+                        isAssociated ? `${project.nombre} ya está asociado` : `Asociar ${project.nombre}`
+                      }
+                    >
+                      {isAssociated ? "Asociado" : "Asociar"}
+                    </Button>
                   </div>
-                  <Button size="sm" onClick={() => handleAssociateProject(project)}>
-                    Asociar
-                  </Button>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </div>
@@ -2111,22 +2165,29 @@ export const RecordForm = () => {
                   ) : authorSearch.results.length === 0 ? (
                     <p className="empty-state">Escribe al menos 2 caracteres para obtener coincidencias</p>
                   ) : (
-                    authorSearch.results.map((integrant) => (
-                      <div key={integrant.id_integrant} className="record-item">
-                        <div className="record-item-info">
-                          <strong>{integrant.name}</strong>
-                          <span>{integrant.email || "Sin correo"}</span>
-                          <span>{integrant.work_center || "Sin centro de trabajo"}</span>
-                        </div>
-                        <Button
-                          size="sm"
-                          aria-label={`Agregar ${integrant.name} como autor`}
-                          onClick={() => handleSelectIntegrant(integrant, "author")}
+                    authorSearch.results.map((integrant) => {
+                      const isSelected = selectedAuthorIds.includes(integrant.id_integrant)
+                      return (
+                        <div
+                          key={integrant.id_integrant}
+                          className={`record-item ${isSelected ? "record-item--selected" : ""}`}
                         >
-                          Agregar
-                        </Button>
-                      </div>
-                    ))
+                          <div className="record-item-info">
+                            <strong>{integrant.name}</strong>
+                            <span>{integrant.email || "Sin correo"}</span>
+                            <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            aria-label={`Agregar ${integrant.name} como autor`}
+                            onClick={() => handleSelectIntegrant(integrant, "author")}
+                            disabled={isSelected}
+                          >
+                            {isSelected ? "Agregado" : "Agregar"}
+                          </Button>
+                        </div>
+                      )
+                    })
                   )}
                 </div>
               )}
@@ -2135,56 +2196,68 @@ export const RecordForm = () => {
               {authors.length === 0 ? (
                 <p className="empty-state">No hay autores agregados aún</p>
               ) : (
-                <div className="members-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nombre</th>
-                        <th>Apellidos</th>
-                        <th>Tipo</th>
-                        {!isViewMode && <th>Opciones</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {authors.map((author) => (
-                        <tr key={author.id}>
-                          <td>{author.nombre}</td>
-                          <td>{author.apellidos}</td>
-                          <td>{author.usuario?.esExterno ? "Externo" : "CUJAE"}</td>
-                          {!isViewMode && (
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Eliminar",
-                                    onClick: () => handleRemoveAuthor(author.id),
-                                    className: (() => {
-                                      const userId = currentUser?.id ? parseInt(currentUser.id) : null
-                                      const isCurrentUser = author.integrantId && userId && author.integrantId === userId
-                                      return isCurrentUser ? "disabled" : ""
-                                    })(),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="association-list" role="list" aria-label="Autores del registro">
+                  {authors.map((author) => {
+                    const userId = currentUser?.id ? parseInt(currentUser.id) : null
+                    const isCurrentUser = Boolean(
+                      author.integrantId && userId && author.integrantId === userId,
+                    )
+                    const authorTypeLabel = author.usuario?.esExterno ? "Externo" : "CUJAE"
+
+                    return (
+                      <div
+                        key={author.id}
+                        role="listitem"
+                        className={`association-item ${
+                          draggingAuthorId === author.id ? "association-item--dragging" : ""
+                        }`}
+                        draggable={!isViewMode}
+                        onDragStart={() => handleAuthorDragStart(author.id)}
+                        onDragEnd={handleAuthorDragEnd}
+                        onDragOver={handleAuthorDragOver}
+                        onDrop={() => handleAuthorDrop(author.id)}
+                      >
+                        {!isViewMode && (
+                          <GripVertical className="association-item-grip" aria-hidden="true" />
+                        )}
+                        <div className="association-item-content">
+                          <strong>{`${author.nombre} ${author.apellidos}`.trim()}</strong>
+                          <span>{authorTypeLabel}</span>
+                        </div>
+                        {!isViewMode && (
+                          <button
+                            type="button"
+                            className="association-item-action"
+                            onClick={() => handleRemoveAuthor(author.id)}
+                            disabled={isCurrentUser}
+                            aria-label={
+                              isCurrentUser
+                                ? "No puede eliminarse a sí mismo como autor"
+                                : `Eliminar ${author.nombre} ${author.apellidos}`
+                            }
+                          >
+                            <Trash2 size={18} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
               {externalAuthors.length > 0 && (
                 <div className="external-authors">
                   <h4>Autores externos registrados</h4>
-                  <ul>
+                  <div className="association-list" role="list" aria-label="Autores externos">
                     {externalAuthors.map((author) => (
-                      <li key={author.id}>{`${author.nombre} ${author.apellidos} - ${
-                        author.usuario?.entidad || "Sin entidad"
-                      }`}</li>
+                      <div key={author.id} role="listitem" className="association-item">
+                        <div className="association-item-content">
+                          <strong>{`${author.nombre} ${author.apellidos}`.trim()}</strong>
+                          <span>{author.usuario?.entidad || "Sin entidad"}</span>
+                        </div>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
             </div>
@@ -2237,22 +2310,29 @@ export const RecordForm = () => {
                   ) : tutorSearch.results.length === 0 ? (
                     <p className="empty-state">Escribe al menos 2 caracteres para listar tutores</p>
                   ) : (
-                    tutorSearch.results.map((integrant) => (
-                      <div key={integrant.id_integrant} className="record-item">
-                        <div className="record-item-info">
-                          <strong>{integrant.name}</strong>
-                          <span>{integrant.email || "Sin correo"}</span>
-                          <span>{integrant.work_center || "Sin centro de trabajo"}</span>
-                        </div>
-                        <Button
-                          size="sm"
-                          aria-label={`Agregar ${integrant.name} como tutor`}
-                          onClick={() => handleSelectIntegrant(integrant, "tutor")}
+                    tutorSearch.results.map((integrant) => {
+                      const isSelected = selectedTutorIds.includes(integrant.id_integrant)
+                      return (
+                        <div
+                          key={integrant.id_integrant}
+                          className={`record-item ${isSelected ? "record-item--selected" : ""}`}
                         >
-                          Agregar
-                        </Button>
-                      </div>
-                    ))
+                          <div className="record-item-info">
+                            <strong>{integrant.name}</strong>
+                            <span>{integrant.email || "Sin correo"}</span>
+                            <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            aria-label={`Agregar ${integrant.name} como tutor`}
+                            onClick={() => handleSelectIntegrant(integrant, "tutor")}
+                            disabled={isSelected}
+                          >
+                            {isSelected ? "Agregado" : "Agregar"}
+                          </Button>
+                        </div>
+                      )
+                    })
                   )}
                 </div>
               )}
@@ -2260,38 +2340,29 @@ export const RecordForm = () => {
               {tutors.length === 0 ? (
                 <p className="empty-state">No hay tutores agregados aún</p>
               ) : (
-                <div className="members-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nombre</th>
-                        <th>Apellidos</th>
-                        <th>Tipo</th>
-                        {!isViewMode && <th>Opciones</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tutors.map((tutor) => (
-                        <tr key={tutor.id}>
-                          <td>{tutor.nombre}</td>
-                          <td>{tutor.apellidos}</td>
-                          <td>{tutor.usuario?.esExterno ? "Externo" : "CUJAE"}</td>
-                          {!isViewMode && (
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Eliminar",
-                                    onClick: () => handleRemoveTutor(tutor.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="association-list" role="list" aria-label="Tutores de la tesis">
+                  {tutors.map((tutor) => {
+                    const tutorTypeLabel = tutor.usuario?.esExterno ? "Externo" : "CUJAE"
+
+                    return (
+                      <div key={tutor.id} role="listitem" className="association-item">
+                        <div className="association-item-content">
+                          <strong>{`${tutor.nombre} ${tutor.apellidos}`.trim()}</strong>
+                          <span>{tutorTypeLabel}</span>
+                        </div>
+                        {!isViewMode && (
+                          <button
+                            type="button"
+                            className="association-item-action"
+                            onClick={() => handleRemoveTutor(tutor.id)}
+                            aria-label={`Eliminar ${tutor.nombre} ${tutor.apellidos}`}
+                          >
+                            <Trash2 size={18} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -2323,39 +2394,29 @@ export const RecordForm = () => {
               {associatedProjects.length === 0 ? (
               <p className="empty-state">No hay proyectos asociados aún</p>
               ) : (
-                <div className="records-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nombre</th>
-                        <th>Temática</th>
-                        <th>Fecha Inicio</th>
-                        {!isViewMode && <th>Opciones</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {associatedProjects.map((project) => (
-                        <tr key={project.id}>
-                          <td>{project.nombre}</td>
-                          <td>{project.tematica}</td>
-                          <td>{new Date(project.fechaInicio).toLocaleDateString()}</td>
-                          {!isViewMode && (
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Desasociar",
-                                    onClick: () => handleDisassociateProject(project.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-            </div>
+                <div className="association-list" role="list" aria-label="Proyectos asociados">
+                  {associatedProjects.map((project) => (
+                    <div key={project.id} role="listitem" className="association-item">
+                      <div className="association-item-content">
+                        <strong>{project.nombre}</strong>
+                        <span>{project.tematica}</span>
+                        <span>
+                          Inicio: {new Date(project.fechaInicio).toLocaleDateString()}
+                        </span>
+                      </div>
+                      {!isViewMode && (
+                        <button
+                          type="button"
+                          className="association-item-action"
+                          onClick={() => handleDisassociateProject(project.id)}
+                          aria-label={`Desasociar ${project.nombre}`}
+                        >
+                          <Trash2 size={18} aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
           )}
             </div>
           )}
