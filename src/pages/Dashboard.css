@@ -197,8 +197,42 @@
   margin-bottom: 0;
 }
 
-.dashboard-help-intro {
-  margin: calc(-1 * var(--spacing-sm)) 0 0;
+.dashboard-assistant-info {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--color-primary);
+}
+
+.dashboard-assistant-info-icon {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background-color: var(--color-white);
+  border-radius: var(--radius-md);
+}
+
+.dashboard-assistant-info-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-assistant-info-lead {
+  margin: 0 0 var(--spacing-sm);
+  font-size: 0.9375rem;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+.dashboard-assistant-info-text {
+  margin: 0;
   font-size: 0.875rem;
   color: var(--color-text-secondary);
   line-height: 1.5;
@@ -206,77 +240,6 @@
 
 .dashboard-help-assistant {
   align-items: flex-start;
-}
-
-.dashboard-help-section h4 {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-md);
-}
-
-.dashboard-help-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-}
-
-.dashboard-help-step {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md);
-  background-color: var(--color-bg-secondary);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-}
-
-.dashboard-help-step-number {
-  flex-shrink: 0;
-  width: 1.5rem;
-  height: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--color-text-inverse);
-  background-color: var(--color-primary);
-  border-radius: 50%;
-}
-
-.dashboard-help-step-icon {
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-primary);
-  background-color: var(--color-bg-tertiary);
-  border-radius: var(--radius-md);
-}
-
-.dashboard-help-step-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.dashboard-help-step-title {
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin-bottom: 0.25rem;
-  font-size: 0.875rem;
-}
-
-.dashboard-help-step-text {
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
-  line-height: 1.45;
-  margin: 0;
 }
 
 @media (max-width: 768px) {
