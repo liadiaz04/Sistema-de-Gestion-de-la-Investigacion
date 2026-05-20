@@ -41,7 +41,7 @@ export const GroupDetails = () => {
     <div className="form-page group-form">
       <div className="page-toolbar form-page__toolbar">
         <p className="page-toolbar__lead">Visualización de información del grupo de investigación</p>
-      </div>>
+      </div>
 
       <div className="form-tabs">
         <button className={`tab-button ${activeTab === "datos" ? "active" : ""}`} onClick={() => setActiveTab("datos")}>

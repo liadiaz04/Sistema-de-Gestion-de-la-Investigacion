@@ -67,7 +67,7 @@ export const Dashboard: React.FC = () => {
     {
       code: "REG",
       title: "Registros científicos",
-      description: "Artículos, libros, tesis, patentes y demás producción científica.",
+      description: "Artículos, libros, tesis, premios, normas, patentes y demás producción científica.",
       listPath: "/records",
       createPath: "/records/new",
       canCreate: canCreateRecords(),

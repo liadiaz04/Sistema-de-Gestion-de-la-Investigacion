@@ -24,7 +24,7 @@ const RecordList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [records, setRecords] = useState<Registro[]>([]);
   const [loading, setLoading] = useState(true);
-  const [recordFilter, setRecordFilter] = useState<"all" | "mine">("all");
+  const [showOnlyMyRecords, setShowOnlyMyRecords] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ 
     show: boolean; 
     recordId: string | null; 
@@ -47,7 +47,7 @@ const RecordList: React.FC = () => {
         // Usar el término de búsqueda si existe
         const searchParam = searchTerm.trim() || undefined;
         
-        if (recordFilter === "mine" && userId) {
+        if (showOnlyMyRecords && userId) {
           // Cargar solo los registros del usuario actual
           fetchedRecords = await RecordListService.fetchRecordsByAuthor(userId, searchParam);
         } else {
@@ -70,7 +70,7 @@ const RecordList: React.FC = () => {
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [recordFilter, userId, searchTerm]);
+  }, [showOnlyMyRecords, userId, searchTerm]);
 
   const isAuthor = (record: Registro): boolean => {
     if (!userId) return false;
@@ -101,7 +101,7 @@ const RecordList: React.FC = () => {
       await RecordListService.deleteRecord(recordId, recordType);
       // Recargar la lista después de eliminar (mantener los filtros actuales)
       const searchParam = searchTerm.trim() || undefined;
-      if (recordFilter === "mine" && userId) {
+      if (showOnlyMyRecords && userId) {
         const updatedRecords = await RecordListService.fetchRecordsByAuthor(userId, searchParam);
         setRecords(updatedRecords);
       } else {
@@ -204,18 +204,14 @@ const RecordList: React.FC = () => {
             />
           </div>
           {!isIntegrant() ? (
-            <div className="list-page__filter-group list-page__filter-group--inline">
-              <label htmlFor="record-filter">Filtrar:</label>
-              <select
-                id="record-filter"
-                value={recordFilter}
-                onChange={(e) => setRecordFilter(e.target.value as "all" | "mine")}
-                className="list-page__select"
-              >
-                <option value="all">Todos los registros</option>
-                <option value="mine">Mis registros</option>
-              </select>
-            </div>
+            <label className="list-page__checkbox">
+              <input
+                type="checkbox"
+                checked={showOnlyMyRecords}
+                onChange={(e) => setShowOnlyMyRecords(e.target.checked)}
+              />
+              <span>Mis registros</span>
+            </label>
           ) : null}
         </div>
 

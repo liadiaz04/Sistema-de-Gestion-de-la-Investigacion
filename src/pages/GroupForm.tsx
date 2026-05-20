@@ -45,6 +45,8 @@ import {
 } from "../services/record/recordMetadataService"
 import { groupService } from "../services/groupService"
 import { useToast } from "../contexts/ToastContext"
+import { useFormDirty } from "../hooks/useFormDirty"
+import { sortNumericIds } from "../utils/formDirty"
 import {
   validateRequired,
   validateEmailRequired,
@@ -172,6 +174,18 @@ export const GroupForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
+  const { captureInitial, hasInitialSnapshot, isDirty } = useFormDirty()
+
+  const groupEditSnapshot = {
+    formData,
+    selectedFacultyId,
+    selectedFacultyAreaId,
+    selectedResponsableId,
+    selectedMemberIds: sortNumericIds(selectedMemberIds),
+  }
+  const canUpdateGroup =
+    Boolean(isEditMode) && hasInitialSnapshot() && isDirty(groupEditSnapshot)
 
   const [groupEvaluationsList, setGroupEvaluationsList] = useState<IntegrantGroupEvaluation[]>([])
   const [evaluationTypesCatalog, setEvaluationTypesCatalog] = useState<Evaluation[]>([])
@@ -595,6 +609,26 @@ export const GroupForm = () => {
             }))
             setMembers(mappedMembers)
           }
+
+          if (isEditMode) {
+            const loadedMemberIds = group.members?.map((m) => m.id_integrant) ?? []
+            const loadedResponsableId =
+              group.leader?.id_integrant ?? group.id_admin ?? group.id_integrant ?? 0
+            captureInitial({
+              formData: {
+                nombre: group.name || "",
+                descripcion: group.problems || "",
+                facultad: group.faculty?.name || "",
+                area: group.faculty_area?.name || "",
+                departamento: "",
+                tematicas: group.subjects || "",
+              },
+              selectedFacultyId: group.id_faculty,
+              selectedFacultyAreaId: group.id_faculty_area || 0,
+              selectedResponsableId: loadedResponsableId,
+              selectedMemberIds: sortNumericIds(loadedMemberIds),
+            })
+          }
           
           setIsSaved(true)
         } catch (error) {
@@ -605,7 +639,7 @@ export const GroupForm = () => {
     }
     
     loadGroupData()
-  }, [id, isViewMode, isEditMode])
+  }, [id, isViewMode, isEditMode, captureInitial])
 
   // Filtrar áreas por facultad seleccionada
   const filteredFacultyAreas = facultyAreas.filter((area) => area.id_faculty === selectedFacultyId)
@@ -2061,7 +2095,12 @@ export const GroupForm = () => {
               <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={handleSaveAllUpdates} disabled={isSubmitting}>
+              <Button
+                type="button"
+                onClick={handleSaveAllUpdates}
+                disabled={isSubmitting || !canUpdateGroup}
+                title={!canUpdateGroup ? "Realice al menos un cambio para actualizar" : undefined}
+              >
                 {isSubmitting ? "Guardando..." : "Actualizar Grupo"}
               </Button>
             </div>

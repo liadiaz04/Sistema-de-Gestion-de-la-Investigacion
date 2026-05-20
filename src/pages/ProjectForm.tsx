@@ -22,6 +22,8 @@ import {
 import { projectService } from "../services/projectService"
 import { integrantService } from "../services/integrantService"
 import { useToast } from "../contexts/ToastContext"
+import { useFormDirty } from "../hooks/useFormDirty"
+import { sortNumericIds } from "../utils/formDirty"
 import {
   validateRequired,
   validateEmailRequired,
@@ -148,6 +150,8 @@ export const ProjectForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
+  const { captureInitial, hasInitialSnapshot, isDirty } = useFormDirty()
+
   const [formData, setFormData] = useState({
     nombre: "",
     codigo: "",
@@ -187,6 +191,17 @@ export const ProjectForm = () => {
     is_territorial: false,
     is_cujae: false,
   })
+
+  const projectEditSnapshot = {
+    formData,
+    selectedProjectTypeId,
+    selectedProjectStateId,
+    selectedProjectClassificationId,
+    selectedResponsableId,
+    selectedMemberIds: sortNumericIds(selectedMemberIds),
+  }
+  const canUpdateProject =
+    Boolean(isEditMode) && hasInitialSnapshot() && isDirty(projectEditSnapshot)
 
   useEffect(() => {
     const loadMetadata = async () => {
@@ -360,6 +375,57 @@ export const ProjectForm = () => {
             )
             setMembers(mappedMembers)
           }
+
+          if (isEditMode) {
+            const loadedMemberIds = project.members?.map((m) => m.id_integrant) ?? []
+            captureInitial({
+              formData: {
+                nombre: project.title || "",
+                codigo: project.code || "",
+                descripcion: project.description || "",
+                tematica: project.thematic || project.classification?.name || "",
+                programa: project.national_group || project.international_group || project.type?.name || "",
+                tipoProyecto: project.type?.name || "",
+                estado: project.state?.name || "propuesta",
+                objetivos: project.objectives || "",
+                tareas: project.tasks || "",
+                detallesCientificos: project.scientific_details || "",
+                otrosDatos: project.other_data || "",
+                criterioConsejo: project.council_criteria || project.conseil_criteria || "",
+                palabrasClave: projectData.keywords || "",
+                artState: projectData.art_state || "",
+                problemaCientifico: project.cientific_problem || "",
+                objetoEstudio: projectData.study_object || "",
+                campoEstudio: projectData.study_field || "",
+                hipotesis: projectData.hypothesis || "",
+                objetivoPrincipal: project.main_objective || "",
+                metodosInvestigacion: projectData.research_methods || "",
+                terceroInteresado: projectData.interested_third_party || "",
+                grupoNacional: project.national_group || "",
+                grupoInternacional: project.international_group || "",
+                publicarRevista: projectData.publish_magazine || "",
+                participarEventos: projectData.participate_events || "",
+                codigoCITMA: projectData.citma_code || "",
+                codigoMINVEC: projectData.minvec_code || "",
+                fechaInicio: project.start_date || project.initial_date || "",
+                fechaFin: project.end_date || project.final_date || "",
+                presupuestoEconomico: projectData.economic_budget || "",
+                necesidadesEconomicas: projectData.economic_needs || "",
+                presupuestoGeneralCUP: projectData.general_budget_cup || "",
+                presupuestoAnualCUP: projectData.year_budget_cup || "",
+                is_international: projectData.is_international || false,
+                is_national: projectData.is_national || false,
+                is_territorial: projectData.is_territorial || false,
+                is_cujae: projectData.is_cujae || false,
+              },
+              selectedProjectTypeId: project.id_type || project.id_project_type || null,
+              selectedProjectStateId: project.id_state || project.id_project_state || null,
+              selectedProjectClassificationId:
+                project.id_classification || projectData.id_project_classification || null,
+              selectedResponsableId: project.responsible?.id_integrant ?? null,
+              selectedMemberIds: sortNumericIds(loadedMemberIds),
+            })
+          }
           
           setIsSaved(true)
         } catch (error) {
@@ -372,7 +438,7 @@ export const ProjectForm = () => {
     }
     
     loadProjectData()
-  }, [id, isViewMode, isEditMode])
+  }, [id, isViewMode, isEditMode, captureInitial])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1729,8 +1795,13 @@ export const ProjectForm = () => {
                     <Button type="button" variant="secondary" onClick={() => navigate("/projects")}>
                       Cancelar
                     </Button>
-                    <Button type="button" onClick={handleSaveAllUpdates}>
-                      Actualizar Proyecto
+                    <Button
+                      type="button"
+                      onClick={handleSaveAllUpdates}
+                      disabled={isSubmitting || !canUpdateProject}
+                      title={!canUpdateProject ? "Realice al menos un cambio para actualizar" : undefined}
+                    >
+                      {isSubmitting ? "Guardando..." : "Actualizar Proyecto"}
                     </Button>
                   </>
                 ) : (

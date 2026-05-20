@@ -21,6 +21,8 @@ import { groupService } from "../services/groupService"
 import { validateEmailRequired } from "../utils/validation"
 import "./GroupForm.css"
 import { useToast } from "../contexts/ToastContext"
+import { useFormDirty } from "../hooks/useFormDirty"
+import { sortNumericIds } from "../utils/formDirty"
 
 type IntegrantSearchHook = {
   term: string
@@ -124,9 +126,20 @@ export const GroupEdit = () => {
   })
   const [externalMemberEmailError, setExternalMemberEmailError] = useState<string | null>(null)
 
+  const { captureInitial, hasInitialSnapshot, isDirty } = useFormDirty()
+
   // Verificar si el usuario actual es responsable y es autor
   const isCurrentUserResponsable = Boolean(isAutorUser && selectedResponsableId && currentUser && 
                                    parseInt(currentUser.id) === selectedResponsableId)
+
+  const groupEditSnapshot = {
+    formData,
+    selectedFacultyId,
+    selectedFacultyAreaId,
+    selectedResponsableId,
+    selectedMemberIds: sortNumericIds(selectedMemberIds),
+  }
+  const canUpdateGroup = hasInitialSnapshot() && isDirty(groupEditSnapshot)
 
   // Cargar metadata (facultades y áreas)
   useEffect(() => {
@@ -218,6 +231,23 @@ export const GroupEdit = () => {
             }))
             setMembers(mappedMembers)
           }
+
+          const loadedMemberIds = group.members?.map((m) => m.id_integrant) ?? []
+          const loadedResponsableId = group.leader?.id_integrant ?? group.id_admin ?? null
+          captureInitial({
+            formData: {
+              nombre: group.name || "",
+              descripcion: group.problems || "",
+              facultad: group.faculty?.name || "",
+              area: group.faculty_area?.name || "",
+              departamento: "",
+              tematicas: group.subjects || "",
+            },
+            selectedFacultyId: group.id_faculty,
+            selectedFacultyAreaId: group.id_faculty_area || null,
+            selectedResponsableId: loadedResponsableId,
+            selectedMemberIds: sortNumericIds(loadedMemberIds),
+          })
         } catch (error) {
           console.error("Error cargando grupo:", error)
         }
@@ -225,7 +255,7 @@ export const GroupEdit = () => {
     }
     
     loadGroupData()
-  }, [id])
+  }, [id, captureInitial])
 
   // Filtrar áreas por facultad seleccionada
   const filteredFacultyAreas = facultyAreas.filter((area) => area.id_faculty === selectedFacultyId)
@@ -395,7 +425,7 @@ export const GroupEdit = () => {
 
       <div className="page-toolbar form-page__toolbar">
         <p className="page-toolbar__lead">Modifique la información del grupo</p>
-      </div>>
+      </div>
 
       <div className="tabs">
         <button
@@ -596,7 +626,11 @@ export const GroupEdit = () => {
             <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              disabled={isSubmitting || !canUpdateGroup}
+              title={!canUpdateGroup ? "Realice al menos un cambio para actualizar" : undefined}
+            >
               {isSubmitting ? "Guardando..." : "Guardar Cambios"}
             </Button>
           </div>

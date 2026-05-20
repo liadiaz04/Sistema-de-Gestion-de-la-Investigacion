@@ -35,6 +35,7 @@ import type {
 } from "../types/recordList/Registros"
 import { recordDetailService } from "../services/record/recordDetailService"
 import { useToast } from "../contexts/ToastContext"
+import { useFormDirty } from "../hooks/useFormDirty"
 import {
   validateRequired,
   validateEmailRequired,
@@ -392,6 +393,31 @@ export const RecordForm = () => {
 
   const [formData, setFormData] = useState<RecordFormState>(createInitialFormData)
 
+  const { captureInitial, hasInitialSnapshot, isDirty } = useFormDirty()
+
+  const getRecordEditSnapshot = () => ({
+    recordType,
+    formData,
+    selectedCountryId,
+    selectedArticleTypeId,
+    selectedNormTypeId,
+    selectedPrizeTypeId,
+    selectedThesisTypeId,
+    selectedEncounterTypeId,
+    authors: authors.map((author) => ({
+      integrantId: author.integrantId ?? null,
+      esPrincipal: Boolean(author.esPrincipal),
+      orden: author.orden ?? null,
+    })),
+    tutors: tutors.map((tutor) => ({
+      integrantId: tutor.integrantId ?? null,
+    })),
+    projectIds: associatedProjects.map((project) => String(project.id)).sort(),
+  })
+
+  const canUpdateRecord =
+    isEditMode && hasInitialSnapshot() && isDirty(getRecordEditSnapshot())
+
   const recordTypes: { value: RecordType; label: string }[] = [
     { value: "articulo", label: "Artículo" },
     { value: "libro", label: "Libro" },
@@ -593,7 +619,54 @@ export const RecordForm = () => {
     } else {
       setSelectedEncounterTypeId(null)
     }
-  }, [recordData])
+
+    if (isEditMode) {
+      const thesisTutorsSnapshot =
+        recordData.tipo === "tesis" ? mapTutorsFromRecord(recordData as TesisRegistro) : []
+      let articleTypeIdSnapshot: number | null = null
+      let normTypeIdSnapshot: number | null = null
+      let prizeTypeIdSnapshot: number | null = null
+      let thesisTypeIdSnapshot: number | null = null
+      let encounterTypeIdSnapshot: number | null = null
+
+      if (recordData.tipo === "articulo") {
+        articleTypeIdSnapshot = (recordData as ArticuloRegistro).article_type?.id_article_type ?? null
+      }
+      if (recordData.tipo === "norma") {
+        normTypeIdSnapshot = (recordData as NormaRegistro).norm_type?.id_norm_type ?? null
+      }
+      if (recordData.tipo === "premio") {
+        prizeTypeIdSnapshot = (recordData as PremioRegistro).prize_type?.id_prize_type ?? null
+      }
+      if (recordData.tipo === "tesis") {
+        thesisTypeIdSnapshot = (recordData as TesisRegistro).thesis_type?.id_thesis_type ?? null
+      }
+      if (recordData.tipo === "evento") {
+        encounterTypeIdSnapshot =
+          (recordData as EventoRegistro).encounter_type?.id_encounter_type ?? null
+      }
+
+      captureInitial({
+        recordType: recordData.tipo as RecordType,
+        formData: hydratedForm,
+        selectedCountryId: recordData.id_country ?? null,
+        selectedArticleTypeId: articleTypeIdSnapshot,
+        selectedNormTypeId: normTypeIdSnapshot,
+        selectedPrizeTypeId: prizeTypeIdSnapshot,
+        selectedThesisTypeId: thesisTypeIdSnapshot,
+        selectedEncounterTypeId: encounterTypeIdSnapshot,
+        authors: mappedAuthors.map((author) => ({
+          integrantId: author.integrantId ?? null,
+          esPrincipal: Boolean(author.esPrincipal),
+          orden: author.orden ?? null,
+        })),
+        tutors: thesisTutorsSnapshot.map((tutor) => ({
+          integrantId: tutor.integrantId ?? null,
+        })),
+        projectIds: [] as string[],
+      })
+    }
+  }, [recordData, isEditMode, captureInitial])
 
   useEffect(() => {
     if (!countries.length || selectedCountryId) {
@@ -1267,7 +1340,7 @@ export const RecordForm = () => {
   }
 
   const handleUpdateRecord = () => {
-    if (!recordNumericId) return
+    if (!recordNumericId || !canUpdateRecord) return
     const index = mockRecords.findIndex((r) => r.id === recordNumericId)
     if (index !== -1) {
       mockRecords[index] = {
@@ -1901,7 +1974,7 @@ export const RecordForm = () => {
 
       <div className="page-toolbar form-page__toolbar">
         <p className="page-toolbar__lead">Complete la información del registro científico</p>
-      </div>>
+      </div>
 
       <div className="record-type-menu">
         {recordTypes.map((type) => (
@@ -2419,8 +2492,13 @@ export const RecordForm = () => {
               <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
                 Cancelar
               </Button>
-            <Button type="button" onClick={handleUpdateRecord}>
-              Actualizar Registro
+            <Button
+              type="button"
+              onClick={handleUpdateRecord}
+              disabled={!canUpdateRecord || isSubmitting}
+              title={!canUpdateRecord ? "Realice al menos un cambio para actualizar" : undefined}
+            >
+              {isSubmitting ? "Guardando..." : "Actualizar Registro"}
             </Button>
             </div>
         </Card>

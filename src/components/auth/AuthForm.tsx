@@ -67,7 +67,7 @@ export const AuthForm: React.FC = () => {
             Sistema de Gestión de Investigación
           </h1>
           <p className="auth-page__hero-text">
-            Plataforma para integrantes, responsables de grupo/proyecto y administración universitaria.
+            Plataforma para investigadores, responsables de grupo/proyecto y administración de la gestión de investigación universitaria.
           </p>
         </section>
 
