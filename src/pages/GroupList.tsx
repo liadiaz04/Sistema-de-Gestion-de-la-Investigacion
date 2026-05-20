@@ -9,14 +9,14 @@ import { Input } from "../components/common/Input"
 import { Table } from "../components/common/Table"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
-import { Plus, Search, Loader2, AlertCircle } from 'lucide-react'
+import { Plus, Search, Loader2 } from 'lucide-react'
 import { groupService } from "../services/groupService"
 import { integrantService } from "../services/integrantService"
 import type { IGroup, IUser } from "../types"
 import { usePermissions } from "../hooks/usePermissions"
 import type { Group } from "../types/api/group"
 import type { IntegrantWithRoles } from "../types/api/integrant"
-import "./GroupList.css"
+import { useToast } from "../contexts/ToastContext"
 
 // Función para mapear IntegrantWithRoles a IUser
 const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
@@ -136,12 +136,12 @@ const mapGroupToIGroup = (group: Group): IGroup => {
 
 export const GroupList: React.FC = () => {
   const navigate = useNavigate()
+  const { showToast } = useToast()
   const { canCreateGroups, canManageAllGroups, isIntegrant } = usePermissions()
   
   const [searchTerm, setSearchTerm] = useState("")
   const [groups, setGroups] = useState<IGroup[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [showOnlyMyGroups, setShowOnlyMyGroups] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; groupId: string | null }>({
     show: false,
@@ -155,7 +155,6 @@ export const GroupList: React.FC = () => {
   useEffect(() => {
     const loadGroups = async () => {
       setLoading(true)
-      setError(null)
       try {
         const filters: any = {
           limit: 100,
@@ -231,7 +230,7 @@ export const GroupList: React.FC = () => {
         setGroups(mappedGroups)
       } catch (err) {
         console.error("Error cargando grupos:", err)
-        setError(err instanceof Error ? err.message : "Error al cargar los grupos")
+        showToast(err instanceof Error ? err.message : "Error al cargar los grupos", "error")
       } finally {
         setLoading(false)
       }
@@ -282,9 +281,10 @@ export const GroupList: React.FC = () => {
       const mappedGroups = fetchedGroups.map(mapGroupToIGroup)
       setGroups(mappedGroups)
       setDeleteConfirm({ show: false, groupId: null })
+      showToast("Grupo eliminado correctamente", "success")
     } catch (err) {
       console.error("Error eliminando grupo:", err)
-      setError(err instanceof Error ? err.message : "Error al eliminar el grupo")
+      showToast(err instanceof Error ? err.message : "Error al eliminar el grupo", "error")
     }
   }
 
@@ -322,12 +322,9 @@ export const GroupList: React.FC = () => {
   ]
 
   return (
-    <div className="group-list">
-      <div className="group-list-header">
-        <div>
-          <h1>Grupos de Investigación</h1>
-          <p>Gestión de grupos de investigación</p>
-        </div>
+    <div className="list-page">
+      <div className="page-toolbar list-page__toolbar">
+        <p className="page-toolbar__lead">Gestión de grupos de investigación de la institución.</p>
         {canCreateGroups() && (
           <Button onClick={() => navigate("/groups/new")}>
             <Plus size={20} />
@@ -336,66 +333,49 @@ export const GroupList: React.FC = () => {
         )}
       </div>
 
-      <Card>
-        <div className="group-list-filters">
-          <div className="group-list-search">
-            <Search size={20} />
+      <Card className="list-page__panel">
+        <div className="list-page__filters">
+          <div className="list-page__search">
+            <Search size={20} aria-hidden />
             <Input
               type="text"
               placeholder="Buscar por nombre, responsable..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Buscar grupos"
             />
           </div>
           {!isIntegrant() ? (
-            <div className="filter-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={showOnlyMyGroups}
-                  onChange={(e) => setShowOnlyMyGroups(e.target.checked)}
-                  style={{ cursor: 'pointer' }}
-                />
-                <span>Mis grupos</span>
-              </label>
-            </div>
+            <label className="list-page__checkbox">
+              <input
+                type="checkbox"
+                checked={showOnlyMyGroups}
+                onChange={(e) => setShowOnlyMyGroups(e.target.checked)}
+              />
+              <span>Mis grupos</span>
+            </label>
           ) : null}
         </div>
 
-        {loading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-            <Loader2 className="animate-spin" size={32} />
-            <span style={{ marginLeft: '1rem' }}>Cargando grupos...</span>
-          </div>
-        )}
-
-        {error && (
-          <div style={{ 
-            padding: '1rem', 
-            margin: '1rem', 
-            backgroundColor: '#fee', 
-            color: '#c33',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}>
-            <AlertCircle size={20} />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {!loading && !error && (
-          <>
-            {filteredGroups.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center' }}>
-                <p>No se encontraron grupos</p>
-              </div>
-            ) : (
+        <div className="list-page__body">
+          {loading ? (
+            <div className="list-page__loading" role="status" aria-live="polite">
+              <Loader2 className="animate-spin" size={32} aria-hidden />
+              <span>Cargando grupos...</span>
+            </div>
+          ) : filteredGroups.length === 0 ? (
+            <div className="list-page__empty">
+              <p>No se encontraron grupos</p>
+            </div>
+          ) : (
+            <>
+              <p className="list-page__count">
+                {filteredGroups.length} {filteredGroups.length === 1 ? "grupo" : "grupos"}
+              </p>
               <Table data={filteredGroups} columns={columns} />
-            )}
-          </>
-        )}
+            </>
+          )}
+        </div>
       </Card>
 
       <ConfirmDialog

@@ -1,3 +1,7 @@
+@import "./styles/page-toolbar.css";
+@import "./styles/list-page.css";
+@import "./styles/form-page.css";
+
 :root {
   /* Primary Colors - Green Palette */
   --color-primary: #00835c; /* PANTONE 555 cv */

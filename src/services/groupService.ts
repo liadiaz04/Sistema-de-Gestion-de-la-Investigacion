@@ -15,7 +15,7 @@ export interface CreateGroupPayload {
   create_date: string
   update_date: string
   member_ids: number[]
-  id_faculty_area: number
+  id_faculty_area?: number | null
 }
 
 /** Cuerpo PUT según `GroupUpdate` en backend/modules/group/schemas.py */
@@ -27,7 +27,7 @@ export interface UpdateGroupPayload {
   id_faculty: number
   update_date: string
   member_update_ids: number[]
-  id_faculty_area: number
+  id_faculty_area?: number | null
 }
 
 export const groupService = {

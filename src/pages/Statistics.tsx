@@ -235,8 +235,8 @@ export const Statistics = () => {
 
   return (
     <div className="statistics">
-      <div className="page-header">
-        <h1>Estadísticas y Reportes</h1>
+      <div className="page-toolbar page-header page-header--with-actions">
+        <p className="page-toolbar__lead">Indicadores y reportes de la actividad de investigación.</p>
         <div className="header-actions">
           <div className="view-toggle">
             <label>

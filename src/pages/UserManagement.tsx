@@ -10,8 +10,9 @@ import { Button } from "../components/common/Button"
 import { Card } from "../components/common/Card"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { OptionsMenu } from "../components/common/OptionsMenu"
-import { Loader2, AlertCircle } from "lucide-react"
+import { Loader2, AlertCircle, Search } from "lucide-react"
 import type { Role } from "../types/api/role"
+import { useToast } from "../contexts/ToastContext"
 import "./UserManagement.css"
 
 // Mapeo de role_name del backend a UserRole del frontend
@@ -54,11 +55,11 @@ const roleLabels: Record<UserRole, string> = {
 }
 
 export const UserManagement = () => {
+  const { showToast } = useToast()
   const { isAdmin } = usePermissions()
   const [users, setUsers] = useState<IUser[]>([])
   const [availableRoles, setAvailableRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedUser, setSelectedUser] = useState<IUser | null>(null)
   const [newRole, setNewRole] = useState<UserRole>("usuario")
@@ -67,7 +68,6 @@ export const UserManagement = () => {
   const [showRemoveRoleModal, setShowRemoveRoleModal] = useState(false)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [roleToRemove, setRoleToRemove] = useState<{ userId: string; role: UserRole } | null>(null)
-  const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const currentUser = useAuthStore((state) => state.user)
 
   // Convertir roles del backend a UserRole[] (eliminar duplicados)
@@ -81,7 +81,6 @@ export const UserManagement = () => {
 
   const loadData = async () => {
     setLoading(true)
-    setError(null)
     try {
       // Cargar usuarios y roles en paralelo
       const [usersData, rolesData] = await Promise.all([
@@ -99,7 +98,7 @@ export const UserManagement = () => {
       }
     } catch (err) {
       console.error("Error loading data:", err)
-      setError(err instanceof Error ? err.message : "Error al cargar los datos")
+      showToast(err instanceof Error ? err.message : "Error al cargar los datos", "error")
     } finally {
       setLoading(false)
     }
@@ -117,7 +116,7 @@ export const UserManagement = () => {
       }
     } catch (error) {
       console.error("Error loading users:", error)
-      showNotification("Error al cargar los usuarios", "error")
+      showToast("Error al cargar los usuarios", "error")
     }
   }
 
@@ -129,10 +128,10 @@ export const UserManagement = () => {
       setSelectedUser(null)
       setShowAddRoleModal(false)
       setNewRole("usuario")
-      showNotification("Rol modificado exitosamente", "success")
+      showToast("Rol modificado exitosamente", "success")
     } catch (error) {
       console.error("Error modifying role:", error)
-      showNotification("Error al modificar el rol", "error")
+      showToast("Error al modificar el rol", "error")
     }
   }
 
@@ -148,16 +147,11 @@ export const UserManagement = () => {
         setSelectedUser(updatedUser)
       }
 
-      showNotification("Rol eliminado exitosamente", "success")
+      showToast("Rol eliminado exitosamente", "success")
     } catch (error) {
       console.error("Error removing role:", error)
-      showNotification("Error al eliminar el rol", "error")
+      showToast("Error al eliminar el rol", "error")
     }
-  }
-
-  const showNotification = (message: string, type: "success" | "error") => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3000)
   }
 
   const initiateViewRoles = (user: IUser) => {
@@ -177,7 +171,7 @@ export const UserManagement = () => {
 
   const initiateRemoveRole = (userId: string, role: UserRole) => {
     if (role === "admin" || role === "usuario") {
-      showNotification(`El rol "${roleLabels[role]}" no puede ser eliminado`, "error")
+      showToast(`El rol "${roleLabels[role]}" no puede ser eliminado`, "error")
       return
     }
     setRoleToRemove({ userId, role })
@@ -243,44 +237,27 @@ export const UserManagement = () => {
   }
 
   return (
-    <div className="user-management">
-      {notification && <div className={`notification notification-${notification.type}`}>{notification.message}</div>}
-      {error && (
-        <div style={{ 
-          padding: '1rem', 
-          margin: '1rem', 
-          backgroundColor: '#fee', 
-          color: '#c33',
-          borderRadius: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem'
-        }}>
-          <AlertCircle size={20} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <div className="page-header">
-        <div className="header-content">
-          <h1>Usuarios</h1>
-          <p className="subtitle">Gestiona los usuarios del sistema</p>
-        </div>
+    <div className="list-page user-management">
+      <div className="page-toolbar list-page__toolbar">
+        <p className="page-toolbar__lead">Gestiona los usuarios y roles del sistema.</p>
       </div>
 
-      <Card>
-        <div className="search-bar">
-          <input
-            type="text"
-            placeholder="Buscar usuarios..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="search-input"
-          />
+      <Card className="list-page__panel">
+        <div className="list-page__filters">
+          <div className="list-page__search">
+            <Search size={20} aria-hidden />
+            <input
+              type="text"
+              placeholder="Buscar usuarios..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="list-page__search-input"
+              aria-label="Buscar usuarios"
+            />
+          </div>
         </div>
-      </Card>
 
-      <Card>
+        <div className="list-page__body">
         <div className="table-container">
           <table className="users-table">
             <thead>
@@ -333,6 +310,7 @@ export const UserManagement = () => {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       </Card>
 

@@ -10,6 +10,7 @@ import { Input } from "../components/common/Input"
 import { Button } from "../components/common/Button"
 import { Table } from "../components/common/Table"
 import { Loader2 } from "lucide-react"
+import { useToast } from "../contexts/ToastContext"
 import "./AuditLog.css"
 
 // Función para mapear IntegrantWithRoles a IUser
@@ -137,9 +138,9 @@ const mapTraceToIAuditLog = (trace: Trace, integrantsMap?: Map<number, IUser>): 
 };
 
 export const AuditLog = () => {
+  const { showToast } = useToast()
   const [logs, setLogs] = useState<IAuditLog[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     tipoAccion: "",
     fechaInicio: "",
@@ -152,7 +153,6 @@ export const AuditLog = () => {
 
   const loadLogs = async () => {
     setLoading(true)
-    setError(null)
     try {
       // Convertir fechas a formato ISO 8601
       const traceFilters: { start_date?: string; end_date?: string } = {};
@@ -213,7 +213,7 @@ export const AuditLog = () => {
       setLogs(filteredLogs)
     } catch (err) {
       console.error("Error loading audit logs:", err)
-      setError(err instanceof Error ? err.message : "Error al cargar las trazas")
+      showToast(err instanceof Error ? err.message : "Error al cargar las trazas", "error")
     } finally {
       setLoading(false)
     }
@@ -248,20 +248,20 @@ export const AuditLog = () => {
   ]
 
   return (
-    <div className="audit-log">
-      <div className="page-header">
-        <h1>Bitácora del Sistema</h1>
-        <p>Registro de todas las operaciones realizadas en el sistema</p>
+    <div className="list-page audit-log">
+      <div className="page-toolbar list-page__toolbar">
+        <p className="page-toolbar__lead">Registro de todas las operaciones realizadas en el sistema.</p>
       </div>
 
-      <Card>
-        <div className="filters">
-          <div className="filter-group">
-            <label>Tipo de Acción</label>
+      <Card className="list-page__panel">
+        <div className="list-page__filters">
+          <div className="list-page__filter-group">
+            <label htmlFor="audit-action-filter">Tipo de acción</label>
             <select
+              id="audit-action-filter"
               value={filters.tipoAccion}
               onChange={(e) => setFilters({ ...filters, tipoAccion: e.target.value })}
-              className="form-select"
+              className="list-page__select"
             >
               <option value="">Todas</option>
               <option value="crear">Crear</option>
@@ -270,17 +270,19 @@ export const AuditLog = () => {
               <option value="consultar">Consultar</option>
             </select>
           </div>
-          <div className="filter-group">
-            <label>Fecha Inicio</label>
+          <div className="list-page__filter-group">
+            <label htmlFor="audit-date-start">Fecha inicio</label>
             <Input
+              id="audit-date-start"
               type="date"
               value={filters.fechaInicio}
               onChange={(e) => setFilters({ ...filters, fechaInicio: e.target.value })}
             />
           </div>
-          <div className="filter-group">
-            <label>Fecha Fin</label>
+          <div className="list-page__filter-group">
+            <label htmlFor="audit-date-end">Fecha fin</label>
             <Input
+              id="audit-date-end"
               type="date"
               value={filters.fechaFin}
               onChange={(e) => setFilters({ ...filters, fechaFin: e.target.value })}
@@ -290,39 +292,25 @@ export const AuditLog = () => {
             {loading ? <Loader2 className="animate-spin" size={16} /> : 'Filtrar'}
           </Button>
         </div>
-      </Card>
-
-      <Card>
-        {loading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-            <Loader2 className="animate-spin" size={32} />
-            <span style={{ marginLeft: '1rem' }}>Cargando trazas...</span>
-          </div>
-        )}
-        
-        {error && (
-          <div style={{ 
-            padding: '1rem', 
-            margin: '1rem', 
-            backgroundColor: '#fee', 
-            color: '#c33',
-            borderRadius: '4px'
-          }}>
-            {error}
-          </div>
-        )}
-        
-        {!loading && !error && (
-          <>
-            {logs.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center' }}>
-                <p>No se encontraron trazas</p>
-              </div>
-            ) : (
+        <div className="list-page__body">
+          {loading ? (
+            <div className="list-page__loading" role="status" aria-live="polite">
+              <Loader2 className="animate-spin" size={32} aria-hidden />
+              <span>Cargando trazas...</span>
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="list-page__empty">
+              <p>No se encontraron trazas</p>
+            </div>
+          ) : (
+            <>
+              <p className="list-page__count">
+                {logs.length} {logs.length === 1 ? "registro" : "registros"} en la bitácora
+              </p>
               <Table data={logs} columns={columns} />
-            )}
-          </>
-        )}
+            </>
+          )}
+        </div>
       </Card>
     </div>
   )

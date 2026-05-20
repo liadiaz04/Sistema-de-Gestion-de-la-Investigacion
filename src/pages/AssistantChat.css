@@ -29,12 +29,10 @@
   background: linear-gradient(180deg, rgba(0, 131, 83, 0.04) 0%, transparent 100%);
 }
 
-.assistant-chat-header h2 {
-  margin: 0 0 0.35rem 0;
-  color: var(--primary-green);
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.assistant-chat-header__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
 }
 
 .assistant-chat-header p {

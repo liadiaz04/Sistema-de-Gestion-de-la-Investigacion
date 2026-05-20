@@ -9,13 +9,14 @@ import { Input } from "../components/common/Input"
 import { Table } from "../components/common/Table"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
-import { Plus, Search, Loader2, AlertCircle } from 'lucide-react'
+import { Plus, Search, Loader2 } from 'lucide-react'
 import { projectService } from "../services/projectService"
 import { integrantService } from "../services/integrantService"
 import { usePermissions } from "../hooks/usePermissions"
 import type { IProject, IUser } from "../types"
 import type { Project } from "../types/api/project"
 import type { IntegrantWithRoles } from "../types/api/integrant"
+import { useToast } from "../contexts/ToastContext"
 
 // Función para mapear IntegrantWithRoles a IUser
 const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
@@ -127,11 +128,11 @@ const mapStateToFrontend = (state: string): "propuesta" | "activo" | "finalizado
 
 const ProjectList: React.FC = () => {
   const navigate = useNavigate()
+  const { showToast } = useToast()
   const { canCreateProjects, canManageAllProjects, isIntegrant } = usePermissions()
   const [searchTerm, setSearchTerm] = useState("")
   const [projects, setProjects] = useState<IProject[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [showOnlyMyProjects, setShowOnlyMyProjects] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; projectId: string | null }>({
     show: false,
@@ -145,7 +146,6 @@ const ProjectList: React.FC = () => {
   useEffect(() => {
     const loadProjects = async () => {
       setLoading(true)
-      setError(null)
       try {
         const filters: any = {
           limit: 100,
@@ -220,7 +220,7 @@ const ProjectList: React.FC = () => {
         setProjects(mappedProjects)
       } catch (err) {
         console.error("Error cargando proyectos:", err)
-        setError(err instanceof Error ? err.message : "Error al cargar los proyectos")
+        showToast(err instanceof Error ? err.message : "Error al cargar los proyectos", "error")
       } finally {
         setLoading(false)
       }
@@ -271,9 +271,10 @@ const ProjectList: React.FC = () => {
       const mappedProjects = fetchedProjects.map(mapProjectToIProject)
       setProjects(mappedProjects)
       setDeleteConfirm({ show: false, projectId: null })
+      showToast("Proyecto eliminado correctamente", "success")
     } catch (err) {
       console.error("Error eliminando proyecto:", err)
-      setError(err instanceof Error ? err.message : "Error al eliminar el proyecto")
+      showToast(err instanceof Error ? err.message : "Error al eliminar el proyecto", "error")
     }
   }
 
@@ -316,12 +317,9 @@ const ProjectList: React.FC = () => {
   ]
 
   return (
-    <div className="group-list">
-      <div className="group-list-header">
-        <div>
-          <h1>Proyectos de Investigación</h1>
-          <p>Gestión de proyectos de investigación</p>
-        </div>
+    <div className="list-page">
+      <div className="page-toolbar list-page__toolbar">
+        <p className="page-toolbar__lead">Gestión de proyectos de investigación de la institución.</p>
         {canCreateProjects() && (
           <Button onClick={() => navigate("/projects/new")}>
             <Plus size={20} />
@@ -330,66 +328,50 @@ const ProjectList: React.FC = () => {
         )}
       </div>
 
-      <Card>
-        <div className="group-list-filters">
-          <div className="group-list-search">
-            <Search size={20} />
+      <Card className="list-page__panel">
+        <div className="list-page__filters">
+          <div className="list-page__search">
+            <Search size={20} aria-hidden />
             <Input
               type="text"
               placeholder="Buscar por nombre, responsable..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Buscar proyectos"
             />
           </div>
           {!isIntegrant() ? (
-            <div className="filter-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={showOnlyMyProjects}
-                  onChange={(e) => setShowOnlyMyProjects(e.target.checked)}
-                  style={{ cursor: 'pointer' }}
-                />
-                <span>Mis proyectos</span>
-              </label>
-            </div>
+            <label className="list-page__checkbox">
+              <input
+                type="checkbox"
+                checked={showOnlyMyProjects}
+                onChange={(e) => setShowOnlyMyProjects(e.target.checked)}
+              />
+              <span>Mis proyectos</span>
+            </label>
           ) : null}
         </div>
 
-        {loading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-            <Loader2 className="animate-spin" size={32} />
-            <span style={{ marginLeft: '1rem' }}>Cargando proyectos...</span>
-          </div>
-        )}
-
-        {error && (
-          <div style={{ 
-            padding: '1rem', 
-            margin: '1rem', 
-            backgroundColor: '#fee', 
-            color: '#c33',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}>
-            <AlertCircle size={20} />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {!loading && !error && (
-          <>
-            {filteredProjects.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center' }}>
-                <p>No se encontraron proyectos</p>
-              </div>
-            ) : (
+        <div className="list-page__body">
+          {loading ? (
+            <div className="list-page__loading" role="status" aria-live="polite">
+              <Loader2 className="animate-spin" size={32} aria-hidden />
+              <span>Cargando proyectos...</span>
+            </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className="list-page__empty">
+              <p>No se encontraron proyectos</p>
+            </div>
+          ) : (
+            <>
+              <p className="list-page__count">
+                {filteredProjects.length}{" "}
+                {filteredProjects.length === 1 ? "proyecto" : "proyectos"}
+              </p>
               <Table data={filteredProjects} columns={columns} />
-            )}
-          </>
-        )}
+            </>
+          )}
+        </div>
       </Card>
 
       <ConfirmDialog

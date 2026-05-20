@@ -34,6 +34,7 @@ import type {
   PremioRegistro,
 } from "../types/recordList/Registros"
 import { recordDetailService } from "../services/record/recordDetailService"
+import { useToast } from "../contexts/ToastContext"
 import {
   validateRequired,
   validateEmailRequired,
@@ -320,6 +321,7 @@ const useIntegrantSearch = (): IntegrantSearchHook => {
   return { term, setTerm, results, isLoading, error }
 }
 export const RecordForm = () => {
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const { id } = useParams()
@@ -344,8 +346,7 @@ export const RecordForm = () => {
   const [recordLoading, setRecordLoading] = useState(false)
   const [recordLoadError, setRecordLoadError] = useState<string | null>(null)
   const [isSaved, setIsSaved] = useState(false)
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false)
-  const [successMessage, setSuccessMessage] = useState("")
+
   const [activeTab, setActiveTab] = useState("datos-basicos")
 
   const [authors, setAuthors] = useState<any[]>([])
@@ -384,7 +385,6 @@ export const RecordForm = () => {
   const [selectedTutorIds, setSelectedTutorIds] = useState<number[]>([])
   const [draggingAuthorId, setDraggingAuthorId] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const authorSearch = useIntegrantSearch()
@@ -431,7 +431,9 @@ export const RecordForm = () => {
         setNormTypes(normTypesResponse)
         setEncounterTypes(encounterTypesResponse)
       } catch (error) {
-        setMetadataError((error as Error).message || "No se pudieron cargar los catálogos")
+        const message = (error as Error).message || "No se pudieron cargar los catálogos"
+        setMetadataError(message)
+        showToast(message, "error")
       } finally {
         setIsMetadataLoading(false)
       }
@@ -475,7 +477,9 @@ export const RecordForm = () => {
   useEffect(() => {
     if (!id) return
     if (parsedRecordKey?.type) return
-    setRecordLoadError("No se pudo determinar el tipo de registro. Acceda desde la lista e inténtelo nuevamente.")
+    const message = "No se pudo determinar el tipo de registro. Acceda desde la lista e inténtelo nuevamente."
+    setRecordLoadError(message)
+    showToast(message, "error")
   }, [id, parsedRecordKey?.type])
 
   useEffect(() => {
@@ -508,7 +512,9 @@ export const RecordForm = () => {
       })
       .catch((error) => {
         if (!isMounted) return
-        setRecordLoadError(error.message || "No se pudo cargar la información del registro seleccionado")
+        const message = error.message || "No se pudo cargar la información del registro seleccionado"
+        setRecordLoadError(message)
+        showToast(message, "error")
       })
       .finally(() => {
         if (!isMounted) return
@@ -633,14 +639,12 @@ export const RecordForm = () => {
           palabrasClave: formData.palabrasClave.split(",").map((k) => k.trim()),
           pais: formData.pais,
         }
-        setSuccessMessage("Datos básicos actualizados con éxito")
-        setShowSuccessDialog(true)
+        showToast("Datos básicos actualizados con éxito", "success")
       }
     } else {
     setIsSaved(true)
       setActiveTab("autores")
-      setSuccessMessage("Datos básicos guardados con éxito. Por favor, complete los autores y proyectos asociados.")
-      setShowSuccessDialog(true)
+      showToast("Datos básicos guardados con éxito. Por favor, complete los autores y proyectos asociados.", "success")
     }
   }
 
@@ -651,12 +655,12 @@ export const RecordForm = () => {
         : selectedTutorIds.includes(integrant.id_integrant)
 
     if (alreadySelected) {
-      setSuccessMessage(
+      showToast(
         type === "author"
           ? "Este integrante ya forma parte de los autores"
-          : "Este integrante ya está registrado como tutor"
+          : "Este integrante ya está registrado como tutor",
+        "error",
       )
-      setShowSuccessDialog(true)
       return
     }
 
@@ -687,8 +691,7 @@ export const RecordForm = () => {
       setSelectedTutorIds([...selectedTutorIds, integrant.id_integrant])
     }
 
-    setSuccessMessage(type === "author" ? "Autor agregado con éxito" : "Tutor agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast(type === "author" ? "Autor agregado con éxito" : "Tutor agregado con éxito", "success")
   }
 
   const handleCountryChange = (value: string) => {
@@ -817,15 +820,14 @@ export const RecordForm = () => {
     if (modalType === "author") {
       setAuthors([...authors, newPerson])
       setExternalAuthors([...externalAuthors, newPerson])
-      setSuccessMessage("Autor externo agregado con éxito")
-    } else {
+      showToast("Autor externo agregado con éxito", "success")
+      } else {
       setTutors([...tutors, newPerson])
-      setSuccessMessage("Tutor externo agregado con éxito")
-    }
+      showToast("Tutor externo agregado con éxito", "success")
+      }
     setShowExternalModal(false)
     setExternalPerson({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
     setExternalPersonEmailError(null)
-    setShowSuccessDialog(true)
   }
 
   const handleRemoveAuthor = (authorId: string) => {
@@ -834,8 +836,7 @@ export const RecordForm = () => {
     // Prevenir que el usuario se elimine a sí mismo como autor
     const userId = currentUser?.id ? parseInt(currentUser.id) : null
     if (authorToRemove?.integrantId && userId && authorToRemove.integrantId === userId) {
-      setSuccessMessage("No puede eliminarse a sí mismo como autor del registro")
-      setShowSuccessDialog(true)
+      showToast("No puede eliminarse a sí mismo como autor del registro", "error")
       return
     }
     
@@ -860,8 +861,7 @@ export const RecordForm = () => {
     if (!associatedProjects.find((p) => p.id === project.id)) {
       setAssociatedProjects([...associatedProjects, project])
       setShowProjectModal(false)
-      setSuccessMessage("Proyecto asociado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Proyecto asociado con éxito", "success")
     }
   }
 
@@ -1027,15 +1027,12 @@ export const RecordForm = () => {
   const handleSaveCompleteRecord = async () => {
     const recordValidationErrors = validateForm()
     if (Object.keys(recordValidationErrors).length > 0) {
-      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage(Object.values(recordValidationErrors).join(" · "))
-      setShowSuccessDialog(true)
+      showToast(Object.values(recordValidationErrors).join(" · "), "error")
       return
     }
 
     try {
       setIsSubmitting(true)
-      setSubmitError(null)
       setFieldErrors({})
 
       const authorIds = buildAuthorIds()
@@ -1251,8 +1248,7 @@ export const RecordForm = () => {
           throw new Error("Tipo de registro no válido")
       }
 
-      setSuccessMessage("Registro científico guardado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Registro científico guardado con éxito", "success")
       setTimeout(() => {
         navigate("/records")
       }, 1500)
@@ -1260,14 +1256,10 @@ export const RecordForm = () => {
       // Manejar error 409 (conflicto) para ISSN/ISBN/DOI duplicados
       if (isDuplicateIdentifierError(error)) {
         const friendlyMessage = getDuplicateIdentifierMessage(error)
-        setSubmitError(friendlyMessage)
-        setSuccessMessage(friendlyMessage)
-        setShowSuccessDialog(true)
+        showToast(friendlyMessage, "error")
       } else {
         const errorMessage = extractErrorMessage(error) || "Error al guardar el registro"
-        setSubmitError(errorMessage)
-        setSuccessMessage(errorMessage)
-        setShowSuccessDialog(true)
+        showToast(errorMessage, "error")
       }
     } finally {
       setIsSubmitting(false)
@@ -1306,8 +1298,7 @@ export const RecordForm = () => {
           encounterTypeId: selectedEncounterTypeId,
         },
       }
-      setSuccessMessage("Registro actualizado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Registro actualizado con éxito", "success")
       setTimeout(() => {
         navigate("/records")
       }, 1500)
@@ -1755,7 +1746,7 @@ export const RecordForm = () => {
 
   if (isMetadataLoading) {
     return (
-      <div className="record-form">
+      <div className="form-page record-form">
         <Card>
           <p>Cargando catálogos iniciales...</p>
         </Card>
@@ -1765,7 +1756,7 @@ export const RecordForm = () => {
 
   if (metadataError) {
     return (
-      <div className="record-form">
+      <div className="form-page record-form">
         <Card>
           <p className="error-message">{metadataError}</p>
           <div className="form-actions">
@@ -1779,16 +1770,7 @@ export const RecordForm = () => {
   }
 
   return (
-    <div className="record-form">
-      {showSuccessDialog && (
-        <div className="success-dialog-overlay">
-          <div className="success-dialog">
-            <div className="success-icon">✓</div>
-            <h2>{successMessage}</h2>
-            <Button onClick={() => setShowSuccessDialog(false)}>Aceptar</Button>
-          </div>
-        </div>
-      )}
+    <div className="form-page record-form">
 
       <Modal
         isOpen={showExternalModal}
@@ -1917,10 +1899,9 @@ export const RecordForm = () => {
         </Card>
       )}
 
-      <div className="form-header">
-        <h1>{id ? "Editar Registro Científico" : "Adicionar Registro Científico"}</h1>
-        <p>Complete la información del registro</p>
-      </div>
+      <div className="page-toolbar form-page__toolbar">
+        <p className="page-toolbar__lead">Complete la información del registro científico</p>
+      </div>>
 
       <div className="record-type-menu">
         {recordTypes.map((type) => (
@@ -2379,8 +2360,7 @@ export const RecordForm = () => {
                       variant="secondary"
                       onClick={() => {
                         if (mockProjects.length === 0) {
-                          setSuccessMessage("No hay proyectos disponibles para asociar")
-                          setShowSuccessDialog(true)
+                          showToast("No hay proyectos disponibles para asociar", "error")
                           return
                         }
                         setShowProjectModal(true)
@@ -2426,7 +2406,6 @@ export const RecordForm = () => {
       {isSaved && !isViewMode && !isEditMode && (
         <Card>
           <div className="form-actions">
-            {submitError && <p className="error-message">{submitError}</p>}
             <Button type="button" onClick={handleSaveCompleteRecord} disabled={isSubmitting}>
               {isSubmitting ? "Guardando..." : "Guardar Registro Completo"}
             </Button>

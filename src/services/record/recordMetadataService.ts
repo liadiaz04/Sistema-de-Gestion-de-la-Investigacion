@@ -106,7 +106,7 @@ export const recordMetadataService = {
     const response = await apiClient.get('/faculty/')
     const faculties = response.data ?? []
     return faculties.map((faculty: any) => ({
-      id_faculty: faculty.id_faculty,
+      id_faculty: Number(faculty.id_faculty),
       name: faculty.name,
       fullname: faculty.fullname ?? null,
     }))
@@ -114,11 +114,14 @@ export const recordMetadataService = {
 
   async getFacultyAreas(): Promise<FacultyAreaOption[]> {
     const response = await apiClient.get('/faculty-areas/')
-    const areas = response.data ?? []
+    const raw = response.data
+    const areas = Array.isArray(raw) ? raw : (raw?.results ?? raw?.items ?? [])
     return areas.map((area: any) => ({
-      id_faculty_area: area.id_faculty_area,
-      id_faculty: area.id_faculty,
-      name: area.name,
+      id_faculty_area: Number(area.id_faculty_area),
+      id_faculty: Number(
+        area.id_faculty ?? area.faculty_id ?? area.faculty?.id_faculty ?? area.faculty?.id,
+      ),
+      name: area.name ?? '',
     }))
   },
 
