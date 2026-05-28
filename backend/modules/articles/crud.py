@@ -5,13 +5,35 @@ from . import models, schemas
 from modules.country.crud import get_country
 from modules.article_type.crud import get_article_type
 from modules.integrant.models import Integrant
+from modules.zenodo import crud as zenodo_crud
+
+
+def _normalize_doi(doi: Optional[str]) -> Optional[str]:
+    if not doi or not str(doi).strip():
+        return None
+    value = str(doi).strip()
+    lower = value.lower()
+    if lower.startswith("https://doi.org/"):
+        return value[len("https://doi.org/") :]
+    if lower.startswith("http://doi.org/"):
+        return value[len("http://doi.org/") :]
+    if lower.startswith("doi:"):
+        return value[4:].strip()
+    return value
+
 
 def get_article(db: Session, article_id: int):
     
-    return db.query(models.Article).options(
-    joinedload(models.Article.country),
-    joinedload(models.Article.article_type)
-).filter(models.Article.id == article_id).first()
+    return (
+        db.query(models.Article)
+        .options(
+            joinedload(models.Article.country),
+            joinedload(models.Article.article_type),
+            joinedload(models.Article.authors),
+        )
+        .filter(models.Article.id_article == article_id)
+        .first()
+    )
 
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -163,6 +185,18 @@ def update_article(db: Session, article_id: int, article_update: schemas.Article
 
     update_data = article_update.model_dump(exclude_unset=True)
 
+    if "doi" in update_data:
+        zenodo_publication = zenodo_crud.get_publication_by_entity(db, "article", article_id)
+        if zenodo_publication:
+            current_doi = _normalize_doi(db_article.doi)
+            requested_doi = _normalize_doi(update_data.get("doi"))
+            if requested_doi != current_doi:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No se puede modificar el DOI de un registro publicado en Zenodo",
+                )
+            update_data.pop("doi", None)
+
     # Validar FKs
     if "id_country" in update_data and update_data["id_country"] is not None:
         if not get_country(db, update_data["id_country"]):
@@ -187,9 +221,9 @@ def update_article(db: Session, article_id: int, article_update: schemas.Article
             raise ValueError("One or more author IDs do not exist")
         for author_id in author_ids:
             db.execute(
-                models.ArticleAuthor.__table__.insert().values(
+                models.articles_authors.insert().values(
                     id_article=article_id,
-                    id_author=author_id
+                    id_author=author_id,
                 )
             )
 

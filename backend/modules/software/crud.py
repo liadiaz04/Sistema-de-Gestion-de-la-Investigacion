@@ -124,9 +124,9 @@ def update_software(db: Session, software_id: int, software_update: schemas.Soft
             raise ValueError("One or more author IDs do not exist")
         for aid in aids:
             db.execute(
-                models.SoftwareAuthor.__table__.insert().values(
+                models.softwares_authors.insert().values(
                     id_software=software_id,
-                    id_author=aid
+                    id_author=aid,
                 )
             )
 

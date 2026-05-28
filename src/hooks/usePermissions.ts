@@ -139,6 +139,13 @@ export const usePermissions = () => {
   };
 
   /**
+   * Verifica si el usuario puede publicar registros en Zenodo
+   */
+  const canPublishToZenodo = (): boolean => {
+    return isAdmin() || hasRole('publicador');
+  };
+
+  /**
    * Verifica si el usuario puede modificar un registro
    * AUTOR puede modificar solo si es autor del registro
    * CONSEJO y ADMIN pueden modificar todos
@@ -183,6 +190,7 @@ export const usePermissions = () => {
     canViewStatistics,
     canManageUsers,
     canViewAuditLog,
+    canPublishToZenodo,
     canModifyRecord,
     canDeleteRecord,
   };

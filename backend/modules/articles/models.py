@@ -25,6 +25,7 @@ class Article(Base):
     only_date = Column(Date)
     id_group = Column(Integer)
     published = Column(Boolean, default=True, nullable=False)
+    publicated = Column(Boolean, default=False, nullable=False)
 
     # Relaciones
     country = relationship("Country", foreign_keys=[id_country])

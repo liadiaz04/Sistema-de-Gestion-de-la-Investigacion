@@ -7,6 +7,11 @@ import type { IntegrantWithRoles } from "../types/api/integrant"
 // Backend roles: ADMIN (id:1), USUARIO (id:2), CONSEJO (id:3), AUTOR (id:4)
 const mapRoleToUserRole = (role: { id_role: number; role_name: string }): UserRole => {
   const roleName = role.role_name.toUpperCase();
+  const normalized = role.role_name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
   
   // Mapear según los IDs primero (más confiable)
   if (role.id_role === 1 || roleName === 'ADMIN') return 'admin';
@@ -14,6 +19,7 @@ const mapRoleToUserRole = (role: { id_role: number; role_name: string }): UserRo
   if (role.id_role === 3 || roleName === 'CONSEJO') return 'consejo';
 
   if (role.id_role === 4 || roleName === 'AUTOR') return 'autor_registro';
+  if (roleName === 'PUBLICADOR') return 'publicador';
   // Mapeo por nombre para roles adicionales
   const roleMap: Record<string, UserRole> = {
     'responsable_proyecto': 'responsable_proyecto',
@@ -22,10 +28,11 @@ const mapRoleToUserRole = (role: { id_role: number; role_name: string }): UserRo
     'integrante_grupo': 'integrante_grupo',
     'consejo_cientifico': 'consejo',
     'autor_registro': 'autor_registro',
+    'publicador': 'publicador',
     'usuario': 'usuario',
   }
   
-  return roleMap[role.role_name.toLowerCase()] || 'usuario'
+  return roleMap[normalized] || 'usuario'
 }
 
 // Mapeo inverso: de UserRole del frontend a role_name del backend
@@ -35,6 +42,7 @@ const mapUserRoleToRoleName = (userRole: UserRole): string => {
     'integrant': 'USUARIO', // id:2
     'consejo': 'CONSEJO',
     'autor_registro': 'AUTOR', // id:4
+    'publicador': 'PUBLICADOR',
     'responsable_proyecto': 'responsable_proyecto',
     'responsable_grupo': 'responsable_grupo',
     'integrante_proyecto': 'integrante_proyecto',
@@ -99,46 +107,52 @@ class UserService {
   }
 
   /**
-   * Modifica el rol de un usuario (reemplaza todos los roles con el nuevo rol)
-   * Envía una petición PUT a /integrants/{id} con { roles_list: [id_del_rol] }
+   * Agrega un rol a un usuario sin reemplazar los existentes.
    */
-  async modifyUserRole(userId: string, newRole: UserRole, currentUser: IUser): Promise<IUser> {
-    // Primero, obtener todos los roles disponibles
+  async modifyUserRole(userId: string, newRole: UserRole, _currentUser: IUser): Promise<IUser> {
+    if (newRole === 'admin') {
+      throw new Error('El rol admin no puede asignarse por esta vía')
+    }
+
     const allRoles = await roleService.getAllRoles()
-    
-    // Buscar el rol por mapeo (ID o nombre)
-    const roleToSet = allRoles.find(r => {
-      const mappedRole = mapRoleToUserRole(r)
-      return mappedRole === newRole
-    })
-    
-    if (!roleToSet) {
+    const roleToAdd = allRoles.find((r) => mapRoleToUserRole(r) === newRole)
+
+    if (!roleToAdd) {
       throw new Error(`Rol ${newRole} no encontrado en el backend`)
     }
-    if(newRole === 'admin'){
-      console.log('Modificando rol del integrante a admin')
 
-      await integrantService.modifyIntegrantRole(parseInt(userId), 1)
-    }else if(newRole === 'integrant'){
-      console.log('Modificando rol del integrante a integrant')
-      await integrantService.modifyIntegrantRole(parseInt(userId), 2)
-    }else if(newRole === 'consejo'){
-      console.log('Modificando rol del integrante a consejo')
-      await integrantService.modifyIntegrantRole(parseInt(userId), 3)
-    }else if(newRole === 'autor_registro'){
-      console.log('Modificando rol del integrante a autor_registro')
-      await integrantService.modifyIntegrantRole(parseInt(userId), 4)
+    const integrant = await integrantService.getIntegrantById(parseInt(userId))
+    const currentRoleIds = integrant.roles?.map((r) => r.id_role) ?? []
+    console.log('[userService] Estado actual de roles', {
+      userId,
+      currentRoleIds,
+      currentRoles: integrant.roles?.map((r) => ({ id: r.id_role, name: r.role_name })) ?? [],
+      roleToAdd: { id: roleToAdd.id_role, name: roleToAdd.role_name, mapped: newRole },
+    })
+
+    if (!currentRoleIds.includes(roleToAdd.id_role)) {
+      const updatedRoleIds = [...new Set([...currentRoleIds, roleToAdd.id_role])]
+      console.log('[userService] Actualizando lista de roles (agregar)', {
+        userId,
+        method: 'PUT',
+        url: `/integrants/${userId}`,
+        body: { roles_list: updatedRoleIds },
+      })
+      await integrantService.updateIntegrantRoles(parseInt(userId), updatedRoleIds)
+    } else {
+      console.log('[userService] Rol ya existente, no se envía actualización', {
+        userId,
+        role: newRole,
+      })
     }
-    // Modificar el rol del integrante (reemplaza todos los roles con el nuevo)
-   
-    // Recargar el usuario actualizado
+
     return await this.getUserById(userId)
   }
 
   /**
    * Elimina un rol de un usuario
    */
-  async removeUserRole(userId: string, role: UserRole, currentUser: IUser): Promise<IUser> {
+  async removeUserRole(userId: string, role: UserRole, _currentUser: IUser): Promise<IUser> {
     // Obtener todos los roles disponibles
     const allRoles = await roleService.getAllRoles()
     
@@ -158,6 +172,14 @@ class UserService {
     // Construir la nueva lista de role_ids sin el rol a eliminar
     const currentRoleIds = integrant.roles?.map(r => r.id_role) ?? []
     const updatedRoleIds = currentRoleIds.filter(id => id !== roleToRemove.id_role)
+    console.log('[userService] Actualizando lista de roles (eliminar)', {
+      userId,
+      roleToRemove: { id: roleToRemove.id_role, mapped: role },
+      currentRoleIds,
+      method: 'PUT',
+      url: `/integrants/${userId}`,
+      body: { roles_list: updatedRoleIds },
+    })
 
     // Actualizar el integrante con la nueva lista de roles
     await integrantService.updateIntegrantRoles(parseInt(userId), updatedRoleIds)

@@ -39,6 +39,7 @@ class PatentBase(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: bool = False
 
 class PatentCreate(PatentBase):
     author_ids: List[Union[int, NewAuthor]]
@@ -60,6 +61,7 @@ class PatentUpdate(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: Optional[bool] = None
     author_ids: Optional[List[int]] = None
 
 class Patent(PatentBase):

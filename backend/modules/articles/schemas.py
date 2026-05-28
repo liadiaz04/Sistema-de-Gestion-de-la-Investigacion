@@ -47,6 +47,7 @@ class ArticleBase(BaseModel):
     only_date: Optional[date] = None
     id_group: Optional[int] = None
     published: bool = True
+    publicated: bool = False
 
 class ArticleCreate(ArticleBase):
     author_ids: List[Union[int, NewAuthor]]
@@ -70,6 +71,7 @@ class ArticleUpdate(BaseModel):
     only_date: Optional[date] = None
     id_group: Optional[int] = None
     published: Optional[bool] = None
+    publicated: Optional[bool] = None
     author_ids: Optional[List[int]] = None
 
 class Article(ArticleBase):

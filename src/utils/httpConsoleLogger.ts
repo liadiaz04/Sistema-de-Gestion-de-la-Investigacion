@@ -1,84 +1,120 @@
-import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios"
-import { print } from "./print"
+import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { relayApiDebugLog, serializeBodyForDebug } from './apiDebugRelay';
 
 const serializeHeaders = (headers: unknown): Record<string, unknown> => {
   try {
-    if (headers == null) return {}
+    if (headers == null) return {};
     const h = headers as {
-      toJSON?: () => Record<string, unknown>
-      forEach?: (cb: (value: string, key: string) => void) => void
+      toJSON?: () => Record<string, unknown>;
+      forEach?: (cb: (value: string, key: string) => void) => void;
+    };
+    if (typeof h.toJSON === 'function') {
+      return h.toJSON();
     }
-    if (typeof h.toJSON === "function") {
-      return h.toJSON()
-    }
-    if (typeof h.forEach === "function") {
-      const out: Record<string, unknown> = {}
+    if (typeof h.forEach === 'function') {
+      const out: Record<string, unknown> = {};
       h.forEach((value, key) => {
-        out[key] = value
-      })
-      return out
+        out[key] = value;
+      });
+      return out;
     }
-    if (typeof headers === "object" && !Array.isArray(headers)) {
-      return { ...(headers as Record<string, unknown>) }
+    if (typeof headers === 'object' && !Array.isArray(headers)) {
+      return { ...(headers as Record<string, unknown>) };
     }
-    return { raw: String(headers) }
+    return { raw: String(headers) };
   } catch (err) {
-    return { _errorSerializandoCabeceras: String(err) }
+    return { _errorSerializandoCabeceras: String(err) };
   }
-}
+};
+
+const buildFullUrl = (config: InternalAxiosRequestConfig): string => {
+  const base = config.baseURL ?? '';
+  const path = config.url ?? '';
+  return `${base}${path}`;
+};
 
 export const logHttpRequest = (clientLabel: string, config: InternalAxiosRequestConfig) => {
-  try {
-    const method = (config.method ?? "get").toUpperCase()
-    const base = config.baseURL ?? ""
-    const path = config.url ?? ""
-    const fullUrl = `${base}${path}`
+  const method = (config.method ?? 'get').toUpperCase();
+  const url = buildFullUrl(config);
+  const headers = serializeHeaders(config.headers);
+  const params = config.params ?? null;
+  const body = serializeBodyForDebug(config.data);
 
-    print(`%c[HTTP →]%c ${clientLabel} %c${method}%c ${fullUrl}`, "font-weight:bold;color:#06c;", "", "font-weight:bold;", "")
-    print("  Headers:", serializeHeaders(config.headers))
-    print("  Query params:", config.params ?? null)
-    print("  Body:", config.data ?? null)
-  } catch (err) {
-    print("[HTTP →] Error al registrar la petición:", err)
-  }
-}
+  console.groupCollapsed(`[API →] ${clientLabel} ${method} ${url}`);
+  console.log('Headers:', headers);
+  console.log('Params:', params);
+  console.log('Body:', body);
+  console.groupEnd();
+
+  relayApiDebugLog({
+    kind: 'request',
+    client: clientLabel,
+    method,
+    url,
+    headers,
+    params,
+    body,
+  });
+};
 
 export const logHttpResponseOk = (clientLabel: string, response: AxiosResponse) => {
-  try {
-    const method = (response.config.method ?? "get").toUpperCase()
-    const base = response.config.baseURL ?? ""
-    const path = response.config.url ?? ""
-    const fullUrl = `${base}${path}`
+  const method = (response.config.method ?? 'get').toUpperCase();
+  const url = buildFullUrl(response.config);
+  const headers = serializeHeaders(response.headers);
+  const data = response.data;
 
-    print(`%c[HTTP ← OK]%c ${clientLabel} %c${response.status}%c ${method} ${fullUrl}`, "font-weight:bold;color:#080;", "", "font-weight:bold;", "")
-    print("  Status:", response.status, response.statusText)
-    print("  Headers respuesta:", serializeHeaders(response.headers))
-    print("  Datos respuesta:", response.data)
-  } catch (err) {
-    print("[HTTP ← OK] Error al registrar la respuesta:", err)
-  }
-}
+  console.groupCollapsed(`[API ← OK] ${clientLabel} ${response.status} ${method} ${url}`);
+  console.log('Status:', response.status, response.statusText);
+  console.log('Headers:', headers);
+  console.log('Data:', data);
+  console.groupEnd();
+
+  relayApiDebugLog({
+    kind: 'response',
+    client: clientLabel,
+    method,
+    url,
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+    data,
+  });
+};
 
 export const logHttpResponseError = (clientLabel: string, error: AxiosError) => {
-  try {
-    const cfg = error.config
-    const method = (cfg?.method ?? "?").toUpperCase()
-    const fullUrl = cfg ? `${cfg.baseURL ?? ""}${cfg.url ?? ""}` : "(sin URL)"
+  const cfg = error.config;
+  const method = (cfg?.method ?? '?').toUpperCase();
+  const url = cfg ? buildFullUrl(cfg) : '(sin URL)';
+  const requestBody = serializeBodyForDebug(cfg?.data);
+  const requestHeaders = cfg ? serializeHeaders(cfg.headers) : null;
+  const requestParams = cfg?.params ?? null;
 
-    print(`%c[HTTP ← ERROR]%c ${clientLabel} %c${error.response?.status ?? "—"}%c ${method} ${fullUrl}`, "font-weight:bold;color:#c00;", "", "font-weight:bold;", "")
-    if (cfg) {
-      print("  Petición — Headers:", serializeHeaders(cfg.headers))
-      print("  Petición — Query:", cfg.params ?? null)
-      print("  Petición — Body:", cfg.data ?? null)
-    }
-    if (error.response) {
-      print("  Respuesta — Status:", error.response.status, error.response.statusText)
-      print("  Respuesta — Headers:", serializeHeaders(error.response.headers))
-      print("  Respuesta — Body:", error.response.data)
-    } else {
-      print("  Sin respuesta del servidor:", error.message)
-    }
-  } catch (err) {
-    print("[HTTP ← ERROR] Error al registrar el fallo:", err)
+  console.groupCollapsed(`[API ← ERROR] ${clientLabel} ${error.response?.status ?? '—'} ${method} ${url}`);
+  if (cfg) {
+    console.log('Request headers:', requestHeaders);
+    console.log('Request params:', requestParams);
+    console.log('Request body:', requestBody);
   }
-}
+  if (error.response) {
+    console.log('Response status:', error.response.status, error.response.statusText);
+    console.log('Response headers:', serializeHeaders(error.response.headers));
+    console.log('Response data:', error.response.data);
+  } else {
+    console.log('Sin respuesta del servidor:', error.message);
+  }
+  console.groupEnd();
+
+  relayApiDebugLog({
+    kind: 'error',
+    client: clientLabel,
+    method,
+    url,
+    status: error.response?.status ?? null,
+    statusText: error.response?.statusText ?? null,
+    headers: error.response ? serializeHeaders(error.response.headers) : requestHeaders,
+    params: requestParams,
+    body: requestBody,
+    data: error.response?.data ?? null,
+    message: error.message,
+  });
+};

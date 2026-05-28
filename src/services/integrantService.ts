@@ -58,7 +58,7 @@ export const integrantService = {
    * Actualiza los roles del integrante enviando la lista completa de role_ids
    */
   async updateIntegrantRoles(integrantId: number, roleIds: number[]): Promise<IntegrantGet> {
-    return this.updateIntegrant(integrantId, { role_ids: roleIds });
+    return this.updateIntegrant(integrantId, { roles_list: roleIds });
   },
 
   /**

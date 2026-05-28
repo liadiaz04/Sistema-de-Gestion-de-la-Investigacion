@@ -8,7 +8,7 @@ import { Button } from "../components/common/Button"
 import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import "./ProjectForm.css"
-import { mockProjects, mockRecords } from "../services/mockData"
+import { mockRecords } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
 import { usePermissions } from "../hooks/usePermissions"
 import type { IUser } from "../types/index"
@@ -19,8 +19,12 @@ import {
   type ProjectClassificationOption,
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
-import { projectService } from "../services/projectService"
+import { projectService, type CreateProjectPayload } from "../services/projectService"
 import { integrantService } from "../services/integrantService"
+import {
+  syncProjectMembersToIntegrants,
+  type ProjectFormMember,
+} from "../utils/projectMemberSync"
 import {
   validateRequired,
   validateEmailRequired,
@@ -129,7 +133,8 @@ export const ProjectForm = () => {
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
   const [showRecordModal, setShowRecordModal] = useState(false)
-  const [members, setMembers] = useState<any[]>([])
+  const [members, setMembers] = useState<ProjectFormMember[]>([])
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([])
   const [externalMembers, setExternalMembers] = useState<any[]>([])
   const [records, setRecords] = useState<any[]>([])
@@ -151,7 +156,6 @@ export const ProjectForm = () => {
   const [formData, setFormData] = useState({
     nombre: "",
     codigo: "",
-    descripcion: "",
     tematica: "",
     programa: "",
     tipoProyecto: "",
@@ -223,7 +227,6 @@ export const ProjectForm = () => {
           setFormData({
             nombre: project.title || "",
             codigo: project.code || "",
-            descripcion: project.description || "",
             tematica: project.thematic || project.classification?.name || "",
             programa: project.national_group || project.international_group || project.type?.name || "",
             tipoProyecto: project.type?.name || "",
@@ -291,21 +294,26 @@ export const ProjectForm = () => {
 
             const integrantCache = new Map<
               number,
-              { id_integrant: number; name: string; email?: string | null; external?: boolean }
+              {
+                id_integrant: number
+                name: string
+                email?: string | null
+                external?: boolean
+                identity?: string | null
+                work_center?: string | null
+              }
             >()
 
             const resolveMemberIntegrant = async (
               member: (typeof project.members)[number],
-            ): Promise<{ id_integrant: number; name: string; email?: string | null; external?: boolean } | null> => {
-              if (member.integrant) {
-                return {
-                  id_integrant: member.integrant.id_integrant,
-                  name: member.integrant.name,
-                  email: member.integrant.email,
-                  external: false,
-                }
-              }
-
+            ): Promise<{
+              id_integrant: number
+              name: string
+              email?: string | null
+              external?: boolean
+              identity?: string | null
+              work_center?: string | null
+            } | null> => {
               if (integrantCache.has(member.id_integrant)) {
                 return integrantCache.get(member.id_integrant)!
               }
@@ -317,17 +325,13 @@ export const ProjectForm = () => {
                   name: integrant.name,
                   email: integrant.email,
                   external: integrant.external,
+                  identity: integrant.identity,
+                  work_center: integrant.work_center,
                 }
                 integrantCache.set(member.id_integrant, summary)
                 return summary
               } catch (error) {
                 console.error("Error cargando integrante del proyecto:", error)
-                integrantCache.set(member.id_integrant, {
-                  id_integrant: member.id_integrant,
-                  name: "",
-                  email: "",
-                  external: false,
-                })
                 return null
               }
             }
@@ -347,7 +351,8 @@ export const ProjectForm = () => {
                     apellidos: rest.join(" ").trim(),
                     correoElectronico: integrantInfo?.email || "",
                     nombreUsuario: "",
-                    numeroIdentidad: "",
+                    numeroIdentidad: integrantInfo?.identity || "",
+                    entidad: integrantInfo?.work_center || "",
                     roles: [],
                     esExterno: integrantInfo?.external ?? false,
                     esAdministrador: false,
@@ -357,6 +362,7 @@ export const ProjectForm = () => {
               }),
             )
             setMembers(mappedMembers)
+            setExternalMembers(mappedMembers.filter((m) => m.usuario.esExterno))
           }
           
           setIsSaved(true)
@@ -378,9 +384,6 @@ export const ProjectForm = () => {
     const nombreError = validateRequired(formData.nombre, "Título del proyecto")
     if (nombreError) errors.nombre = nombreError
 
-    const descripcionError = validateRequired(formData.descripcion, "Descripción")
-    if (descripcionError) errors.descripcion = descripcionError
-
     const tematicaError = validateRequired(formData.tematica, "Temática")
     if (tematicaError) errors.tematica = tematicaError
 
@@ -397,21 +400,8 @@ export const ProjectForm = () => {
 
     setFieldErrors({})
 
-    if (isEditMode && id) {
-      const index = mockProjects.findIndex((p) => p.id === id)
-      if (index !== -1) {
-        mockProjects[index] = {
-          ...mockProjects[index],
-          nombre: formData.nombre,
-          descripcion: formData.descripcion,
-          tematica: formData.tematica,
-          programa: formData.programa,
-          tipoProyecto: formData.tipoProyecto, // Save tipoProyecto
-          estado: formData.estado as "propuesta" | "activo" | "finalizado" | "cancelado",
-          responsable: selectedResponsable, // Save selected responsable
-        }
-      }
-      setSuccessMessage("Datos iniciales actualizados con éxito")
+    if (isEditMode) {
+      setSuccessMessage("Use el botón «Actualizar Proyecto» al final del formulario para guardar los cambios.")
       setShowSuccessDialog(true)
       return
     }
@@ -521,12 +511,109 @@ export const ProjectForm = () => {
   const handleRemoveMember = (memberId: string) => {
     const memberToRemove = members.find((m) => m.id === memberId)
     setMembers(members.filter((m) => m.id !== memberId))
+    if (editingMemberId === memberId) {
+      setEditingMemberId(null)
+    }
     if (memberToRemove?.integrantId) {
       setSelectedMemberIds((prev) => prev.filter((id) => id !== memberToRemove.integrantId))
     }
     if (memberToRemove?.usuario?.esExterno) {
       setExternalMembers((prev) => prev.filter((m) => m.id !== memberId))
     }
+  }
+
+  const handleMemberFieldChange = (
+    memberId: string,
+    field: "nombre" | "apellidos" | "numeroIdentidad" | "entidad" | "correoElectronico",
+    value: string,
+  ) => {
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === memberId
+          ? { ...m, usuario: { ...m.usuario, [field]: value } }
+          : m,
+      ),
+    )
+    setExternalMembers((prev) =>
+      prev.map((m) =>
+        m.id === memberId
+          ? { ...m, usuario: { ...m.usuario, [field]: value } }
+          : m,
+      ),
+    )
+  }
+
+  const buildProjectPayload = (memberIds: number[]): CreateProjectPayload => {
+    const now = new Date().toISOString().split("T")[0]
+    const initialDate =
+      isEditMode && originalInitialDate
+        ? originalInitialDate
+        : formData.fechaInicio
+          ? new Date(formData.fechaInicio).toISOString().split("T")[0]
+          : now
+    const finalDate = formData.fechaFin ? new Date(formData.fechaFin).toISOString().split("T")[0] : null
+
+    return {
+      title: formData.nombre,
+      code: formData.codigo || "",
+      objectives: toNullIfEmpty(formData.objetivos),
+      tasks: toNullIfEmpty(formData.tareas),
+      scientific_details: toNullIfEmpty(formData.detallesCientificos),
+      other_data: toNullIfEmpty(formData.otrosDatos),
+      keywords: formData.palabrasClave || "",
+      member_ids: memberIds,
+      id_responsible: selectedResponsableId,
+      thematic: formData.tematica || "",
+      id_project_type: selectedProjectTypeId,
+      art_state: formData.artState || "",
+      cientific_problem: toNullIfEmpty(formData.problemaCientifico),
+      study_object: toNullIfEmpty(formData.objetoEstudio),
+      study_field: formData.campoEstudio || "",
+      hypothesis: formData.hipotesis || "",
+      main_objective: toNullIfEmpty(formData.objetivoPrincipal),
+      research_methods: formData.metodosInvestigacion || "",
+      interested_third_party: toNullIfEmpty(formData.terceroInteresado),
+      national_group: formData.grupoNacional || "",
+      international_group: toNullIfEmpty(formData.grupoInternacional),
+      publish_magazine: toNullIfEmpty(formData.publicarRevista),
+      participate_events: toNullIfEmpty(formData.participarEventos),
+      citma_code: toNullIfEmpty(formData.codigoCITMA),
+      minvec_code: toNullIfEmpty(formData.codigoMINVEC),
+      approved: false,
+      conseil_criteria: formData.criterioConsejo || "",
+      initial_date: initialDate,
+      final_date: finalDate,
+      update_date: now,
+      id_project_state: selectedProjectStateId,
+      id_project_classification: selectedProjectClassificationId,
+      economic_budget: formData.presupuestoEconomico || "",
+      economic_needs: toNullIfEmpty(formData.necesidadesEconomicas),
+      id_faculty: null,
+      concluded: false,
+      approved_date: null,
+      general_budget_cup: toNullIfEmpty(formData.presupuestoGeneralCUP),
+      year_budget_cup: toNullIfEmpty(formData.presupuestoAnualCUP),
+      is_international: formData.is_international,
+      is_national: formData.is_national,
+      is_territorial: formData.is_territorial,
+      is_cujae: formData.is_cujae,
+    }
+  }
+
+  const persistProject = async () => {
+    const { memberIds, updatedMembers } = await syncProjectMembersToIntegrants(members)
+    setMembers(updatedMembers)
+    setExternalMembers(updatedMembers.filter((m) => m.usuario.esExterno))
+    setSelectedMemberIds(memberIds)
+
+    const payload = buildProjectPayload(memberIds)
+
+    if (isEditMode && id) {
+      await projectService.updateProjectWithPayload(parseInt(id), payload)
+      return
+    }
+
+    await projectService.createProject(payload)
   }
 
   const handleAssociateRecord = (record: any) => {
@@ -559,15 +646,6 @@ export const ProjectForm = () => {
     if (formData.nombre) {
       const nombreLengthError = validateLength(formData.nombre, 5, 200, "Título del proyecto")
       if (nombreLengthError) errors.nombre = nombreLengthError
-    }
-
-    // Validar descripción
-    const descripcionError = validateRequired(formData.descripcion, "Descripción")
-    if (descripcionError) errors.descripcion = descripcionError
-
-    if (formData.descripcion) {
-      const descripcionLengthError = validateLength(formData.descripcion, 20, 2000, "Descripción")
-      if (descripcionLengthError) errors.descripcion = descripcionLengthError
     }
 
     // Validar temática
@@ -620,63 +698,10 @@ export const ProjectForm = () => {
       setSubmitError(null)
       setFieldErrors({})
 
-      const now = new Date().toISOString().split("T")[0]
-      const initialDate = formData.fechaInicio
-        ? new Date(formData.fechaInicio).toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0]
-      const finalDate = formData.fechaFin ? new Date(formData.fechaFin).toISOString().split("T")[0] : null
-
-      const payload = {
-        title: formData.nombre,
-        code: formData.codigo || "",
-        keywords: formData.palabrasClave || "",
-        member_ids: selectedMemberIds,
-        id_responsible: selectedResponsableId,
-        thematic: formData.tematica || "",
-        id_project_type: selectedProjectTypeId,
-        art_state: formData.artState || "",
-        cientific_problem: toNullIfEmpty(formData.problemaCientifico),
-        study_object: toNullIfEmpty(formData.objetoEstudio),
-        study_field: formData.campoEstudio || "",
-        hypothesis: formData.hipotesis || "",
-        main_objective: toNullIfEmpty(formData.objetivoPrincipal),
-        research_methods: formData.metodosInvestigacion || "",
-        interested_third_party: toNullIfEmpty(formData.terceroInteresado),
-        national_group: formData.grupoNacional || "",
-        international_group: toNullIfEmpty(formData.grupoInternacional),
-        publish_magazine: toNullIfEmpty(formData.publicarRevista),
-        participate_events: toNullIfEmpty(formData.participarEventos),
-        citma_code: toNullIfEmpty(formData.codigoCITMA),
-        minvec_code: toNullIfEmpty(formData.codigoMINVEC),
-        approved: false,
-        conseil_criteria: formData.criterioConsejo || "",
-        initial_date: initialDate,
-        final_date: finalDate,
-        update_date: now,
-        id_project_state: selectedProjectStateId,
-        id_project_classification: selectedProjectClassificationId,
-        economic_budget: formData.presupuestoEconomico || "",
-        economic_needs: toNullIfEmpty(formData.necesidadesEconomicas),
-        id_faculty: null,
-        concluded: false,
-        approved_date: null,
-        general_budget_cup: toNullIfEmpty(formData.presupuestoGeneralCUP),
-        year_budget_cup: toNullIfEmpty(formData.presupuestoAnualCUP),
-        is_international: formData.is_international,
-        is_national: formData.is_national,
-        is_territorial: formData.is_territorial,
-        is_cujae: formData.is_cujae,
-      }
-
-      if (isEditMode && id) {
-        // Modo edición: actualizar proyecto existente
-        await projectService.updateProjectWithPayload(parseInt(id), payload)
-        setSuccessMessage("Proyecto actualizado con éxito")
-      } else {
-        // Modo creación: crear nuevo proyecto
-        await projectService.createProject(payload)
-        setSuccessMessage("Proyecto completado y guardado con éxito")
-      }
+      await persistProject()
+      setSuccessMessage(
+        isEditMode && id ? "Proyecto actualizado con éxito" : "Proyecto completado y guardado con éxito",
+      )
 
       setShowSuccessDialog(true)
       setTimeout(() => {
@@ -705,56 +730,9 @@ export const ProjectForm = () => {
 
     try {
       setIsSubmitting(true)
+      setSubmitError(null)
 
-      const now = new Date().toISOString().split("T")[0]
-      const initialDate = originalInitialDate || formData.fechaInicio
-        ? (originalInitialDate || new Date(formData.fechaInicio).toISOString().split("T")[0])
-        : new Date().toISOString().split("T")[0]
-      const finalDate = formData.fechaFin ? new Date(formData.fechaFin).toISOString().split("T")[0] : null
-
-      const payload = {
-        title: formData.nombre,
-        code: formData.codigo || "",
-        keywords: formData.palabrasClave || "",
-        member_ids: selectedMemberIds,
-        id_responsible: selectedResponsableId,
-        thematic: formData.tematica || "",
-        id_project_type: selectedProjectTypeId,
-        art_state: formData.artState || "",
-        cientific_problem: toNullIfEmpty(formData.problemaCientifico),
-        study_object: toNullIfEmpty(formData.objetoEstudio),
-        study_field: formData.campoEstudio || "",
-        hypothesis: formData.hipotesis || "",
-        main_objective: toNullIfEmpty(formData.objetivoPrincipal),
-        research_methods: formData.metodosInvestigacion || "",
-        interested_third_party: toNullIfEmpty(formData.terceroInteresado),
-        national_group: formData.grupoNacional || "",
-        international_group: toNullIfEmpty(formData.grupoInternacional),
-        publish_magazine: toNullIfEmpty(formData.publicarRevista),
-        participate_events: toNullIfEmpty(formData.participarEventos),
-        citma_code: toNullIfEmpty(formData.codigoCITMA),
-        minvec_code: toNullIfEmpty(formData.codigoMINVEC),
-        approved: false,
-        conseil_criteria: formData.criterioConsejo || "",
-        initial_date: initialDate,
-        final_date: finalDate,
-        update_date: now,
-        id_project_state: selectedProjectStateId,
-        id_project_classification: selectedProjectClassificationId,
-        economic_budget: formData.presupuestoEconomico || "",
-        economic_needs: toNullIfEmpty(formData.necesidadesEconomicas),
-        id_faculty: null,
-        concluded: false,
-        approved_date: null,
-        general_budget_cup: toNullIfEmpty(formData.presupuestoGeneralCUP),
-        year_budget_cup: toNullIfEmpty(formData.presupuestoAnualCUP),
-        is_international: formData.is_international,
-        is_national: formData.is_national,
-        is_territorial: formData.is_territorial,
-        is_cujae: formData.is_cujae,
-      }
-
-      await projectService.updateProjectWithPayload(parseInt(id), payload)
+      await persistProject()
 
       setSuccessMessage("Proyecto actualizado con éxito")
       setShowSuccessDialog(true)
@@ -1052,23 +1030,6 @@ export const ProjectForm = () => {
                     placeholder="Ej: PROJ-2024-001"
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
-                </div>
-
-                <div className="form-group full-width">
-                  <label htmlFor="descripcion">
-                    Descripción <span className="required">*</span>
-                  </label>
-                  <textarea
-                    id="descripcion"
-                    name="descripcion"
-                    value={formData.descripcion}
-                    onChange={handleChange}
-                    rows={4}
-                    required
-                    className="form-textarea"
-                    disabled={isViewMode || isCurrentUserResponsable}
-                  />
-                  {fieldErrors.descripcion && <span className="field-error">{fieldErrors.descripcion}</span>}
                 </div>
 
                 <div className="form-group full-width">
@@ -1651,24 +1612,109 @@ export const ProjectForm = () => {
                     <thead>
                       <tr>
                         <th>Nombre</th>
+                        <th>Apellidos</th>
+                        <th>CI</th>
+                        <th>Entidad</th>
+                        <th>Correo</th>
                         <th>Tipo</th>
                         {!isViewMode && <th>Acciones</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {members.map((member) => (
-                        <tr key={member.id}>
-                          <td>{`${member.usuario.nombre} ${member.usuario.apellidos}`}</td>
-                          <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
-                          {!isViewMode && (
+                      {members.map((member) => {
+                        const isEditing = editingMemberId === member.id
+                        const isExternal = member.usuario.esExterno
+
+                        return (
+                          <tr key={member.id} className={isEditing ? "member-row-editing" : undefined}>
                             <td>
-                              <Button size="sm" variant="secondary" onClick={() => handleRemoveMember(member.id)}>
-                                Eliminar
-                              </Button>
+                              {isEditing && isExternal ? (
+                                <Input
+                                  value={member.usuario.nombre}
+                                  onChange={(e) => handleMemberFieldChange(member.id, "nombre", e.target.value)}
+                                  aria-label="Nombre del integrante"
+                                />
+                              ) : (
+                                member.usuario.nombre
+                              )}
                             </td>
-                          )}
-                        </tr>
-                      ))}
+                            <td>
+                              {isEditing && isExternal ? (
+                                <Input
+                                  value={member.usuario.apellidos}
+                                  onChange={(e) => handleMemberFieldChange(member.id, "apellidos", e.target.value)}
+                                  aria-label="Apellidos del integrante"
+                                />
+                              ) : (
+                                member.usuario.apellidos
+                              )}
+                            </td>
+                            <td>
+                              {isEditing && isExternal ? (
+                                <Input
+                                  value={member.usuario.numeroIdentidad || ""}
+                                  onChange={(e) =>
+                                    handleMemberFieldChange(member.id, "numeroIdentidad", e.target.value)
+                                  }
+                                  aria-label="Carnet de identidad"
+                                />
+                              ) : (
+                                member.usuario.numeroIdentidad || "—"
+                              )}
+                            </td>
+                            <td>
+                              {isEditing && isExternal ? (
+                                <Input
+                                  value={member.usuario.entidad || ""}
+                                  onChange={(e) => handleMemberFieldChange(member.id, "entidad", e.target.value)}
+                                  aria-label="Entidad"
+                                />
+                              ) : (
+                                member.usuario.entidad || "—"
+                              )}
+                            </td>
+                            <td>
+                              {isEditing && isExternal ? (
+                                <Input
+                                  type="email"
+                                  value={member.usuario.correoElectronico}
+                                  onChange={(e) =>
+                                    handleMemberFieldChange(member.id, "correoElectronico", e.target.value)
+                                  }
+                                  aria-label="Correo electrónico"
+                                />
+                              ) : (
+                                member.usuario.correoElectronico || "—"
+                              )}
+                            </td>
+                            <td>{isExternal ? "Externo" : "CUJAE"}</td>
+                            {!isViewMode && (
+                              <td className="member-actions-cell">
+                                {isExternal && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() =>
+                                      setEditingMemberId(isEditing ? null : member.id)
+                                    }
+                                  >
+                                    {isEditing ? "Listo" : "Editar"}
+                                  </Button>
+                                )}
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleRemoveMember(member.id)}
+                                >
+                                  Eliminar
+                                </Button>
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

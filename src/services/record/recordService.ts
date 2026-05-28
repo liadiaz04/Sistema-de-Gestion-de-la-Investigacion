@@ -63,4 +63,40 @@ export const recordService = {
   async createThesis(data: ThesisPayload) {
     return apiClient.post('/theses/', data);
   },
+
+  async updateArticle(articleId: number, data: Partial<ArticlePayload>) {
+    return apiClient.put(`/articles/${articleId}`, data);
+  },
+
+  async updateBook(bookId: number, data: Partial<BookPayload>) {
+    return apiClient.put(`/books/${bookId}`, data);
+  },
+
+  async updateMonograph(monographId: number, data: Partial<MonographPayload>) {
+    return apiClient.put(`/monographs/${monographId}`, data);
+  },
+
+  async updateNorm(normId: number, data: Partial<NormPayload>) {
+    return apiClient.put(`/norms/${normId}`, data);
+  },
+
+  async updatePatent(patentId: number, data: Partial<PatentPayload>) {
+    return apiClient.put(`/patents/${patentId}`, data);
+  },
+
+  async updateSoftware(softwareId: number, data: Partial<SoftwarePayload>) {
+    return apiClient.put(`/softwares/${softwareId}`, data);
+  },
+
+  async updateEvent(encounterId: number, data: Partial<EventPayload>) {
+    return apiClient.put(`/encounters/${encounterId}`, data);
+  },
+
+  async updatePrize(prizeId: number, data: Partial<PrizePayload>) {
+    return apiClient.put(`/prizes/${prizeId}`, data);
+  },
+
+  async updateThesis(thesisId: number, data: Partial<ThesisPayload>) {
+    return apiClient.put(`/theses/${thesisId}`, data);
+  },
 };

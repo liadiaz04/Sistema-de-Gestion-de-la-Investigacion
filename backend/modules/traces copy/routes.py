@@ -35,6 +35,10 @@ def read_traces(
     start_date: Optional[datetime] = Query(None, description="Fecha de inicio (ISO 8601)"),
     end_date: Optional[datetime] = Query(None, description="Fecha de fin (ISO 8601)"),
     method: Optional[str] = Query(None, description="Filtrar por método exacto (GET, POST, etc.)"),
+    date_order: schemas.TraceDateOrder = Query(
+        schemas.TraceDateOrder.desc,
+        description="Orden por fecha: asc = cronológico (antiguo primero), desc = más reciente primero",
+    ),
     db: Session = Depends(get_db),
 ):
     return crud.get_traces(
@@ -46,6 +50,7 @@ def read_traces(
         start_date=start_date,
         end_date=end_date,
         method=method,
+        date_order=date_order,
     )
 
 

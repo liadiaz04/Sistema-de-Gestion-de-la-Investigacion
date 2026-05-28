@@ -1,7 +1,13 @@
 # modules/trace/schemas.py
+from enum import Enum
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
+
+
+class TraceDateOrder(str, Enum):
+    asc = "asc"   # cronológico: más antiguo primero
+    desc = "desc"  # más reciente primero
 
 # Resumen del integrante
 class IntegrantSummary(BaseModel):

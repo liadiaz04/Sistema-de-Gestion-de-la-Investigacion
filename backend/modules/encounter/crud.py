@@ -152,9 +152,9 @@ def update_encounter(db: Session, encounter_id: int, encounter_update: schemas.E
             raise ValueError("One or more author IDs do not exist")
         for aid in aids:
             db.execute(
-                models.EncounterAuthor.__table__.insert().values(
+                models.encounters_authors.insert().values(
                     id_encounter=encounter_id,
-                    id_author=aid
+                    id_author=aid,
                 )
             )
 

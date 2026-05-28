@@ -14,17 +14,31 @@ import type { Registro } from "../types/recordList/Registros";
 import { RecordListService } from "../services/recordList/recordListService";
 import { useAuthStore } from "../stores/authStore";
 import { usePermissions } from "../hooks/usePermissions";
+import { zenodoService } from "../services/zenodoService";
+import { ZenodoPublishModal } from "../components/zenodo/ZenodoPublishModal";
+import {
+  buildPublicationKey,
+  isRecordPublishedInZenodo,
+  mapRecordTypeToEntityType,
+} from "../utils/zenodoEntityMapper";
+import type { RecordType } from "../types";
+import type { ZenodoPublishTarget } from "../types/zenodo";
+import "../components/zenodo/ZenodoPublishModal.css";
 import "./GroupList.css";
 
 const RecordList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { canCreateRecords, canModifyRecord, canDeleteRecord, isIntegrant } = usePermissions();
+  const { canCreateRecords, canModifyRecord, canDeleteRecord, isIntegrant, canPublishToZenodo } = usePermissions();
   const [searchTerm, setSearchTerm] = useState("");
   const [records, setRecords] = useState<Registro[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recordFilter, setRecordFilter] = useState<"all" | "mine">("all");
+  const [publishedZenodoKeys, setPublishedZenodoKeys] = useState<Set<string>>(new Set());
+  const [zenodoStatusLoaded, setZenodoStatusLoaded] = useState(false);
+  const [showZenodoModal, setShowZenodoModal] = useState(false);
+  const [zenodoTarget, setZenodoTarget] = useState<ZenodoPublishTarget | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ 
     show: boolean; 
     recordId: string | null; 
@@ -73,6 +87,26 @@ const RecordList: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [recordFilter, userId, searchTerm]);
 
+  useEffect(() => {
+    const loadZenodoPublications = async () => {
+      try {
+        const publications = await zenodoService.listPublications("published");
+        const keys = new Set(
+          publications.map((publication) =>
+            buildPublicationKey(publication.entity_type, publication.entity_id),
+          ),
+        );
+        setPublishedZenodoKeys(keys);
+        setZenodoStatusLoaded(true);
+      } catch (err) {
+        console.error("Error cargando publicaciones Zenodo:", err);
+        setZenodoStatusLoaded(false);
+      }
+    };
+
+    loadZenodoPublications();
+  }, [records]);
+
   const isAuthor = (record: Registro): boolean => {
     if (!userId) return false;
     return record.autores.some((autor) => autor.id_integrant === userId);
@@ -100,7 +134,6 @@ const RecordList: React.FC = () => {
   const handleDelete = async (recordId: string, recordType: string) => {
     try {
       await RecordListService.deleteRecord(recordId, recordType);
-      // Recargar la lista después de eliminar (mantener los filtros actuales)
       const searchParam = searchTerm.trim() || undefined;
       if (recordFilter === "mine" && userId) {
         const updatedRecords = await RecordListService.fetchRecordsByAuthor(userId, searchParam);
@@ -116,60 +149,118 @@ const RecordList: React.FC = () => {
     }
   };
 
+  const handleOpenZenodoPublish = (record: Registro) => {
+    const entityId = parseInt(record.id, 10);
+    if (Number.isNaN(entityId)) return;
+
+    setZenodoTarget({
+      entityType: mapRecordTypeToEntityType(record.tipo as RecordType),
+      entityId,
+      recordType: record.tipo as RecordType,
+      title: record.titulo,
+    });
+    setShowZenodoModal(true);
+  };
+
+  const handleZenodoPublished = () => {
+    if (!zenodoTarget) return;
+    setPublishedZenodoKeys((prev) => {
+      const next = new Set(prev);
+      next.add(buildPublicationKey(zenodoTarget.entityType, zenodoTarget.entityId));
+      return next;
+    });
+    setZenodoStatusLoaded(true);
+  };
+
+  const renderZenodoStatus = (record: Registro) => {
+    if (!zenodoStatusLoaded) {
+      return <span className="badge-zenodo-unknown">Sin datos</span>;
+    }
+
+    const isPublished = isRecordPublishedInZenodo(record.tipo as RecordType, record.id, publishedZenodoKeys);
+
+    if (isPublished) {
+      return <span className="badge-zenodo-published">Publicado</span>;
+    }
+
+    return <span className="badge-zenodo-unpublished">No publicado</span>;
+  };
+
   const columns = [
-    { 
-      key: "titulo", 
-      header: "Título", 
-      render: (r: Registro) => r.titulo 
+    {
+      key: "titulo",
+      header: "Título",
+      render: (r: Registro) => r.titulo,
     },
     {
       key: "tipo",
       header: "Tipo",
-      render: (r: Registro) => (
-        <span className="badge badge-primary">{r.tipoFormateado}</span>
-      ),
+      render: (r: Registro) => <span className="badge badge-primary">{r.tipoFormateado}</span>,
     },
     {
       key: "autores",
       header: "Autores",
       render: (r: Registro) => r.autoresTexto,
     },
-    { 
-      key: "año", 
-      header: "Año", 
-      render: (r: Registro) => r.year_only 
+    {
+      key: "año",
+      header: "Año",
+      render: (r: Registro) => r.year_only,
+    },
+    {
+      key: "zenodo",
+      header: "Zenodo",
+      render: (record: Registro) => renderZenodoStatus(record),
     },
     {
       key: "actions",
       header: "Opciones",
       render: (record: Registro) => {
         const canEditRecord = canEdit(record);
-        const canDeleteRecord = canDelete(record);
-        
-        // INTEGRANT solo ve opciones si es autor, CONSEJO y ADMIN siempre ven opciones
-        if (canEditRecord || canDeleteRecord) {
-          return (
-            <OptionsMenu
-              onView={() => navigateWithRecord(record)}
-              onEdit={
-                canEditRecord
-                  ? () => navigateWithRecord(record, "edit")
-                  : undefined
-              }
-              onDelete={
-                canDeleteRecord
-                  ? () =>
-                      setDeleteConfirm({
-                        show: true,
-                        recordId: record.id,
-                        recordType: record.tipo,
-                      })
-                  : undefined
-              }
-            />
-          );
+        const canDeleteRecordAction = canDelete(record);
+        const isPublished = zenodoStatusLoaded
+          ? isRecordPublishedInZenodo(record.tipo as RecordType, record.id, publishedZenodoKeys)
+          : false;
+        const canPublishRecord = canPublishToZenodo() && !isPublished;
+
+        const menuOptions: Array<{ label: string; onClick: () => void; className?: string }> = [
+          {
+            label: "Ver detalles",
+            onClick: () => navigateWithRecord(record),
+          },
+        ];
+
+        if (canEditRecord) {
+          menuOptions.push({
+            label: "Modificar",
+            onClick: () => navigateWithRecord(record, "edit"),
+          });
         }
-        
+
+        if (canPublishRecord) {
+          menuOptions.push({
+            label: "Publicar en Zenodo",
+            onClick: () => handleOpenZenodoPublish(record),
+          });
+        }
+
+        if (canDeleteRecordAction) {
+          menuOptions.push({
+            label: "Eliminar",
+            onClick: () =>
+              setDeleteConfirm({
+                show: true,
+                recordId: record.id,
+                recordType: record.tipo,
+              }),
+            className: "delete",
+          });
+        }
+
+        if (menuOptions.length > 1 || canPublishRecord) {
+          return <OptionsMenu options={menuOptions} />;
+        }
+
         return (
           <Button variant="outline" onClick={() => navigateWithRecord(record)}>
             Ver detalles
@@ -265,6 +356,16 @@ const RecordList: React.FC = () => {
           onCancel={() => setDeleteConfirm({ show: false, recordId: null, recordType: null })}
         />
       )}
+
+      <ZenodoPublishModal
+        isOpen={showZenodoModal}
+        target={zenodoTarget}
+        onClose={() => {
+          setShowZenodoModal(false);
+          setZenodoTarget(null);
+        }}
+        onPublished={handleZenodoPublished}
+      />
     </div>
   );
 };

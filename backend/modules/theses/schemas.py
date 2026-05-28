@@ -44,6 +44,7 @@ class ThesisBase(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: bool = False
 
 class ThesisCreate(ThesisBase):
     author_ids: List[Union[int, NewAuthor]]
@@ -62,6 +63,7 @@ class ThesisUpdate(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: Optional[bool] = None
     author_ids: Optional[List[int]] = None
     tutor_ids: Optional[List[int]] = None
 

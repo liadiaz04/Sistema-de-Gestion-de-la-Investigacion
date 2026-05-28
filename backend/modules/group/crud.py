@@ -198,9 +198,9 @@ def update_group(db: Session, group_id: int, group_update: schemas.GroupUpdate):
 
     # --- Actualizar campos del grupo ---
     for key, value in data.items():
-        if key in ("member_ids", "member_update_ids"):
-            continue
-        setattr(db_group, key, value)
+        # Saltamos 'member_ids' porque ya lo manejamos
+        if key != "member_ids":
+            setattr(db_group, key, value)
 
     db.commit()
     db.refresh(db_group)

@@ -95,7 +95,7 @@ const mapProjectToIProject = (project: Project): IProject => {
   return {
     id: project.id_project.toString(),
     nombre: project.title,
-    descripcion: project.description || project.cientific_problem || '',
+    descripcion: project.cientific_problem || '',
     responsable,
     tematica,
     programa,

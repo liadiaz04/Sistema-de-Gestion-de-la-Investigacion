@@ -18,12 +18,18 @@ import "./UserManagement.css"
 // Backend roles: ADMIN (id:1), USUARIO (id:2), CONSEJO (id:3), AUTOR (id:4)
 const mapRoleNameToUserRole = (role: { id_role: number; role_name: string }): UserRole => {
   const roleName = role.role_name.toUpperCase();
+  const normalized = role.role_name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
   
   // Mapear según los IDs primero (más confiable)
   if (role.id_role === 1 || roleName === 'ADMIN') return 'admin';
   if (role.id_role === 2 || roleName === 'USUARIO') return 'integrant';
   if (role.id_role === 3 || roleName === 'CONSEJO') return 'consejo';
   if (role.id_role === 4 || roleName === 'AUTOR') return 'autor_registro';
+  if (roleName === 'PUBLICADOR') return 'publicador';
   
   // Mapeo por nombre para roles adicionales
   const roleMap: Record<string, UserRole> = {
@@ -33,10 +39,11 @@ const mapRoleNameToUserRole = (role: { id_role: number; role_name: string }): Us
     'integrante_grupo': 'integrante_grupo',
     'consejo_cientifico': 'consejo',
     'autor_registro': 'autor_registro',
+    'publicador': 'publicador',
     'usuario': 'usuario',
   }
   
-  return roleMap[role.role_name.toLowerCase()] || 'usuario'
+  return roleMap[normalized] || 'usuario'
 }
 
 // Mapeo de UserRole a etiqueta legible
@@ -50,6 +57,7 @@ const roleLabels: Record<UserRole, string> = {
   integrante_grupo: "Integrante de Grupo",
   consejo_cientifico: "Consejo Científico",
   autor_registro: "Autor de Registro",
+  publicador: "Publicador",
   usuario: "Usuario",
 }
 
@@ -64,7 +72,6 @@ export const UserManagement = () => {
   const [newRole, setNewRole] = useState<UserRole>("usuario")
   const [showViewRolesModal, setShowViewRolesModal] = useState(false)
   const [showAddRoleModal, setShowAddRoleModal] = useState(false)
-  const [showRemoveRoleModal, setShowRemoveRoleModal] = useState(false)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [roleToRemove, setRoleToRemove] = useState<{ userId: string; role: UserRole } | null>(null)
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null)
@@ -122,30 +129,57 @@ export const UserManagement = () => {
   }
 
   const handleModifyRole = async () => {
-    if (!currentUser || !selectedUser) return
+    if (!selectedUser) {
+      showNotification("No hay usuario seleccionado", "error")
+      return
+    }
+    const addableRoles = getAddableRoles(selectedUser)
+    console.log("[UserManagement] Intento agregar rol", {
+      selectedUserId: selectedUser.id,
+      selectedUserRoles: selectedUser.roles,
+      availableRolesMapped: roles,
+      addableRoles,
+      newRole,
+    })
+    if (addableRoles.length === 0) {
+      showNotification("No hay roles disponibles para agregar a este usuario", "error")
+      return
+    }
+
+    const roleToAdd = addableRoles.includes(newRole) ? newRole : addableRoles[0]
     try {
-      await userService.modifyUserRole(selectedUser.id, newRole, currentUser)
+      await userService.modifyUserRole(selectedUser.id, roleToAdd, currentUser ?? ({} as IUser))
       await loadUsers()
-      setSelectedUser(null)
-      setShowAddRoleModal(false)
-      setNewRole("usuario")
-      showNotification("Rol modificado exitosamente", "success")
+      const updatedUser = await userService.getUserById(selectedUser.id)
+      setSelectedUser(updatedUser)
+      const addableRoles = getAddableRoles(updatedUser)
+      setNewRole(addableRoles[0] ?? "usuario")
+      showNotification("Rol agregado exitosamente", "success")
     } catch (error) {
       console.error("Error modifying role:", error)
-      showNotification("Error al modificar el rol", "error")
+      showNotification("Error al agregar el rol", "error")
     }
   }
 
   const handleRemoveRole = async () => {
-    if (!currentUser || !roleToRemove) return
+    if (!roleToRemove) {
+      showNotification("No hay rol seleccionado para eliminar", "error")
+      return
+    }
     try {
-      const updatedUser = await userService.removeUserRole(roleToRemove.userId, roleToRemove.role, currentUser)
+      const updatedUser = await userService.removeUserRole(
+        roleToRemove.userId,
+        roleToRemove.role,
+        currentUser ?? ({} as IUser),
+      )
       await loadUsers()
       setShowRemoveConfirm(false)
       setRoleToRemove(null)
 
       if (selectedUser && selectedUser.id === updatedUser.id) {
         setSelectedUser(updatedUser)
+        const addableRoles = getAddableRoles(updatedUser)
+        setNewRole(addableRoles[0] ?? "usuario")
       }
 
       showNotification("Rol eliminado exitosamente", "success")
@@ -167,12 +201,9 @@ export const UserManagement = () => {
 
   const initiateModifyRole = (user: IUser) => {
     setSelectedUser(user)
+    const addableRoles = getAddableRoles(user)
+    setNewRole(addableRoles[0] ?? "usuario")
     setShowAddRoleModal(true)
-  }
-
-  const initiateRemoveRoleModal = (user: IUser) => {
-    setSelectedUser(user)
-    setShowRemoveRoleModal(true)
   }
 
   const initiateRemoveRole = (userId: string, role: UserRole) => {
@@ -186,6 +217,10 @@ export const UserManagement = () => {
 
   const getInitials = (nombre: string, apellidos: string) => {
     return `${nombre.charAt(0)}${apellidos.charAt(0)}`.toUpperCase()
+  }
+
+  const getAddableRoles = (user: IUser): UserRole[] => {
+    return roles.filter((role) => role !== "admin" && role !== "usuario" && !user.roles.includes(role))
   }
 
   const getPrimaryRole = (roles: UserRole[]): UserRole => {
@@ -318,12 +353,8 @@ export const UserManagement = () => {
                             onClick: () => initiateViewRoles(user),
                           },
                           {
-                            label: "Modificar rol",
+                            label: "Modificar roles",
                             onClick: () => initiateModifyRole(user),
-                          },
-                          {
-                            label: "Eliminar rol",
-                            onClick: () => initiateRemoveRoleModal(user),
                           },
                         ]}
                       />
@@ -378,7 +409,7 @@ export const UserManagement = () => {
         <div className="modal-overlay" onClick={() => setShowAddRoleModal(false)}>
           <div className="modal-content-clean" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Modificar Rol</h2>
+              <h2>Modificar Roles</h2>
               <button className="modal-close" onClick={() => setShowAddRoleModal(false)}>
                 ×
               </button>
@@ -390,21 +421,49 @@ export const UserManagement = () => {
                 </strong>
               </p>
               <p className="helper-text" style={{ marginTop: '0.5rem', marginBottom: '1rem', color: '#666' }}>
-                El rol seleccionado reemplazará todos los roles actuales del usuario.
+                Puede eliminar roles actuales y agregar nuevos. El rol admin no se puede otorgar por esta vía.
               </p>
 
+              <div className="current-roles">
+                <label>Roles actuales</label>
+                <div className="roles-list">
+                  {selectedUser.roles.length > 0 ? (
+                    selectedUser.roles.map((role) => (
+                      <div key={role} className="role-item">
+                        <span>{roleLabels[role] || role}</span>
+                        <button
+                          type="button"
+                          className="remove-role-btn"
+                          onClick={() => initiateRemoveRole(selectedUser.id, role)}
+                          title={`Eliminar ${roleLabels[role] || role}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="helper-text">El usuario no tiene roles asignados</p>
+                  )}
+                </div>
+              </div>
+
               <div className="form-group">
-                <label>Seleccionar Nuevo Rol</label>
+                <label>Agregar rol</label>
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value as UserRole)}
                   className="form-select"
+                  disabled={getAddableRoles(selectedUser).length === 0}
                 >
-                  {roles.map((role) => (
-                    <option key={role} value={role}>
-                      {roleLabels[role] || role}
-                    </option>
-                  ))}
+                  {getAddableRoles(selectedUser).length === 0 ? (
+                    <option value="usuario">No hay roles disponibles para agregar</option>
+                  ) : (
+                    getAddableRoles(selectedUser).map((role) => (
+                      <option key={role} value={role}>
+                        {roleLabels[role] || role}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
@@ -412,48 +471,8 @@ export const UserManagement = () => {
               <Button variant="secondary" onClick={() => setShowAddRoleModal(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleModifyRole}>Modificar</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showRemoveRoleModal && selectedUser && (
-        <div className="modal-overlay" onClick={() => setShowRemoveRoleModal(false)}>
-          <div className="modal-content-clean" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Eliminar Rol</h2>
-              <button className="modal-close" onClick={() => setShowRemoveRoleModal(false)}>
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="user-info-text">
-                <strong>
-                  {selectedUser.nombre} {selectedUser.apellidos}
-                </strong>
-              </p>
-
-              <div className="roles-display">
-                <p className="helper-text">Seleccione el rol que desea eliminar:</p>
-                {selectedUser.roles.map((role) => (
-                  <button
-                    key={role}
-                    className="role-badge-clickable"
-                    onClick={() => {
-                      setShowRemoveRoleModal(false)
-                      initiateRemoveRole(selectedUser.id, role)
-                    }}
-                  >
-                    {roleLabels[role] || role}
-                    <span className="remove-icon">×</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="modal-footer">
-              <Button variant="secondary" onClick={() => setShowRemoveRoleModal(false)}>
-                Cancelar
+              <Button onClick={handleModifyRole} disabled={getAddableRoles(selectedUser).length === 0}>
+                Agregar
               </Button>
             </div>
           </div>

@@ -4,6 +4,21 @@
   margin: 0 auto;
 }
 
+.members-table table {
+  width: 100%;
+}
+
+.member-row-editing td {
+  vertical-align: middle;
+}
+
+.member-actions-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .form-header {
   margin-bottom: 2rem;
 }

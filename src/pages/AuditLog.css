@@ -208,13 +208,52 @@
   font-size: 0.875rem;
 }
 
-.loading {
+.loading,
+.audit-log-status {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 400px;
+  gap: 1rem;
+  min-height: 120px;
   font-size: 1.125rem;
   color: var(--text-secondary);
+}
+
+.audit-log-status--more {
+  min-height: 64px;
+  font-size: 0.95rem;
+}
+
+.audit-log-sentinel {
+  height: 1px;
+  width: 100%;
+}
+
+.audit-log-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0 0.5rem;
+}
+
+.audit-log-end {
+  text-align: center;
+  padding: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.audit-log-empty {
+  padding: 2rem;
+  text-align: center;
+}
+
+.audit-log-error {
+  padding: 1rem;
+  margin: 1rem;
+  background-color: #fee;
+  color: #c33;
+  border-radius: 4px;
 }
 
 .audit-table tbody td[colspan] {

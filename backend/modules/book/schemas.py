@@ -38,6 +38,7 @@ class BookBase(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: bool = False
 
 class BookCreate(BookBase):
     author_ids: List[Union[int, NewAuthor]]
@@ -62,6 +63,7 @@ class BookUpdate(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: Optional[bool] = None
     author_ids: Optional[List[int]] = None  # Para reemplazar autores
 
 class Book(BookBase):

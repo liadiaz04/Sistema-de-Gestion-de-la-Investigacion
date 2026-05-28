@@ -45,13 +45,19 @@ class ProjectMember(BaseModel):
 
 class NewIntegrant(BaseModel):
     name: str
-    work_center: str
-    email: str
-    id_country: int
+    work_center: Optional[str] = None
+    email: Optional[str] = None
+    identity: Optional[str] = None
+    id_country: Optional[int] = None
 
 class ProjectBase(BaseModel):
     title: str
     code: str
+    description: Optional[str] = None
+    objectives: Optional[str] = None
+    tasks: Optional[str] = None
+    scientific_details: Optional[str] = None
+    other_data: Optional[str] = None
     id_responsible: Optional[int] = None
     thematic: Optional[str] = None
     id_project_type: Optional[int] = None
@@ -97,6 +103,11 @@ class ProjectDelete(BaseModel):
 class ProjectUpdate(BaseModel):
     title: Optional[str] = None
     code: Optional[str] = None
+    description: Optional[str] = None
+    objectives: Optional[str] = None
+    tasks: Optional[str] = None
+    scientific_details: Optional[str] = None
+    other_data: Optional[str] = None
     id_responsible: Optional[int] = None
     thematic: Optional[str] = None
     id_project_type: Optional[int] = None
@@ -132,11 +143,8 @@ class ProjectUpdate(BaseModel):
     is_national: Optional[bool] = None
     is_territorial: Optional[bool] = None
     is_cujae: Optional[bool] = None
-    member_ids: Optional[List[int]] = []
-    keywords: str
-    members_ids: List[int] = []
-    # Nota: Para simplificar, no actualizamos miembros/keywords en este esquema.
-    # Si lo necesitas, se puede agregar.
+    member_ids: Optional[List[Union[int, NewIntegrant]]] = None
+    keywords: Optional[str] = None
 
 class Project(ProjectBase):
     id_project: int

@@ -27,6 +27,7 @@ class Book(Base):
     id_project = Column(Integer)
     only_date = Column(Date)
     id_group = Column(Integer)
+    publicated = Column(Boolean, default=False, nullable=False)
 
     # Relación con país (opcional, pero útil)
     country = relationship("Country", foreign_keys=[id_country])

@@ -1,7 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 import type { ApiError } from '../../types/api/auth';
 import { logHttpRequest, logHttpResponseError, logHttpResponseOk } from '../../utils/httpConsoleLogger';
-import { print } from '../../utils/print';
 
 /** Mensaje legible desde respuestas FastAPI (`detail`) u otros formatos. */
 export const getMessageFromResponseData = (data: unknown): string => {
@@ -22,7 +21,6 @@ export const getMessageFromResponseData = (data: unknown): string => {
   return 'Error en la petición';
 };
 
-// Función para registrar trazas de forma asíncrona sin bloquear
 const registerTrace = async (traceData: {
   id_integrant: number;
   method: string | null;
@@ -32,16 +30,13 @@ const registerTrace = async (traceData: {
   response: number | null;
 }) => {
   try {
-    // Importar dinámicamente para evitar dependencia circular
     const { traceService } = await import('../traceService');
     await traceService.createTrace(traceData);
-  } catch (error) {
-    // Silenciar errores de trazas para no interrumpir el flujo principal
-    print('Error registrando traza:', error);
+  } catch {
+    // Silenciar errores de trazas
   }
 };
 
-// Configuración base del cliente HTTP
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
   headers: {
@@ -49,111 +44,75 @@ export const apiClient = axios.create({
   },
 });
 
-// Interceptor para agregar el token de autenticación
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('auth_token');
-    
+
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
     logHttpRequest('API principal', config);
-
     return config;
   },
   (error) => {
-    print('❌ API REQUEST ERROR:', error);
+    console.error('[API principal] Error preparando petición:', error);
     return Promise.reject(error);
-  }
+  },
 );
 
-// Interceptor para manejar respuestas y errores
 apiClient.interceptors.response.use(
   async (response: AxiosResponse) => {
     logHttpResponseOk('API principal', response);
 
-    // Registrar traza de forma asíncrona (no bloquear el flujo)
     const userId = localStorage.getItem('user_id');
-    if (userId && response.config.url) {
-      // No registrar trazas de las propias peticiones de trazas para evitar loops
-      if (!response.config.url.includes('/traces/')) {
-        const method = response.config.method?.toUpperCase() || null;
-        const route = response.config.url || null;
-        const date = new Date().toISOString();
-        const message = `Request successful: ${method} ${route}`;
-
-        // Registrar de forma asíncrona sin esperar
-        registerTrace({
-          id_integrant: parseInt(userId),
-          method,
-          date,
-          route,
-          message,
-          response: response.status,
-        }).catch(() => {
-          // Error ya manejado en registerTrace
-        });
-      }
+    if (userId && response.config.url && !response.config.url.includes('/traces/')) {
+      registerTrace({
+        id_integrant: parseInt(userId),
+        method: response.config.method?.toUpperCase() || null,
+        date: new Date().toISOString(),
+        route: response.config.url || null,
+        message: `Request successful: ${response.config.method} ${response.config.url}`,
+        response: response.status,
+      }).catch(() => undefined);
     }
-    
+
     return response;
   },
   async (error: AxiosError<ApiError>) => {
     logHttpResponseError('API principal', error);
 
-    // Registrar traza del error de forma asíncrona (no bloquear el flujo)
     const userId = localStorage.getItem('user_id');
-    if (userId && error.config?.url) {
-      // No registrar trazas de las propias peticiones de trazas para evitar loops
-      if (!error.config.url.includes('/traces/')) {
-        const method = error.config.method?.toUpperCase() || null;
-        const route = error.config.url || null;
-        const date = new Date().toISOString();
-        const status = error.response?.status || null;
-        const message = `Request failed: ${method} ${route} - Status: ${status || 'Network Error'}`;
-
-        // Registrar de forma asíncrona sin esperar
-        registerTrace({
-          id_integrant: parseInt(userId),
-          method,
-          date,
-          route,
-          message,
-          response: typeof status === 'number' ? status : null,
-        }).catch(() => {
-          // Error ya manejado en registerTrace
-        });
-      }
+    if (userId && error.config?.url && !error.config.url.includes('/traces/')) {
+      registerTrace({
+        id_integrant: parseInt(userId),
+        method: error.config.method?.toUpperCase() || null,
+        date: new Date().toISOString(),
+        route: error.config.url || null,
+        message: `Request failed: ${error.config.method} ${error.config.url} - Status: ${error.response?.status ?? 'Network Error'}`,
+        response: typeof error.response?.status === 'number' ? error.response.status : null,
+      }).catch(() => undefined);
     }
-    
-    // Manejo centralizado de errores
+
     if (error.response) {
       const { status, data } = error.response;
-      
-      // Si el token es inválido o expiró, redirigir al login
+
       if (status === 401) {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
       }
-      
-      // Lanzar el mensaje de error del servidor
-      const message = getMessageFromResponseData(data);
-      throw new Error(message);
-    } else if (error.request) {
-      // Error de red
-      throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.');
-    } else {
-      // Error desconocido
-      throw new Error('Ocurrió un error inesperado');
+
+      throw new Error(getMessageFromResponseData(data));
     }
-  }
+
+    if (error.request) {
+      throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.');
+    }
+
+    throw new Error('Ocurrió un error inesperado');
+  },
 );
 
 if (import.meta.env.DEV) {
-  print(
-    "%c[HTTP]%c Cliente axios listo: peticiones/respuestas visibles aquí (print → consola).",
-    "font-weight:bold;color:#06c;",
-    "",
-  );
+  console.info('[HTTP] Interceptores API principal activos (navegador + Debug Console de Cursor vía Vite)');
 }

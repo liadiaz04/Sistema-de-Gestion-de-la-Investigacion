@@ -8,17 +8,60 @@ type Message = {
   content: string
 }
 
+const ASSISTANT_CHAT_STORAGE_KEY = "sgi_assistant_chat_history_v1"
+
+const getDefaultMessages = (): Message[] => [
+  {
+    role: "assistant",
+    content: "Hola, soy tu asistente virtual. ¿En qué puedo ayudarte hoy?",
+  },
+]
+
+const parseStoredMessages = (raw: string | null): Message[] | null => {
+  if (raw == null || raw === "") return null
+  try {
+    const data = JSON.parse(raw) as unknown
+    if (!Array.isArray(data) || data.length === 0) return null
+    const next: Message[] = []
+    for (const item of data) {
+      if (item == null || typeof item !== "object") continue
+      const m = item as Partial<Message>
+      if (
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.content === "string"
+      ) {
+        next.push({ role: m.role, content: m.content })
+      }
+    }
+    return next.length > 0 ? next : null
+  } catch {
+    return null
+  }
+}
+
+const readInitialMessages = (): Message[] => {
+  if (typeof window === "undefined") return getDefaultMessages()
+  try {
+    return parseStoredMessages(localStorage.getItem(ASSISTANT_CHAT_STORAGE_KEY)) ?? getDefaultMessages()
+  } catch {
+    return getDefaultMessages()
+  }
+}
+
 export const AssistantChat: React.FC = () => {
-  const [messages, setMessages] = React.useState<Message[]>([
-    {
-      role: "assistant",
-      content: "Hola, soy tu asistente virtual. ¿En qué puedo ayudarte hoy?",
-    },
-  ])
+  const [messages, setMessages] = React.useState<Message[]>(readInitialMessages)
   const [input, setInput] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const endRef = React.useRef<HTMLDivElement | null>(null)
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(ASSISTANT_CHAT_STORAGE_KEY, JSON.stringify(messages))
+    } catch {
+      /* límite de almacenamiento u origen restringido */
+    }
+  }, [messages])
 
   const scrollToBottom = () => {
     endRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -58,12 +101,41 @@ export const AssistantChat: React.FC = () => {
     }
   }
 
+  const handleResetChat = () => {
+    if (
+      !window.confirm(
+        "¿Reiniciar la conversación? Se borrará el historial guardado en este navegador y empezarás de nuevo.",
+      )
+    ) {
+      return
+    }
+    const fresh = getDefaultMessages()
+    setMessages(fresh)
+    setError(null)
+    setInput("")
+    try {
+      localStorage.setItem(ASSISTANT_CHAT_STORAGE_KEY, JSON.stringify(fresh))
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <div className="assistant-chat-page">
       <div className="assistant-chat-card">
         <div className="assistant-chat-header">
-          <h2>Asistente Virtual</h2>
-          <p>Haz preguntas sobre los datos; el asistente consultará la base y te responderá.</p>
+          <div className="assistant-chat-header-text">
+            <h2>Asistente Virtual</h2>
+            <p>Haz preguntas sobre los datos; el asistente consultará la base y te responderá.</p>
+          </div>
+          <button
+            type="button"
+            className="assistant-chat-reset"
+            onClick={handleResetChat}
+            aria-label="Reiniciar conversación y borrar el historial guardado"
+          >
+            Reiniciar conversación
+          </button>
         </div>
 
         <div className="assistant-chat-body" role="log" aria-live="polite" aria-relevant="additions">

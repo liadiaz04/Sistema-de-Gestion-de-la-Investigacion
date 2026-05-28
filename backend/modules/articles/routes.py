@@ -29,15 +29,6 @@ def read_articles(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
-@router.get("/count/faculty/{faculty_id}", response_model=schemas.ArticleCountByFaculty)
-def get_article_count_by_faculty_endpoint(
-    faculty_id: int,
-    db: Session = Depends(get_db)
-):
-    return crud.get_article_count_by_faculty(db, faculty_id)
-
-
 @router.get("/{article_id}", response_model=schemas.Article)
 def read_article(article_id: int, db: Session = Depends(get_db)):
     db_article = crud.get_article(db, article_id)
@@ -75,3 +66,9 @@ def delete_article(article_id: int, db: Session = Depends(get_db)):
     if db_article is None:
         raise HTTPException(status_code=404, detail="Article not found")
     return db_article
+@router.get("/count/faculty/{faculty_id}", response_model=schemas.ArticleCountByFaculty)
+def get_article_count_by_faculty_endpoint(
+    faculty_id: int,
+    db: Session = Depends(get_db)
+):
+    return crud.get_article_count_by_faculty(db, faculty_id)    

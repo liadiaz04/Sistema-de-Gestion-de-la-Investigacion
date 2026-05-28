@@ -40,6 +40,7 @@ class SoftwareBase(BaseModel):
     only_date: Optional[date] = None
     is_multimedia: bool = False
     id_group: Optional[int] = None
+    publicated: bool = False
 
 class SoftwareCreate(SoftwareBase):
     author_ids: List[Union[int, NewAuthor]]
@@ -62,6 +63,7 @@ class SoftwareUpdate(BaseModel):
     only_date: Optional[date] = None
     is_multimedia: Optional[bool] = None
     id_group: Optional[int] = None
+    publicated: Optional[bool] = None
     author_ids: Optional[List[int]] = None
 
 class Software(SoftwareBase):

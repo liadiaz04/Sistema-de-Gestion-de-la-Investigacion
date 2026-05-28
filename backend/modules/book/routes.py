@@ -29,22 +29,7 @@ def read_books(
         return crud.get_books(db, skip=skip, limit=limit, author_id=author_id, search=search)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/count/faculty/{faculty_id}", response_model=schemas.BookCountByFaculty)
-def get_book_count_by_faculty_endpoint(
-    faculty_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Obtiene el total de libros y la cantidad asociada a una facultad (vía autores).
-    """
-    try:
-        return crud.get_book_count_by_faculty(db, faculty_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al contar libros: {str(e)}")
-
-
+    
 @router.get("/{book_id}", response_model=schemas.Book)
 def read_book(book_id: int, db: Session = Depends(get_db)):
     db_book = crud.get_book(db, book_id)
@@ -81,3 +66,17 @@ def delete_book(book_id: int, db: Session = Depends(get_db)):
     if db_book is None:
         raise HTTPException(status_code=404, detail="Book not found")
     return db_book
+
+
+@router.get("/count/faculty/{faculty_id}", response_model=schemas.BookCountByFaculty)
+def get_book_count_by_faculty_endpoint(
+    faculty_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene el total de libros y la cantidad asociada a una facultad (vía autores).
+    """
+    try:
+        return crud.get_book_count_by_faculty(db, faculty_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al contar libros: {str(e)}")

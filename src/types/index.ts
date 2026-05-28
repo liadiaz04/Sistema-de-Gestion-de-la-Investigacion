@@ -39,6 +39,7 @@ export type UserRole =
   | "integrante_grupo"
   | "consejo_cientifico"
   | "autor_registro"
+  | "publicador"
   | "usuario"
 
 export interface IUser {

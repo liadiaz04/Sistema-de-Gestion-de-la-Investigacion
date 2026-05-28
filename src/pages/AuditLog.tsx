@@ -1,8 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import type { IAuditLog, IUser } from "../types"
-import { traceService, type Trace } from "../services/traceService"
+import {
+  traceService,
+  TRACE_PAGE_SIZE,
+  mapTipoAccionToHttpMethod,
+  type Trace,
+  type TraceFilters,
+} from "../services/traceService"
 import { integrantService } from "../services/integrantService"
 import type { IntegrantWithRoles } from "../types/api/integrant"
 import { Card } from "../components/common/Card"
@@ -12,115 +18,112 @@ import { Table } from "../components/common/Table"
 import { Loader2 } from "lucide-react"
 import "./AuditLog.css"
 
-// Función para mapear IntegrantWithRoles a IUser
 const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
-  const nameParts = integrant.name.split(' ')
-  const nombre = nameParts[0] || ''
-  const apellidos = nameParts.slice(1).join(' ') || ''
+  const nameParts = integrant.name.split(" ")
+  const nombre = nameParts[0] || ""
+  const apellidos = nameParts.slice(1).join(" ") || ""
 
   return {
     id: integrant.id_integrant.toString(),
     nombre,
     apellidos,
-    numeroIdentidad: integrant.identity || '',
-    correoElectronico: integrant.email || '',
-    nombreUsuario: integrant.email?.split('@')[0] || '',
-    roles: integrant.roles?.map(r => {
-      const roleName = r.role_name.toUpperCase()
-      if (roleName === 'ADMIN' || r.id_role === 1) return 'admin'
-      if (roleName === 'INTEGRANT' || r.id_role === 2) return 'integrant'
-      if (roleName === 'CONSEJO' || r.id_role === 3) return 'consejo'
-      return 'usuario'
-    }) || [],
+    numeroIdentidad: integrant.identity || "",
+    correoElectronico: integrant.email || "",
+    nombreUsuario: integrant.email?.split("@")[0] || "",
+    roles:
+      integrant.roles?.map((r) => {
+        const roleName = r.role_name.toUpperCase()
+        if (roleName === "ADMIN" || r.id_role === 1) return "admin"
+        if (roleName === "INTEGRANT" || r.id_role === 2) return "integrant"
+        if (roleName === "CONSEJO" || r.id_role === 3) return "consejo"
+        return "usuario"
+      }) || [],
     esExterno: integrant.external,
-    esAdministrador: integrant.roles?.some(r => r.id_role === 1) || false,
+    esAdministrador: integrant.roles?.some((r) => r.id_role === 1) || false,
   }
 }
 
-// Función para mapear Trace a IAuditLog
-const mapTraceToIAuditLog = (trace: Trace, integrantsMap?: Map<number, IUser>): IAuditLog => {
-  // Determinar tipo de acción basado en el método
-  let tipoAccion: "crear" | "modificar" | "eliminar" | "consultar" = "consultar";
-  if (trace.method === "POST") tipoAccion = "crear";
-  else if (trace.method === "PUT" || trace.method === "PATCH") tipoAccion = "modificar";
-  else if (trace.method === "DELETE") tipoAccion = "eliminar";
-  
-  // Parsear fecha y hora
-  const dateObj = trace.date ? new Date(trace.date) : new Date();
-  const fecha = dateObj.toISOString().split("T")[0];
-  const hora = dateObj.toTimeString().split(" ")[0];
-  
-  // Obtener usuario del mapa si está disponible, sino usar datos de trace.integrant o crear básico
-  let usuario: IUser;
-  
-  // Priorizar el mapa de integrantes cargados (datos más completos)
+const mapTraceToIAuditLog = (
+  trace: Trace,
+  integrantsMap?: Map<number, IUser>,
+): IAuditLog => {
+  let tipoAccion: "crear" | "modificar" | "eliminar" | "consultar" = "consultar"
+  if (trace.method === "POST") tipoAccion = "crear"
+  else if (trace.method === "PUT" || trace.method === "PATCH")
+    tipoAccion = "modificar"
+  else if (trace.method === "DELETE") tipoAccion = "eliminar"
+
+  const dateObj = trace.date ? new Date(trace.date) : new Date()
+  const fecha = dateObj.toISOString().split("T")[0]
+  const hora = dateObj.toTimeString().split(" ")[0]
+
+  let usuario: IUser
+
   if (integrantsMap) {
     const integrantData = integrantsMap.get(trace.id_integrant)
     if (integrantData) {
       usuario = integrantData
-    } else if (trace.integrant && trace.integrant.name) {
-      // Si no está en el mapa pero viene en trace.integrant, usar esos datos
-      const nameParts = trace.integrant.name.split(' ')
+    } else if (trace.integrant?.name) {
+      const nameParts = trace.integrant.name.split(" ")
       usuario = {
         id: trace.integrant.id_integrant.toString(),
-        nombre: nameParts[0] || '',
-        apellidos: nameParts.slice(1).join(' ') || '',
-        numeroIdentidad: '',
-        correoElectronico: trace.integrant.email || '',
-        nombreUsuario: trace.integrant.email?.split('@')[0] || '',
+        nombre: nameParts[0] || "",
+        apellidos: nameParts.slice(1).join(" ") || "",
+        numeroIdentidad: "",
+        correoElectronico: trace.integrant.email || "",
+        nombreUsuario: trace.integrant.email?.split("@")[0] || "",
         roles: [],
         esExterno: false,
         esAdministrador: false,
       }
     } else {
-      // Usuario no encontrado, crear objeto básico
       usuario = {
         id: trace.id_integrant.toString(),
-        nombre: '',
-        apellidos: '',
-        numeroIdentidad: '',
-        correoElectronico: '',
-        nombreUsuario: '',
+        nombre: "",
+        apellidos: "",
+        numeroIdentidad: "",
+        correoElectronico: "",
+        nombreUsuario: "",
         roles: [],
         esExterno: false,
         esAdministrador: false,
       }
     }
-  } else if (trace.integrant && trace.integrant.name) {
-    // Si no hay mapa pero viene trace.integrant, usar esos datos
-    const nameParts = trace.integrant.name.split(' ')
+  } else if (trace.integrant?.name) {
+    const nameParts = trace.integrant.name.split(" ")
     usuario = {
       id: trace.integrant.id_integrant.toString(),
-      nombre: nameParts[0] || '',
-      apellidos: nameParts.slice(1).join(' ') || '',
-      numeroIdentidad: '',
-      correoElectronico: trace.integrant.email || '',
-      nombreUsuario: trace.integrant.email?.split('@')[0] || '',
+      nombre: nameParts[0] || "",
+      apellidos: nameParts.slice(1).join(" ") || "",
+      numeroIdentidad: "",
+      correoElectronico: trace.integrant.email || "",
+      nombreUsuario: trace.integrant.email?.split("@")[0] || "",
       roles: [],
       esExterno: false,
       esAdministrador: false,
     }
   } else {
-    // Sin datos de integrante, crear objeto básico
     usuario = {
       id: trace.id_integrant.toString(),
-      nombre: '',
-      apellidos: '',
-      numeroIdentidad: '',
-      correoElectronico: '',
-      nombreUsuario: '',
+      nombre: "",
+      apellidos: "",
+      numeroIdentidad: "",
+      correoElectronico: "",
+      nombreUsuario: "",
       roles: [],
       esExterno: false,
       esAdministrador: false,
     }
   }
-  
-  // Determinar código de respuesta
-  let codigo = 200;
-  if (trace.message?.includes('failed') || trace.message?.includes('Error')) {
-    codigo = 500;
+
+  let codigo = trace.response ?? 200
+  if (
+    trace.response == null &&
+    (trace.message?.includes("failed") || trace.message?.includes("Error"))
+  ) {
+    codigo = 500
   }
-  
+
   return {
     id: trace.id_trace?.toString() || `trace-${trace.id_integrant}-${trace.date}`,
     usuario,
@@ -129,16 +132,48 @@ const mapTraceToIAuditLog = (trace: Trace, integrantsMap?: Map<number, IUser>): 
     tipoAccion,
     origen: "API",
     metodo: (trace.method as "GET" | "POST" | "PUT" | "DELETE") || "GET",
-    ruta: trace.route || '',
+    ruta: trace.route || "",
     codigo,
-    mensaje: trace.message || '',
+    mensaje: trace.message || "",
     detalles: trace.response ? { response: trace.response } : undefined,
-  };
-};
+  }
+}
+
+const buildApiFilters = (
+  pageSkip: number,
+  uiFilters: { tipoAccion: string; fechaInicio: string; fechaFin: string },
+): TraceFilters => {
+  const traceFilters: TraceFilters = {
+    skip: pageSkip,
+    limit: TRACE_PAGE_SIZE,
+    date_order: "desc",
+  }
+
+  if (uiFilters.fechaInicio) {
+    const startDate = new Date(uiFilters.fechaInicio)
+    startDate.setHours(0, 0, 0, 0)
+    traceFilters.start_date = startDate.toISOString()
+  }
+
+  if (uiFilters.fechaFin) {
+    const endDate = new Date(uiFilters.fechaFin)
+    endDate.setHours(23, 59, 59, 999)
+    traceFilters.end_date = endDate.toISOString()
+  }
+
+  const method = mapTipoAccionToHttpMethod(uiFilters.tipoAccion)
+  if (method) {
+    traceFilters.method = method
+  }
+
+  return traceFilters
+}
 
 export const AuditLog = () => {
   const [logs, setLogs] = useState<IAuditLog[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     tipoAccion: "",
@@ -146,82 +181,120 @@ export const AuditLog = () => {
     fechaFin: "",
   })
 
-  useEffect(() => {
-    loadLogs()
+  const skipRef = useRef(0)
+  const integrantsMapRef = useRef(new Map<number, IUser>())
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  const filtersRef = useRef(filters)
+  const loadingRef = useRef(false)
+  const loadingMoreRef = useRef(false)
+
+  filtersRef.current = filters
+
+  const enrichIntegrants = useCallback(async (traces: Trace[]) => {
+    const idsToLoad = traces
+      .map((t) => t.id_integrant)
+      .filter((id) => !integrantsMapRef.current.has(id))
+
+    const uniqueIds = [...new Set(idsToLoad)]
+    if (uniqueIds.length === 0) return
+
+    const integrants = await Promise.all(
+      uniqueIds.map((id) =>
+        integrantService.getIntegrantById(id).catch((err) => {
+          console.warn(`Error cargando integrante ${id}:`, err)
+          return null
+        }),
+      ),
+    )
+
+    integrants.forEach((integrant) => {
+      if (integrant) {
+        integrantsMapRef.current.set(
+          integrant.id_integrant,
+          mapIntegrantToIUser(integrant),
+        )
+      }
+    })
   }, [])
 
-  const loadLogs = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      // Convertir fechas a formato ISO 8601
-      const traceFilters: { start_date?: string; end_date?: string } = {};
-      
-      if (filters.fechaInicio) {
-        // Si solo viene la fecha, agregar hora 00:00:00
-        const startDate = new Date(filters.fechaInicio);
-        startDate.setHours(0, 0, 0, 0);
-        traceFilters.start_date = startDate.toISOString();
+  const loadPage = useCallback(
+    async (pageSkip: number, replace: boolean) => {
+      if (replace) {
+        if (loadingRef.current) return
+        loadingRef.current = true
+        setLoading(true)
+      } else {
+        if (loadingMoreRef.current || loadingRef.current) return
+        loadingMoreRef.current = true
+        setLoadingMore(true)
       }
-      
-      if (filters.fechaFin) {
-        // Si solo viene la fecha, agregar hora 23:59:59
-        const endDate = new Date(filters.fechaFin);
-        endDate.setHours(23, 59, 59, 999);
-        traceFilters.end_date = endDate.toISOString();
-      }
-      
-      const traces = await traceService.getAllTraces(traceFilters)
-      
-      // Identificar IDs de integrantes únicos que necesitan ser cargados
-      // Cargamos todos los integrantes para asegurar que tenemos los datos completos
-      const integrantIdsToLoad = new Set<number>()
-      traces.forEach(trace => {
-        // Siempre cargar los detalles del integrante para tener datos completos
-        integrantIdsToLoad.add(trace.id_integrant)
-      })
-      
-      // Cargar los detalles de los integrantes en paralelo
-      const integrantsMap = new Map<number, IUser>()
-      if (integrantIdsToLoad.size > 0) {
-        const integrantPromises = Array.from(integrantIdsToLoad).map(id => 
-          integrantService.getIntegrantById(id).catch(err => {
-            console.warn(`Error cargando integrante ${id}:`, err)
-            return null
-          })
+
+      setError(null)
+
+      try {
+        const apiFilters = buildApiFilters(pageSkip, filtersRef.current)
+        const { items, hasMore: pageHasMore } =
+          await traceService.getTracesPage(apiFilters)
+
+        await enrichIntegrants(items)
+
+        const mapped = items.map((trace) =>
+          mapTraceToIAuditLog(trace, integrantsMapRef.current),
         )
-        
-        const integrants = await Promise.all(integrantPromises)
-        
-        integrants.forEach(integrant => {
-          if (integrant) {
-            const iUser = mapIntegrantToIUser(integrant)
-            integrantsMap.set(integrant.id_integrant, iUser)
-          }
-        })
+
+        setLogs((prev) => (replace ? mapped : [...prev, ...mapped]))
+        skipRef.current = pageSkip + items.length
+        setHasMore(pageHasMore)
+      } catch (err) {
+        console.error("Error loading audit logs:", err)
+        setError(
+          err instanceof Error ? err.message : "Error al cargar las trazas",
+        )
+      } finally {
+        if (replace) {
+          loadingRef.current = false
+          setLoading(false)
+        } else {
+          loadingMoreRef.current = false
+          setLoadingMore(false)
+        }
       }
-      
-      // Mapear trazas usando el mapa de integrantes
-      const mappedLogs = traces.map(trace => mapTraceToIAuditLog(trace, integrantsMap))
-      
-      // Aplicar filtro de tipo de acción localmente si está seleccionado
-      let filteredLogs = mappedLogs;
-      if (filters.tipoAccion) {
-        filteredLogs = mappedLogs.filter(log => log.tipoAccion === filters.tipoAccion)
-      }
-      
-      setLogs(filteredLogs)
-    } catch (err) {
-      console.error("Error loading audit logs:", err)
-      setError(err instanceof Error ? err.message : "Error al cargar las trazas")
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [enrichIntegrants],
+  )
 
   const handleFilter = () => {
-    loadLogs()
+    skipRef.current = 0
+    setHasMore(true)
+    setLogs([])
+    loadPage(0, true)
   }
+
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || loadingRef.current || loadingMoreRef.current) return
+    loadPage(skipRef.current, false)
+  }, [hasMore, loadPage])
+
+  useEffect(() => {
+    loadPage(0, true)
+  }, [loadPage])
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current
+    if (!sentinel || !hasMore || loading) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          handleLoadMore()
+        }
+      },
+      { rootMargin: "120px" },
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, loading, loadingMore, logs.length, handleLoadMore])
 
   const columns = [
     { key: "fecha", header: "Fecha" },
@@ -234,14 +307,18 @@ export const AuditLog = () => {
     {
       key: "metodo",
       header: "Método",
-      render: (log: IAuditLog) => <span className={`method-badge method-${log.metodo}`}>{log.metodo}</span>,
+      render: (log: IAuditLog) => (
+        <span className={`method-badge method-${log.metodo}`}>{log.metodo}</span>
+      ),
     },
     { key: "ruta", header: "Ruta" },
     {
       key: "codigo",
       header: "Código",
       render: (log: IAuditLog) => (
-        <span className={`code-badge code-${Math.floor(log.codigo / 100)}`}>{log.codigo}</span>
+        <span className={`code-badge code-${Math.floor(log.codigo / 100)}`}>
+          {log.codigo}
+        </span>
       ),
     },
     { key: "mensaje", header: "Mensaje" },
@@ -257,10 +334,13 @@ export const AuditLog = () => {
       <Card>
         <div className="filters">
           <div className="filter-group">
-            <label>Tipo de Acción</label>
+            <label htmlFor="audit-tipo-accion">Tipo de Acción</label>
             <select
+              id="audit-tipo-accion"
               value={filters.tipoAccion}
-              onChange={(e) => setFilters({ ...filters, tipoAccion: e.target.value })}
+              onChange={(e) =>
+                setFilters({ ...filters, tipoAccion: e.target.value })
+              }
               className="form-select"
             >
               <option value="">Todas</option>
@@ -271,55 +351,87 @@ export const AuditLog = () => {
             </select>
           </div>
           <div className="filter-group">
-            <label>Fecha Inicio</label>
+            <label htmlFor="audit-fecha-inicio">Fecha Inicio</label>
             <Input
+              id="audit-fecha-inicio"
               type="date"
               value={filters.fechaInicio}
-              onChange={(e) => setFilters({ ...filters, fechaInicio: e.target.value })}
+              onChange={(e) =>
+                setFilters({ ...filters, fechaInicio: e.target.value })
+              }
             />
           </div>
           <div className="filter-group">
-            <label>Fecha Fin</label>
+            <label htmlFor="audit-fecha-fin">Fecha Fin</label>
             <Input
+              id="audit-fecha-fin"
               type="date"
               value={filters.fechaFin}
-              onChange={(e) => setFilters({ ...filters, fechaFin: e.target.value })}
+              onChange={(e) =>
+                setFilters({ ...filters, fechaFin: e.target.value })
+              }
             />
           </div>
-          <Button onClick={handleFilter} disabled={loading}>
-            {loading ? <Loader2 className="animate-spin" size={16} /> : 'Filtrar'}
+          <Button onClick={handleFilter} disabled={loading || loadingMore}>
+            {loading ? (
+              <Loader2 className="animate-spin" size={16} />
+            ) : (
+              "Filtrar"
+            )}
           </Button>
         </div>
       </Card>
 
       <Card>
         {loading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+          <div className="audit-log-status">
             <Loader2 className="animate-spin" size={32} />
-            <span style={{ marginLeft: '1rem' }}>Cargando trazas...</span>
+            <span>Cargando trazas...</span>
           </div>
         )}
-        
+
         {error && (
-          <div style={{ 
-            padding: '1rem', 
-            margin: '1rem', 
-            backgroundColor: '#fee', 
-            color: '#c33',
-            borderRadius: '4px'
-          }}>
+          <div className="audit-log-error" role="alert">
             {error}
           </div>
         )}
-        
+
         {!loading && !error && (
           <>
             {logs.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center' }}>
+              <div className="audit-log-empty">
                 <p>No se encontraron trazas</p>
               </div>
             ) : (
-              <Table data={logs} columns={columns} />
+              <>
+                <Table data={logs} columns={columns} />
+                <div
+                  ref={loadMoreRef}
+                  className="audit-log-sentinel"
+                  aria-hidden="true"
+                />
+                {loadingMore && (
+                  <div className="audit-log-status audit-log-status--more">
+                    <Loader2 className="animate-spin" size={24} />
+                    <span>Cargando más registros...</span>
+                  </div>
+                )}
+                {!hasMore && logs.length > 0 && (
+                  <p className="audit-log-end">No hay más registros</p>
+                )}
+                {hasMore && !loadingMore && logs.length > 0 && (
+                  <div className="audit-log-load-more">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleLoadMore}
+                      aria-label="Cargar 20 registros más de la bitácora"
+                    >
+                      Cargar más
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

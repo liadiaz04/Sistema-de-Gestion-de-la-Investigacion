@@ -41,6 +41,7 @@ class NormBase(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: bool = False
 
 class NormCreate(NormBase):
     author_ids: List[Union[int, NewAuthor]]
@@ -59,6 +60,7 @@ class NormUpdate(BaseModel):
     id_project: Optional[int] = None
     only_date: Optional[date] = None
     id_group: Optional[int] = None
+    publicated: Optional[bool] = None
     author_ids: Optional[List[int]] = None
 
 class Norm(NormBase):

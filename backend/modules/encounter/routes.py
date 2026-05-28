@@ -29,21 +29,6 @@ def read_encounters(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
-@router.get("/count/faculty/{faculty_id}", response_model=schemas.EncounterCountByFaculty)
-def get_encounter_count_by_faculty_endpoint(
-    faculty_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Obtiene el total de eventos y la cantidad asociada a una facultad (vía autores).
-    """
-    try:
-        return crud.get_encounter_count_by_faculty(db, faculty_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al contar eventos: {str(e)}")
-
-
 @router.get("/{encounter_id}", response_model=schemas.Encounter)
 def read_encounter(encounter_id: int, db: Session = Depends(get_db)):
     db_enc = crud.get_encounter(db, encounter_id)
@@ -80,3 +65,16 @@ def delete_encounter(encounter_id: int, db: Session = Depends(get_db)):
     if db_enc is None:
         raise HTTPException(status_code=404, detail="Encounter not found")
     return db_enc
+
+@router.get("/count/faculty/{faculty_id}", response_model=schemas.EncounterCountByFaculty)
+def get_encounter_count_by_faculty_endpoint(
+    faculty_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene el total de eventos y la cantidad asociada a una facultad (vía autores).
+    """
+    try:
+        return crud.get_encounter_count_by_faculty(db, faculty_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al contar eventos: {str(e)}")

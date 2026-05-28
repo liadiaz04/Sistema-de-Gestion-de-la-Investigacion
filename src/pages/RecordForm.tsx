@@ -9,8 +9,16 @@ import { Input } from "../components/common/Input"
 import { Modal } from "../components/common/Modal"
 import { OptionsMenu } from "../components/common/OptionsMenu"
 import type { RecordType } from "../types"
-import { mockRecords, mockProjects } from "../services/mockData"
 import "./RecordForm.css"
+import { groupService } from "../services/groupService"
+import { projectService } from "../services/projectService"
+import { useGroupSearch, useProjectSearch } from "../hooks/useGroupProjectSearch"
+import {
+  GroupProjectAssignFields,
+  type LinkedEntity,
+} from "../components/record/GroupProjectAssignFields"
+import type { Group } from "../types/api/group"
+import type { Project } from "../types/api/project"
 import { useAuthStore } from "../stores/authStore"
 import {
   recordMetadataService,
@@ -34,6 +42,15 @@ import type {
   PremioRegistro,
 } from "../types/recordList/Registros"
 import { recordDetailService } from "../services/record/recordDetailService"
+import { usePermissions } from "../hooks/usePermissions"
+import { ConfirmDialog } from "../components/common/ConfirmDialog"
+import { ZenodoPublishModal } from "../components/zenodo/ZenodoPublishModal"
+import {
+  extractEntityIdFromResponse,
+  mapRecordTypeToEntityType,
+} from "../utils/zenodoEntityMapper"
+import { zenodoService } from "../services/zenodoService"
+import type { ZenodoPublishTarget } from "../types/zenodo"
 import {
   validateRequired,
   validateEmailRequired,
@@ -49,6 +66,21 @@ import {
   isDuplicateIdentifierError,
   getDuplicateIdentifierMessage,
 } from "../utils/validation"
+import { scrollToFirstFormError, scrollToFormError } from "../utils/scrollToFormError"
+import { normalizeDoiValue } from "../utils/doiUtils"
+import {
+  buildArticlePayload,
+  buildBookPayload,
+  buildEventPayload,
+  buildMonographPayload,
+  buildNormPayload,
+  buildPatentPayload,
+  buildPrizePayload,
+  buildSoftwarePayload,
+  buildThesisPayload,
+  resolveTypeIds,
+  type RecordPayloadContext,
+} from "../utils/recordPayloadBuilders"
 type IntegrantSearchHook = {
   term: string
   setTerm: (value: string) => void
@@ -93,7 +125,7 @@ const parseCompositeRecordId = (rawId?: string | null) => {
 
 const createInitialFormData = () => ({
   titulo: "",
-  descripcion: "",
+  tituloCapitulo: "",
   año: new Date().getFullYear(),
   mes: new Date().getMonth() + 1,
   resumen: "",
@@ -189,7 +221,6 @@ const mapTutorsFromRecord = (record: TesisRegistro) => {
 const mapRecordToFormData = (record: Registro): RecordFormState => {
   const base = createInitialFormData()
   base.titulo = record.titulo || base.titulo
-  base.descripcion = record.resume || base.descripcion
   base.año = record.year_only || base.año
   base.mes = record.month_only || base.mes
   base.resumen = record.resume || base.resumen
@@ -211,7 +242,7 @@ const mapRecordToFormData = (record: Registro): RecordFormState => {
     }
     case "libro": {
       const book = record as LibroRegistro
-      base.descripcion = book.chapter_title || base.descripcion
+      base.tituloCapitulo = book.chapter_title || base.tituloCapitulo
       base.editorial = book.publisher || book.editor || base.editorial
       base.volumen = book.voulume || base.volumen
       base.numero = book.number || base.numero
@@ -330,6 +361,7 @@ export const RecordForm = () => {
   const recordNumericId = parsedRecordKey?.id ?? null
 
   const { user: currentUser } = useAuthStore()
+  const { canPublishToZenodo } = usePermissions()
   const isAdmin = currentUser?.roles?.includes("admin") || false
 
   const isEditMode = Boolean(id && location.pathname.includes("/edit"))
@@ -350,9 +382,9 @@ export const RecordForm = () => {
 
   const [authors, setAuthors] = useState<any[]>([])
   const [tutors, setTutors] = useState<any[]>([])
-  const [associatedProjects, setAssociatedProjects] = useState<any[]>([])
+  const [selectedGroup, setSelectedGroup] = useState<LinkedEntity | null>(null)
+  const [selectedProject, setSelectedProject] = useState<LinkedEntity | null>(null)
   const [showExternalModal, setShowExternalModal] = useState(false)
-  const [showProjectModal, setShowProjectModal] = useState(false)
   const [modalType, setModalType] = useState<"author" | "tutor">("author")
   const [externalPerson, setExternalPerson] = useState({
     nombre: "",
@@ -362,8 +394,6 @@ export const RecordForm = () => {
     email: "",
   })
   const [externalPersonEmailError, setExternalPersonEmailError] = useState<string | null>(null)
-  const [projectSearch, setProjectSearch] = useState("")
-
   const [countries, setCountries] = useState<CountryOption[]>([])
   const [articleTypes, setArticleTypes] = useState<NamedOption[]>([])
   const [normTypes, setNormTypes] = useState<NamedOption[]>([])
@@ -385,9 +415,16 @@ export const RecordForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [showZenodoConfirm, setShowZenodoConfirm] = useState(false)
+  const [showZenodoModal, setShowZenodoModal] = useState(false)
+  const [zenodoTarget, setZenodoTarget] = useState<ZenodoPublishTarget | null>(null)
+  const [pendingNavigation, setPendingNavigation] = useState(false)
+  const [isDoiLockedByZenodo, setIsDoiLockedByZenodo] = useState(false)
 
   const authorSearch = useIntegrantSearch()
   const tutorSearch = useIntegrantSearch()
+  const groupSearch = useGroupSearch()
+  const projectSearch = useProjectSearch()
 
   const [formData, setFormData] = useState<RecordFormState>(createInitialFormData)
 
@@ -446,7 +483,10 @@ export const RecordForm = () => {
     setSelectedAuthorIds([])
     setTutors([])
     setSelectedTutorIds([])
-    setAssociatedProjects([])
+    setSelectedGroup(null)
+    setSelectedProject(null)
+    groupSearch.setTerm("")
+    projectSearch.setTerm("")
     setIsSaved(false)
     setRecordLoadError(null)
   }, [parsedRecordKey?.id])
@@ -459,7 +499,10 @@ export const RecordForm = () => {
     setSelectedAuthorIds([])
     setTutors([])
     setSelectedTutorIds([])
-    setAssociatedProjects([])
+    setSelectedGroup(null)
+    setSelectedProject(null)
+    groupSearch.setTerm("")
+    projectSearch.setTerm("")
     setIsSaved(false)
     setRecordLoadError(null)
     setSelectedCountryId(null)
@@ -518,6 +561,44 @@ export const RecordForm = () => {
       isMounted = false
     }
   }, [parsedRecordKey?.id, parsedRecordKey?.type, recordFromLocation])
+
+  useEffect(() => {
+    const recordTypeForZenodo = (parsedRecordKey?.type ?? recordType) as RecordType
+    if (recordTypeForZenodo !== "articulo" || !recordNumericId) {
+      setIsDoiLockedByZenodo(false)
+      return
+    }
+
+    const entityId = Number(recordNumericId)
+    if (Number.isNaN(entityId)) {
+      setIsDoiLockedByZenodo(false)
+      return
+    }
+
+    let isMounted = true
+
+    zenodoService
+      .getPublication("article", entityId)
+      .then((publication) => {
+        if (!isMounted) return
+        const isPublished = publication?.status === "published"
+        setIsDoiLockedByZenodo(isPublished)
+        if (isPublished) {
+          const publishedDoi = normalizeDoiValue(publication?.doi)
+          if (publishedDoi) {
+            setFormData((prev) => ({ ...prev, doi: publishedDoi }))
+          }
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return
+        setIsDoiLockedByZenodo(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [parsedRecordKey?.type, recordType, recordNumericId, recordData?.id])
 
   useEffect(() => {
     if (!recordData) return
@@ -586,6 +667,41 @@ export const RecordForm = () => {
     } else {
       setSelectedEncounterTypeId(null)
     }
+
+    const loadLinkedGroupAndProject = async () => {
+      if (recordData.id_group) {
+        try {
+          const group = await groupService.getGroupById(recordData.id_group)
+          setSelectedGroup({ id: group.id_group, label: group.name })
+          groupSearch.setTerm(group.name)
+        } catch {
+          setSelectedGroup({ id: recordData.id_group, label: `Grupo #${recordData.id_group}` })
+          groupSearch.setTerm("")
+        }
+      } else {
+        setSelectedGroup(null)
+        groupSearch.setTerm("")
+      }
+
+      if (recordData.id_project) {
+        try {
+          const project = await projectService.getProjectById(recordData.id_project)
+          setSelectedProject({ id: project.id_project, label: project.title })
+          projectSearch.setTerm(project.title)
+        } catch {
+          setSelectedProject({
+            id: recordData.id_project,
+            label: `Proyecto #${recordData.id_project}`,
+          })
+          projectSearch.setTerm("")
+        }
+      } else {
+        setSelectedProject(null)
+        projectSearch.setTerm("")
+      }
+    }
+
+    loadLinkedGroupAndProject()
   }, [recordData])
 
   useEffect(() => {
@@ -608,38 +724,68 @@ export const RecordForm = () => {
   }, [countries, formData.pais, selectedCountryId])
 
   useEffect(() => {
+    if (isEditMode || isViewMode || isSaved) {
+      return
+    }
     setSelectedArticleTypeId(null)
     setSelectedNormTypeId(null)
     setSelectedPrizeTypeId(null)
     setSelectedThesisTypeId(null)
     setSelectedEncounterTypeId(null)
-  }, [recordType])
+  }, [recordType, isEditMode, isViewMode, isSaved])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (isEditMode && recordNumericId) {
-      const index = mockRecords.findIndex((r) => r.id === recordNumericId)
-      if (index !== -1) {
-        mockRecords[index] = {
-          ...mockRecords[index],
-          titulo: formData.titulo,
-          descripcion: formData.descripcion,
-          año: formData.año,
-          mes: formData.mes,
-          tipo: recordType as any,
-          resumen: formData.resumen,
-          palabrasClave: formData.palabrasClave.split(",").map((k) => k.trim()),
-          pais: formData.pais,
-        }
-        setSuccessMessage("Datos básicos actualizados con éxito")
-        setShowSuccessDialog(true)
-      }
-    } else {
+    if (isEditMode) {
+      void handleUpdateRecord()
+      return
+    }
+
     setIsSaved(true)
-      setActiveTab("autores")
-      setSuccessMessage("Datos básicos guardados con éxito. Por favor, complete los autores y proyectos asociados.")
-      setShowSuccessDialog(true)
+    setActiveTab("autores")
+    setSuccessMessage("Datos básicos guardados con éxito. Complete autores y, si aplica, grupo o proyecto.")
+    setShowSuccessDialog(true)
+  }
+
+  const getAuthorIdsForUpdate = (): number[] =>
+    authors
+      .map((author) => author.integrantId)
+      .filter((id): id is number => typeof id === "number")
+
+  const buildPayloadContext = (
+    recordTypeForPayload: RecordType,
+    authorIds: number[],
+    options?: { includeDoi?: boolean },
+  ): RecordPayloadContext => {
+    const resolvedTypes = resolveTypeIds(
+      recordTypeForPayload,
+      formData,
+      {
+        selectedArticleTypeId,
+        selectedNormTypeId,
+        selectedPrizeTypeId,
+        selectedThesisTypeId,
+        selectedEncounterTypeId,
+      },
+      {
+        articleTypes,
+        normTypes,
+        prizeTypes,
+        thesisTypes,
+        encounterTypes,
+      },
+    )
+
+    return {
+      formData,
+      authorIds,
+      tutorIds: selectedTutorIds,
+      selectedCountryId,
+      ...resolvedTypes,
+      id_group: selectedGroup?.id ?? null,
+      id_project: selectedProject?.id ?? null,
+      includeDoi: options?.includeDoi ?? !isDoiLockedByZenodo,
     }
   }
 
@@ -855,17 +1001,24 @@ export const RecordForm = () => {
     }
   }
 
-  const handleAssociateProject = (project: any) => {
-    if (!associatedProjects.find((p) => p.id === project.id)) {
-      setAssociatedProjects([...associatedProjects, project])
-      setShowProjectModal(false)
-      setSuccessMessage("Proyecto asociado con éxito")
-      setShowSuccessDialog(true)
-    }
+  const handleSelectGroup = (group: Group) => {
+    setSelectedGroup({ id: group.id_group, label: group.name })
+    groupSearch.setTerm(group.name)
   }
 
-  const handleDisassociateProject = (projectId: string) => {
-    setAssociatedProjects(associatedProjects.filter((p) => p.id !== projectId))
+  const handleSelectProject = (project: Project) => {
+    setSelectedProject({ id: project.id_project, label: project.title })
+    projectSearch.setTerm(project.title)
+  }
+
+  const handleClearGroup = () => {
+    setSelectedGroup(null)
+    groupSearch.setTerm("")
+  }
+
+  const handleClearProject = () => {
+    setSelectedProject(null)
+    projectSearch.setTerm("")
   }
 
   // Helper para construir author_ids (IDs de integrantes + objetos de autores externos)
@@ -889,25 +1042,6 @@ export const RecordForm = () => {
     })
     
     return authorIds
-  }
-
-  // Helper para formatear fecha (YYYY-MM-DD)
-  const formatDate = (year: number, month: number): string => {
-    return `${year}-${String(month).padStart(2, "0")}-01`
-  }
-
-  // Helper para convertir string vacío a null
-  const toNullIfEmpty = (value: string | null | undefined): string | null => {
-    return value && value.trim() ? value.trim() : null
-  }
-
-  // Helper para convertir string a boolean
-  const toBoolean = (value: string | boolean | undefined): boolean => {
-    if (typeof value === "boolean") return value
-    if (typeof value === "string") {
-      return value === "true" || value === "concedida" || value === "terminado" || value === "registrado"
-    }
-    return false
   }
 
   // Función para validar todos los campos antes de enviar
@@ -938,7 +1072,7 @@ export const RecordForm = () => {
           const issnError = validateISSN(formData.issn)
           if (issnError) errors.issn = issnError
         }
-        if (formData.doi) {
+        if (formData.doi && !isDoiLockedByZenodo) {
           const doiError = validateDOI(formData.doi)
           if (doiError) errors.doi = doiError
         }
@@ -983,12 +1117,38 @@ export const RecordForm = () => {
     return errors
   }
 
+  const applyValidationErrors = (errors: Record<string, string>) => {
+    setFieldErrors(errors)
+    setSubmitError(
+      `Por favor, corrija los errores en el formulario: ${Object.values(errors).join(" · ")}`,
+    )
+    scrollToFirstFormError(errors, {
+      setActiveTab,
+      recordType,
+    })
+  }
+
+  const handleFinishRecordFlow = () => {
+    setTimeout(() => {
+      navigate("/records")
+    }, pendingNavigation ? 0 : 1500)
+  }
+
+  const handleConfirmZenodoPublish = () => {
+    setShowZenodoConfirm(false)
+    setShowZenodoModal(true)
+  }
+
+  const handleSkipZenodoPublish = () => {
+    setShowZenodoConfirm(false)
+    setZenodoTarget(null)
+    handleFinishRecordFlow()
+  }
+
   const handleSaveCompleteRecord = async () => {
     const recordValidationErrors = validateForm()
     if (Object.keys(recordValidationErrors).length > 0) {
-      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage(Object.values(recordValidationErrors).join(" · "))
-      setShowSuccessDialog(true)
+      applyValidationErrors(recordValidationErrors)
       return
     }
 
@@ -998,212 +1158,81 @@ export const RecordForm = () => {
       setFieldErrors({})
 
       const authorIds = buildAuthorIds()
-      const keywords = toNullIfEmpty(formData.palabrasClave)
-      const resume = toNullIfEmpty(formData.resumen)
-      const onlyDate = formatDate(formData.año, formData.mes)
-      const reportDate = new Date().toISOString().split("T")[0]
+      const payloadContext = buildPayloadContext(recordType, [], { includeDoi: true })
+
+      let createdEntityId: number | null = null
 
       switch (recordType) {
         case "articulo": {
-          const payload = {
-            title: formData.titulo,
-            journal: formData.revista,
-            voulume: formData.volumen || "",
-            pages: formData.paginas || "",
+          const response = await recordService.createArticle({
+            ...buildArticlePayload(payloadContext, "create"),
             author_ids: authorIds,
-            number: toNullIfEmpty(formData.numero),
-            keywords,
-            doi: toNullIfEmpty(formData.doi),
-            resume,
-            id_article_type: selectedArticleTypeId,
-            report_date: reportDate,
-            issn: toNullIfEmpty(formData.issn),
-            id_country: selectedCountryId,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-            published: true,
-          }
-          await recordService.createArticle(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("articulo", response.data as Record<string, unknown>)
           break
         }
         case "libro": {
-          const payload = {
-            title: formData.titulo,
-            chapter_title: formData.descripcion || "",
+          const response = await recordService.createBook({
+            ...buildBookPayload(payloadContext),
             author_ids: authorIds,
-            editor: formData.editorial || "",
-            voulume: formData.volumen || "",
-            number: toNullIfEmpty(formData.numero),
-            series: null,
-            pages: toNullIfEmpty(formData.paginas),
-            publisher: formData.editorial || "",
-            keywords,
-            resume,
-            isbn: toNullIfEmpty(formData.isbn),
-            report_date: reportDate,
-            id_country: selectedCountryId,
-            is_chapter: false,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-          }
-          await recordService.createBook(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("libro", response.data as Record<string, unknown>)
           break
         }
         case "monografia": {
-          const payload = {
-            title: formData.titulo,
-            isbn: formData.isbn || "",
-            pages: formData.paginas || "",
+          const response = await recordService.createMonograph({
+            ...buildMonographPayload(payloadContext),
             author_ids: authorIds,
-            number: toNullIfEmpty(formData.numero),
-            month: toNullIfEmpty(String(formData.mes)),
-            keywords,
-            resume,
-            cenda: formData.registroCENDA || "",
-            report_date: reportDate,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_country: selectedCountryId,
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-          }
-          await recordService.createMonograph(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("monografia", response.data as Record<string, unknown>)
           break
         }
         case "norma": {
-          const payload = {
-            title: formData.titulo,
-            registration_number: formData.numeroRegistro || "",
-            pages: formData.paginas || "",
+          const response = await recordService.createNorm({
+            ...buildNormPayload(payloadContext),
             author_ids: authorIds,
-            keywords,
-            resume,
-            id_norm_type: selectedNormTypeId,
-            report_date: reportDate,
-            id_country: selectedCountryId,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-          }
-          await recordService.createNorm(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("norma", response.data as Record<string, unknown>)
           break
         }
         case "patente": {
-          const payload = {
-            title: formData.titulo,
-            reg_number: formData.numeroRegistro || "",
-            yearfiled: String(formData.año),
+          const response = await recordService.createPatent({
+            ...buildPatentPayload(payloadContext),
             author_ids: authorIds,
-            language: null,
-            assignee: "",
-            monthfield: toNullIfEmpty(String(formData.mes)),
-            keywords,
-            resume,
-            report_date: reportDate,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_country: selectedCountryId,
-            is_conceded: toBoolean(formData.estado),
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-          }
-          await recordService.createPatent(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("patente", response.data as Record<string, unknown>)
           break
         }
         case "software": {
-          const payload = {
-            title: formData.titulo,
-            number: formData.registroCENDA || "",
-            yearfiled: String(formData.año),
+          const response = await recordService.createSoftware({
+            ...buildSoftwarePayload(payloadContext),
             author_ids: authorIds,
-            language: null,
-            assignee: "",
-            monthfield: toNullIfEmpty(String(formData.mes)),
-            keywords,
-            resume,
-            report_date: reportDate,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_country: selectedCountryId,
-            is_conceded: toBoolean(formData.estado),
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            is_multimedia: false,
-            id_group: null,
-          }
-          await recordService.createSoftware(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("software", response.data as Record<string, unknown>)
           break
         }
         case "evento": {
-          const payload = {
-            title: formData.titulo,
-            encounter_name: formData.nombreEvento || "",
+          const response = await recordService.createEvent({
+            ...buildEventPayload(payloadContext),
             author_ids: authorIds,
-            keywords,
-            resume,
-            id_encounter_type: selectedEncounterTypeId,
-            report_date: reportDate,
-            isbn: null,
-            city: null,
-            issn: null,
-            organizer: formData.organizador || "",
-            id_country: selectedCountryId,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-          }
-          await recordService.createEvent(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("evento", response.data as Record<string, unknown>)
           break
         }
         case "premio": {
-          const payload = {
-            title: formData.titulo,
-            grant_institution: formData.institucion || "",
+          const response = await recordService.createPrize({
+            ...buildPrizePayload(payloadContext),
             author_ids: authorIds,
-            keywords,
-            resume,
-            id_prize_type: selectedPrizeTypeId,
-            report_date: reportDate,
-            id_country: selectedCountryId,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-          }
-          await recordService.createPrize(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("premio", response.data as Record<string, unknown>)
           break
         }
         case "tesis": {
-          const payload = {
-            title: formData.titulo,
-            institution: formData.institucion || "",
+          const response = await recordService.createThesis({
+            ...buildThesisPayload(payloadContext),
             author_ids: authorIds,
-            tutor_ids: selectedTutorIds,
-            keywords,
-            resume,
-            id_thesis_type: selectedThesisTypeId,
-            report_date: reportDate,
-            id_country: selectedCountryId,
-            month_only: formData.mes,
-            year_only: formData.año,
-            id_project: associatedProjects.length > 0 ? Number(associatedProjects[0].id) : null,
-            only_date: onlyDate,
-            id_group: null,
-          }
-          await recordService.createThesis(payload)
+          })
+          createdEntityId = extractEntityIdFromResponse("tesis", response.data as Record<string, unknown>)
           break
         }
         default:
@@ -1212,75 +1241,148 @@ export const RecordForm = () => {
 
       setSuccessMessage("Registro científico guardado con éxito")
       setShowSuccessDialog(true)
-      setTimeout(() => {
-        navigate("/records")
-      }, 1500)
-    } catch (error: any) {
-      // Manejar error 409 (conflicto) para ISSN/ISBN/DOI duplicados
+
+      if (canPublishToZenodo() && createdEntityId !== null) {
+        setZenodoTarget({
+          entityType: mapRecordTypeToEntityType(recordType),
+          entityId: createdEntityId,
+          recordType,
+          title: formData.titulo,
+        })
+        setShowZenodoConfirm(true)
+        return
+      }
+
+      handleFinishRecordFlow()
+    } catch (error: unknown) {
       if (isDuplicateIdentifierError(error)) {
         const friendlyMessage = getDuplicateIdentifierMessage(error)
         setSubmitError(friendlyMessage)
-        setSuccessMessage(friendlyMessage)
-        setShowSuccessDialog(true)
+        scrollToDuplicateFieldError(friendlyMessage)
       } else {
         const errorMessage = extractErrorMessage(error) || "Error al guardar el registro"
         setSubmitError(errorMessage)
-        setSuccessMessage(errorMessage)
-        setShowSuccessDialog(true)
       }
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const handleUpdateRecord = () => {
-    if (!recordNumericId) return
-    const index = mockRecords.findIndex((r) => r.id === recordNumericId)
-    if (index !== -1) {
-      mockRecords[index] = {
-        ...mockRecords[index],
-        titulo: formData.titulo,
-        descripcion: formData.descripcion,
-        año: formData.año,
-        mes: formData.mes,
-        tipo: recordType as any,
-        resumen: formData.resumen,
-        palabrasClave: formData.palabrasClave.split(",").map((k) => k.trim()),
-        pais: formData.pais,
-        autores: authors.map((a) => ({
-          id: a.id,
-          usuario: a.usuario,
-          nombre: a.nombre,
-          apellidos: a.apellidos,
-          esExterno: a.esExterno,
-          esPrincipal: a.esPrincipal,
-          orden: a.orden,
-        })),
-        metadata: {
-          countryId: selectedCountryId,
-          articleTypeId: selectedArticleTypeId,
-          normTypeId: selectedNormTypeId,
-          prizeTypeId: selectedPrizeTypeId,
-          thesisTypeId: selectedThesisTypeId,
-          encounterTypeId: selectedEncounterTypeId,
-        },
+  const scrollToDuplicateFieldError = (message: string) => {
+    const lower = message.toLowerCase()
+    if (lower.includes("doi")) {
+      scrollToFormError({ fieldKey: "doi", setActiveTab, recordType })
+      return
+    }
+    if (lower.includes("issn")) {
+      scrollToFormError({ fieldKey: "issn", setActiveTab, recordType })
+      return
+    }
+    if (lower.includes("isbn")) {
+      scrollToFormError({ fieldKey: "isbn", setActiveTab, recordType })
+      return
+    }
+    scrollToFormError({ fieldKey: "titulo", setActiveTab, recordType })
+  }
+
+  const handleUpdateRecord = async () => {
+    const effectiveRecordType = (parsedRecordKey?.type ?? recordType) as RecordType
+
+    if (!recordNumericId) {
+      setSubmitError("No se pudo identificar el registro a actualizar.")
+      return
+    }
+
+    if (!isRecordTypeValue(effectiveRecordType)) {
+      setSubmitError("No se pudo determinar el tipo de registro para actualizar.")
+      return
+    }
+
+    const recordValidationErrors = validateForm()
+    if (Object.keys(recordValidationErrors).length > 0) {
+      applyValidationErrors(recordValidationErrors)
+      return
+    }
+
+    const entityId = Number(recordNumericId)
+    if (Number.isNaN(entityId)) {
+      setSubmitError("El identificador del registro no es válido.")
+      scrollToFormError({ fieldKey: "titulo", setActiveTab, recordType })
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      setSubmitError(null)
+      setFieldErrors({})
+
+      const authorIdsForUpdate = getAuthorIdsForUpdate()
+      const payloadContext = buildPayloadContext(effectiveRecordType, authorIdsForUpdate)
+
+      switch (effectiveRecordType) {
+        case "articulo":
+          await recordService.updateArticle(
+            entityId,
+            buildArticlePayload(payloadContext, "update"),
+          )
+          break
+        case "libro":
+          await recordService.updateBook(entityId, buildBookPayload(payloadContext))
+          break
+        case "monografia":
+          await recordService.updateMonograph(entityId, buildMonographPayload(payloadContext))
+          break
+        case "norma":
+          await recordService.updateNorm(entityId, buildNormPayload(payloadContext))
+          break
+        case "patente":
+          await recordService.updatePatent(entityId, buildPatentPayload(payloadContext))
+          break
+        case "software":
+          await recordService.updateSoftware(entityId, buildSoftwarePayload(payloadContext))
+          break
+        case "evento":
+          await recordService.updateEvent(entityId, buildEventPayload(payloadContext))
+          break
+        case "premio":
+          await recordService.updatePrize(entityId, buildPrizePayload(payloadContext))
+          break
+        case "tesis":
+          await recordService.updateThesis(entityId, buildThesisPayload(payloadContext))
+          break
+        default:
+          throw new Error("Tipo de registro no válido")
       }
+
       setSuccessMessage("Registro actualizado con éxito")
       setShowSuccessDialog(true)
       setTimeout(() => {
         navigate("/records")
       }, 1500)
+    } catch (error: unknown) {
+      if (isDuplicateIdentifierError(error)) {
+        const friendlyMessage = getDuplicateIdentifierMessage(error)
+        setSubmitError(friendlyMessage)
+        scrollToDuplicateFieldError(friendlyMessage)
+        return
+      }
+      const errorMessage = extractErrorMessage(error) || "Error al actualizar el registro"
+      setSubmitError(errorMessage)
+      scrollToFormError({ fieldKey: "titulo", setActiveTab, recordType })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    if (e.target.name === "doi" && isDoiLockedByZenodo) {
+      return
+    }
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     })
   }
-
-  const filteredProjects = mockProjects.filter((p) => p.nombre.toLowerCase().includes(projectSearch.toLowerCase()))
 
   const renderTypeSpecificFields = () => {
     switch (recordType) {
@@ -1386,13 +1488,78 @@ export const RecordForm = () => {
                 value={formData.doi}
                 onChange={handleChange}
                 placeholder="10.1000/xyz123"
-                disabled={isViewMode ? true : false}
+                disabled={isViewMode || isDoiLockedByZenodo}
+                readOnly={isDoiLockedByZenodo}
+                aria-describedby="doi-hint"
+                aria-readonly={isDoiLockedByZenodo}
               />
-              {fieldErrors.doi && <span className="field-error">{fieldErrors.doi}</span>}
+              <small id="doi-hint" className="form-hint">
+                {isDoiLockedByZenodo
+                  ? "Este registro fue publicado en Zenodo. El DOI asignado no puede modificarse."
+                  : "Complételo solo si la publicación es de acceso público. Al publicar en Zenodo, el DOI asignado se guardará aquí automáticamente."}
+              </small>
+              {fieldErrors.doi && (
+                <span className="field-error" role="alert">
+                  {fieldErrors.doi}
+                </span>
+              )}
             </div>
           </>
         )
       case "libro":
+        return (
+          <>
+            <div className="form-group full-width">
+              <label htmlFor="tituloCapitulo">Título del capítulo</label>
+              <Input
+                id="tituloCapitulo"
+                name="tituloCapitulo"
+                type="text"
+                value={formData.tituloCapitulo}
+                onChange={handleChange}
+                placeholder="Título del capítulo (si aplica)"
+                disabled={isViewMode ? true : false}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="editorial">
+                Editorial <span className="required">*</span>
+              </label>
+              <Input
+                id="editorial"
+                name="editorial"
+                type="text"
+                value={formData.editorial}
+                onChange={handleChange}
+                required
+                disabled={isViewMode ? true : false}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="isbn">ISBN</label>
+              <Input
+                id="isbn"
+                name="isbn"
+                type="text"
+                value={formData.isbn}
+                onChange={handleChange}
+                disabled={isViewMode ? true : false}
+              />
+              {fieldErrors.isbn && <span className="field-error">{fieldErrors.isbn}</span>}
+            </div>
+            <div className="form-group">
+              <label htmlFor="paginas">Páginas</label>
+              <Input
+                id="paginas"
+                name="paginas"
+                type="text"
+                value={formData.paginas}
+                onChange={handleChange}
+                disabled={isViewMode ? true : false}
+              />
+            </div>
+          </>
+        )
       case "monografia":
         return (
           <>
@@ -1709,7 +1876,6 @@ export const RecordForm = () => {
     { id: "datos-basicos", label: "Datos Básicos" },
     { id: "autores", label: "Autores" },
     ...(recordType === "tesis" ? [{ id: "tutores", label: "Tutores" }] : []),
-    { id: "proyectos", label: "Proyectos Asociados" },
   ]
 
   if (isMetadataLoading) {
@@ -1821,35 +1987,35 @@ export const RecordForm = () => {
         </form>
       </Modal>
 
-      <Modal isOpen={showProjectModal} onClose={() => setShowProjectModal(false)} title="Asociar Proyecto">
-        <div className="modal-content">
-          <div className="form-group">
-            <Input
-              placeholder="Buscar proyecto..."
-              value={projectSearch}
-              onChange={(e) => setProjectSearch(e.target.value)}
-            />
-          </div>
-          <div className="record-list">
-            {filteredProjects.length === 0 ? (
-              <p className="empty-state">No hay proyectos disponibles para asociar</p>
-            ) : (
-              filteredProjects.map((project) => (
-                <div key={project.id} className="record-item">
-                  <div className="record-item-info">
-                    <strong>{project.nombre}</strong>
-                    <span>{project.descripcion}</span>
-                    <span>Temática: {project.tematica}</span>
-                  </div>
-                  <Button size="sm" onClick={() => handleAssociateProject(project)}>
-                    Asociar
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </Modal>
+      <ConfirmDialog
+        isOpen={showZenodoConfirm}
+        title="Publicar en Zenodo"
+        message="El registro se guardó correctamente. ¿Desea publicarlo ahora en Zenodo? Deberá adjuntar un archivo PDF."
+        confirmText="Sí, publicar"
+        cancelText="No, más tarde"
+        onConfirm={handleConfirmZenodoPublish}
+        onCancel={handleSkipZenodoPublish}
+      />
+
+      <ZenodoPublishModal
+        isOpen={showZenodoModal}
+        target={zenodoTarget}
+        onClose={() => {
+          setShowZenodoModal(false)
+          setZenodoTarget(null)
+          handleFinishRecordFlow()
+        }}
+        onPublished={(_url, publication) => {
+          if (publication?.status === "published") {
+            setIsDoiLockedByZenodo(true)
+          }
+          const publishedDoi = normalizeDoiValue(publication?.doi)
+          if (publishedDoi && recordType === "articulo") {
+            setFormData((prev) => ({ ...prev, doi: publishedDoi }))
+          }
+          setPendingNavigation(true)
+        }}
+      />
 
       {(isViewMode || isEditMode) && recordLoading && (
         <Card>
@@ -1863,7 +2029,7 @@ export const RecordForm = () => {
         </Card>
       )}
 
-      <div className="form-header">
+      <div className="form-header" id="record-form-top">
         <h1>{id ? "Editar Registro Científico" : "Adicionar Registro Científico"}</h1>
         <p>Complete la información del registro</p>
       </div>
@@ -1927,14 +2093,14 @@ export const RecordForm = () => {
                   </div>
 
                   <div className="form-group full-width">
-                    <label htmlFor="descripcion">Descripción</label>
+                    <label htmlFor="resumen">Resumen</label>
                     <textarea
-                      id="descripcion"
-                      name="descripcion"
-                      value={formData.descripcion}
+                      id="resumen"
+                      name="resumen"
+                      value={formData.resumen}
                       onChange={handleChange}
-                      placeholder="Descripción breve"
-                      rows={3}
+                      placeholder="Resumen del trabajo"
+                      rows={4}
                       className="form-textarea"
                       disabled={isViewMode ? true : false}
                     />
@@ -2021,20 +2187,6 @@ export const RecordForm = () => {
                 <h3>Información Adicional</h3>
                 <div className="form-grid">
                   <div className="form-group full-width">
-                    <label htmlFor="resumen">Resumen</label>
-                    <textarea
-                      id="resumen"
-                      name="resumen"
-                      value={formData.resumen}
-                      onChange={handleChange}
-                      placeholder="Resumen del trabajo"
-                      rows={4}
-                      className="form-textarea"
-                      disabled={isViewMode ? true : false}
-                    />
-                  </div>
-
-                  <div className="form-group full-width">
                     <label htmlFor="palabrasClave">Palabras Clave</label>
                     <Input
                       id="palabrasClave"
@@ -2051,6 +2203,32 @@ export const RecordForm = () => {
                 </div>
               </div>
 
+              <GroupProjectAssignFields
+                selectedGroup={selectedGroup}
+                selectedProject={selectedProject}
+                groupSearchTerm={groupSearch.term}
+                projectSearchTerm={projectSearch.term}
+                onGroupSearchTermChange={(value) => {
+                  if (selectedGroup) setSelectedGroup(null)
+                  groupSearch.setTerm(value)
+                }}
+                onProjectSearchTermChange={(value) => {
+                  if (selectedProject) setSelectedProject(null)
+                  projectSearch.setTerm(value)
+                }}
+                groupResults={groupSearch.results}
+                projectResults={projectSearch.results}
+                groupLoading={groupSearch.isLoading}
+                projectLoading={projectSearch.isLoading}
+                groupError={groupSearch.error}
+                projectError={projectSearch.error}
+                onSelectGroup={handleSelectGroup}
+                onSelectProject={handleSelectProject}
+                onClearGroup={handleClearGroup}
+                onClearProject={handleClearProject}
+                disabled={isViewMode}
+              />
+
               {!isSaved && !isViewMode && !isEditMode && (
                 <div className="form-actions">
                   <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
@@ -2063,7 +2241,7 @@ export const RecordForm = () => {
           )}
 
           {(isSaved || isViewMode || isEditMode) && activeTab === "autores" && (
-            <div className="form-section">
+            <div className="form-section" id="authors-section" data-field-key="authors">
               <div className="tab-header">
                 <h3>Autores del Registro</h3>
                 {!isViewMode && (
@@ -2131,7 +2309,11 @@ export const RecordForm = () => {
                 </div>
               )}
 
-              {fieldErrors.authors && <p className="error-message">{fieldErrors.authors}</p>}
+              {fieldErrors.authors && (
+                <p className="field-error" role="alert">
+                  {fieldErrors.authors}
+                </p>
+              )}
               {authors.length === 0 ? (
                 <p className="empty-state">No hay autores agregados aún</p>
               ) : (
@@ -2191,7 +2373,7 @@ export const RecordForm = () => {
           )}
 
           {(isSaved || isViewMode || isEditMode) && activeTab === "tutores" && recordType === "tesis" && (
-            <div className="form-section">
+            <div className="form-section" id="tutores-section" data-field-key="tutors">
               <div className="tab-header">
                 <h3>Tutores de la Tesis</h3>
                 {!isViewMode && (
@@ -2297,68 +2479,6 @@ export const RecordForm = () => {
             </div>
           )}
 
-          {(isSaved || isViewMode || isEditMode) && activeTab === "proyectos" && (
-            <div className="form-section">
-              <div className="tab-header">
-              <h3>Proyectos de Investigación Asociados</h3>
-                {!isViewMode && (
-                  <div className="tab-actions">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        if (mockProjects.length === 0) {
-                          setSuccessMessage("No hay proyectos disponibles para asociar")
-                          setShowSuccessDialog(true)
-                          return
-                        }
-                        setShowProjectModal(true)
-                      }}
-                    >
-                  Asociar Proyecto de Investigación
-                </Button>
-              </div>
-                )}
-              </div>
-              {associatedProjects.length === 0 ? (
-              <p className="empty-state">No hay proyectos asociados aún</p>
-              ) : (
-                <div className="records-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Nombre</th>
-                        <th>Temática</th>
-                        <th>Fecha Inicio</th>
-                        {!isViewMode && <th>Opciones</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {associatedProjects.map((project) => (
-                        <tr key={project.id}>
-                          <td>{project.nombre}</td>
-                          <td>{project.tematica}</td>
-                          <td>{new Date(project.fechaInicio).toLocaleDateString()}</td>
-                          {!isViewMode && (
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Desasociar",
-                                    onClick: () => handleDisassociateProject(project.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-            </div>
-          )}
-            </div>
-          )}
         </form>
       </Card>
 
@@ -2375,16 +2495,17 @@ export const RecordForm = () => {
 
       {isEditMode && (
         <Card>
-            <div className="form-actions">
-              <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
-                Cancelar
-              </Button>
-            <Button type="button" onClick={handleUpdateRecord}>
-              Actualizar Registro
+          <div className="form-actions">
+            {submitError && <p className="error-message">{submitError}</p>}
+            <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
+              Cancelar
             </Button>
-            </div>
+            <Button type="button" onClick={() => void handleUpdateRecord()} disabled={isSubmitting}>
+              {isSubmitting ? "Actualizando..." : "Actualizar Registro"}
+            </Button>
+          </div>
         </Card>
-          )}
+      )}
 
       {isViewMode && (
         <Card>

@@ -138,13 +138,13 @@ def create_project(db: Session, project: schemas.ProjectCreate):
                 raise ValueError(f"Responsible integrant id {project.id_responsible} does not exist")
             responsible_id_to_use = project.id_responsible
         elif isinstance(project.id_responsible, schemas.NewIntegrant):
-           
             new_resp = Integrant(
                 name=project.id_responsible.name,
                 work_center=project.id_responsible.work_center,
                 email=project.id_responsible.email,
+                identity=project.id_responsible.identity,
                 id_country=project.id_responsible.id_country,
-                external=True
+                external=True,
             )
             db.add(new_resp)
             db.flush()
@@ -153,45 +153,7 @@ def create_project(db: Session, project: schemas.ProjectCreate):
             raise ValueError("Invalid type for id_responsible")
 
     # --- Procesar miembros ---
-    member_ids_to_associate = []
-    existing_member_ids = []
-    new_members_data = []
-
-    for member in project.member_ids:
-        if isinstance(member, int):
-            existing_member_ids.append(member)
-        elif isinstance(member, schemas.NewIntegrant):
-            new_members_data.append(member)
-        else:
-            raise ValueError("Invalid entry in member_ids: must be int or NewIntegrant")
-
-    # Validar países de nuevos miembros
-    new_country_ids = {m.id_country for m in new_members_data}
-    
-
-    # Validar miembros existentes
-    if existing_member_ids:
-        existing = db.query(Integrant).filter(
-            Integrant.id_integrant.in_(existing_member_ids)
-        ).all()
-        if len(existing) != len(existing_member_ids):
-            raise ValueError("One or more existing member IDs do not exist")
-
-    # Crear nuevos miembros
-    for new_member in new_members_data:
-        db_new = models.Integrant(
-            name=new_member.name,
-            work_center=new_member.work_center,
-            email=new_member.email,
-            id_country=new_member.id_country,
-            external=True
-        )
-        db.add(db_new)
-        db.flush()
-        member_ids_to_associate.append(db_new.id_integrant)
-
-    # Añadir miembros existentes
-    member_ids_to_associate.extend(existing_member_ids)
+    member_ids_to_associate = _resolve_member_ids(db, project.member_ids)
 
     # --- Crear el proyecto ---
     project_data = project.model_dump(exclude={"id_responsible", "member_ids"})
@@ -242,6 +204,11 @@ def create_project(db: Session, project: schemas.ProjectCreate):
         "id_project": db_project.id_project,
         "title": db_project.title,
         "code": db_project.code,
+        "description": db_project.description,
+        "objectives": db_project.objectives,
+        "tasks": db_project.tasks,
+        "scientific_details": db_project.scientific_details,
+        "other_data": db_project.other_data,
         "id_responsible": db_project.id_responsible,
         "thematic": db_project.thematic,
         "id_project_type": db_project.id_project_type,
@@ -287,7 +254,49 @@ def create_project(db: Session, project: schemas.ProjectCreate):
     }
 
 from sqlalchemy import delete, insert
-from typing import List, Optional
+from typing import List, Optional, Union
+
+
+def _resolve_member_ids(
+    db: Session,
+    member_entries: List[Union[int, schemas.NewIntegrant]],
+) -> List[int]:
+    """Convierte IDs y NewIntegrant en una lista de id_integrant."""
+    resolved: List[int] = []
+    existing_ids: List[int] = []
+    new_members_data: List[schemas.NewIntegrant] = []
+
+    for member in member_entries:
+        if isinstance(member, int):
+            existing_ids.append(member)
+        elif isinstance(member, schemas.NewIntegrant):
+            new_members_data.append(member)
+        else:
+            raise ValueError("Invalid entry in member_ids: must be int or NewIntegrant")
+
+    if existing_ids:
+        existing = db.query(Integrant).filter(
+            Integrant.id_integrant.in_(existing_ids)
+        ).all()
+        if len(existing) != len(existing_ids):
+            raise ValueError("One or more existing member IDs do not exist")
+        resolved.extend(existing_ids)
+
+    for new_member in new_members_data:
+        db_new = Integrant(
+            name=new_member.name,
+            work_center=new_member.work_center,
+            email=new_member.email,
+            identity=new_member.identity,
+            id_country=new_member.id_country,
+            external=True,
+        )
+        db.add(db_new)
+        db.flush()
+        resolved.append(db_new.id_integrant)
+
+    return resolved
+
 
 def update_project(db: Session, project_id: int, project_update: schemas.ProjectUpdate):
     db_project = get_project(db, project_id)
@@ -296,7 +305,6 @@ def update_project(db: Session, project_id: int, project_update: schemas.Project
 
     data = project_update.model_dump(exclude_unset=True)
 
-    # --- Validación de FKs ---
     if "id_responsible" in data and data["id_responsible"] is not None:
         exists = db.query(Integrant).filter(
             Integrant.id_integrant == data["id_responsible"]
@@ -304,30 +312,14 @@ def update_project(db: Session, project_id: int, project_update: schemas.Project
         if not exists:
             raise ValueError(f"Responsible integrant id {data['id_responsible']} does not exist")
 
-    # --- Actualizar miembros si se proporcionan ---
-    # Usamos 'members_ids' (con 's') como la lista principal
-    if "members_ids" in data and isinstance(data["members_ids"], list):
-        member_ids: List[int] = data["members_ids"]
+    if "member_ids" in data and data["member_ids"] is not None:
+        member_ids = _resolve_member_ids(db, data["member_ids"])
 
-        # Validar que todos los IDs de integrantes existan
-        if member_ids:
-            existing_ids = {
-                id_ for id_, in db.execute(
-                    select(Integrant.id_integrant)
-                    .where(Integrant.id_integrant.in_(member_ids))
-                )
-            }
-            missing = set(member_ids) - existing_ids
-            if missing:
-                raise ValueError(f"The following integrant IDs do not exist: {missing}")
-
-        # Eliminar todos los miembros actuales del proyecto
         db.execute(
             delete(models.project_integrant)
             .where(models.project_integrant.c.id_project == project_id)
         )
 
-        # Insertar los nuevos miembros (todos con admin=False, a menos que especifiques)
         if member_ids:
             new_members = [
                 {"id_project": project_id, "id_integrant": mid, "admin": False}
@@ -335,10 +327,8 @@ def update_project(db: Session, project_id: int, project_update: schemas.Project
             ]
             db.execute(insert(models.project_integrant), new_members)
 
-    # --- Actualizar campos del proyecto ---
     for key, value in data.items():
-        # Saltamos los campos que ya manejamos (miembros)
-        if key not in ("members_ids", "member_ids"):  # excluimos ambos por seguridad
+        if key != "member_ids":
             setattr(db_project, key, value)
 
     db.commit()

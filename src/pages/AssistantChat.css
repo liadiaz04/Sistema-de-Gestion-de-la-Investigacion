@@ -24,9 +24,39 @@
 }
 
 .assistant-chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
   padding: 1.1rem 1.35rem;
   border-bottom: 1px solid var(--border-color);
   background: linear-gradient(180deg, rgba(0, 131, 83, 0.04) 0%, transparent 100%);
+}
+
+.assistant-chat-header-text {
+  flex: 1;
+  min-width: min(100%, 20rem);
+}
+
+.assistant-chat-reset {
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary, var(--color-text-secondary));
+  background: var(--light-green, var(--color-bg-tertiary));
+  border: 1px solid var(--border-color, var(--color-border));
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.assistant-chat-reset:hover {
+  color: var(--primary-green, var(--color-primary));
+  border-color: var(--primary-green, var(--color-primary));
+  background: rgba(0, 131, 83, 0.08);
 }
 
 .assistant-chat-header h2 {

@@ -9,11 +9,23 @@ import type {
   ProjectType,
 } from '../types/api/project';
 
+export interface NewIntegrantPayload {
+  name: string
+  work_center?: string | null
+  email?: string | null
+  identity?: string | null
+  id_country?: number | null
+}
+
 export interface CreateProjectPayload {
   title: string
   code: string
+  objectives?: string | null
+  tasks?: string | null
+  scientific_details?: string | null
+  other_data?: string | null
   keywords: string
-  member_ids: number[]
+  member_ids: Array<number | NewIntegrantPayload>
   id_responsible: number | null
   thematic: string
   id_project_type: number | null
@@ -65,7 +77,8 @@ export const projectService = {
         search: filters?.search,
       },
     });
-    return response.data;
+    const data = response.data;
+    return Array.isArray(data) ? data : [];
   },
 
   /**

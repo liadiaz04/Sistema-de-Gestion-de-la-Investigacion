@@ -13,7 +13,7 @@ export type RecordType =
 // Datos comunes del formulario
 export interface CommonFormData {
   titulo: string;
-  descripcion: string;
+  tituloCapitulo: string;
   año: number;
   mes: number;
   resumen: string;

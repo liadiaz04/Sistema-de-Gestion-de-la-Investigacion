@@ -40,6 +40,7 @@ const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
     'integrante_grupo': 'integrante_grupo',
     'consejo_cientifico': 'consejo',
     'autor_registro': 'autor_registro',
+    'publicador': 'publicador',
     'usuario': 'usuario',
   };
 
@@ -50,6 +51,7 @@ const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
     if (roleName === 'USUARIO' || r.id_role === 2) return 'integrant';
     if (roleName === 'CONSEJO' || r.id_role === 3) return 'consejo'
     if (roleName === 'AUTOR' || r.id_role === 4) return 'autor_registro';
+    if (roleName === 'PUBLICADOR') return 'publicador';
     return roleMap[r.role_name.toLowerCase()] || 'usuario';
   }) || [];
 

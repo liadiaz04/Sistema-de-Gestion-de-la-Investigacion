@@ -18,6 +18,7 @@ def get_traces(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     method: Optional[str] = None,
+    date_order: schemas.TraceDateOrder = schemas.TraceDateOrder.desc,
 ) -> List[models.Trace]:
     query = db.query(models.Trace)
 
@@ -31,6 +32,11 @@ def get_traces(
         query = query.filter(models.Trace.date <= end_date)
     if method:
         query = query.filter(models.Trace.method == method)
+
+    if date_order == schemas.TraceDateOrder.asc:
+        query = query.order_by(models.Trace.date.asc())
+    else:
+        query = query.order_by(models.Trace.date.desc())
 
     return query.offset(skip).limit(limit).all()
 

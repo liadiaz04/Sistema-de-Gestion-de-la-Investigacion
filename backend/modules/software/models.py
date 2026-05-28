@@ -30,6 +30,7 @@ class Software(Base):
     only_date = Column(Date)
     is_multimedia = Column(Boolean, default=False, nullable=False)
     id_group = Column(Integer)
+    publicated = Column(Boolean, default=False, nullable=False)
 
     # Relaciones
     country = relationship("Country", foreign_keys=[id_country])

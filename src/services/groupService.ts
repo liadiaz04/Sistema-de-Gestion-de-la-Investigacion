@@ -43,7 +43,8 @@ export const groupService = {
         id_admin: filters?.id_admin,
       },
     });
-    return response.data;
+    const data = response.data;
+    return Array.isArray(data) ? data : [];
   },
 
   /**
