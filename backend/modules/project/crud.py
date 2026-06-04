@@ -353,16 +353,26 @@ def get_project_count_by_faculty(db: Session):
     Devuelve una lista de dicts con:
       - faculty_name: nombre de la facultad
       - project_count: número de proyectos asociados a esa facultad
-    Incluye facultades con 0 proyectos (usando outerjoin si lo deseas),
-    pero en este caso solo mostramos facultades que tienen al menos un proyecto.
+    Incluye proyectos sin facultad bajo «Sin facultad».
     """
     results = (
         db.query(
             Faculty.name.label("faculty_name"),
-            func.count(models.Project.id_project).label("project_count")
+            func.count(models.Project.id_project).label("project_count"),
         )
         .join(models.Project, Faculty.id_faculty == models.Project.id_faculty)
         .group_by(Faculty.id_faculty, Faculty.name)
         .all()
     )
-    return [{"faculty_name": name, "project_count": count} for name, count in results]
+    output = [{"faculty_name": name, "project_count": count} for name, count in results]
+
+    without_faculty = (
+        db.query(func.count(models.Project.id_project))
+        .filter(models.Project.id_faculty.is_(None))
+        .scalar()
+        or 0
+    )
+    if without_faculty > 0:
+        output.append({"faculty_name": "Sin facultad", "project_count": without_faculty})
+
+    return output

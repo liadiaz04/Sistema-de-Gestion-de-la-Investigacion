@@ -48,15 +48,70 @@ export const validateEmailRequired = (
 }
 
 /**
+ * Valida número de teléfono (internacional simple o local).
+ * Acepta +, espacios, guiones; entre 7 y 15 dígitos.
+ */
+export const validatePhone = (phone: string | null | undefined, required = false): string | null => {
+  if (!phone || phone.trim() === '') {
+    return required ? 'El teléfono es requerido' : null
+  }
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length < 7 || digits.length > 15) {
+    return 'El teléfono debe tener entre 7 y 15 dígitos'
+  }
+  if (!/^[\d\s+\-().]+$/.test(phone.trim())) {
+    return 'El teléfono contiene caracteres no permitidos'
+  }
+  return null
+}
+
+/**
+ * Valida nombre obligatorio (sin números ni caracteres especiales).
+ */
+export const validateNameRequired = (
+  name: string | null | undefined,
+  fieldName: string,
+): string | null => {
+  const requiredError = validateRequired(name, fieldName)
+  if (requiredError) return requiredError
+  return validateName(name, fieldName)
+}
+
+/**
+ * Normaliza ISSN al formato XXXX-XXXX para mostrar/guardar.
+ */
+export const formatISSN = (issn: string): string => {
+  const clean = issn.replace(/[-\s]/g, '').toUpperCase()
+  if (clean.length !== 8) return issn.trim()
+  return `${clean.slice(0, 4)}-${clean.slice(4)}`
+}
+
+/**
+ * Normaliza ISBN eliminando espacios/guiones extra.
+ */
+export const formatISBN = (isbn: string): string => isbn.replace(/[\s-]/g, '').toUpperCase()
+
+/**
  * Valida formato de DOI (10.xxxx/xxxxx)
  */
 export const validateDOI = (doi: string | null | undefined): string | null => {
-  if (!doi || doi.trim() === "") return null // DOI es opcional
+  if (!doi || doi.trim() === '') return null
   const doiRegex = /^10\.\d{4,}\/[\S]+$/
   if (!doiRegex.test(doi.trim())) {
-    return "El formato del DOI no es válido (debe ser: 10.xxxx/xxxxx)"
+    return 'El formato del DOI no es válido (debe ser: 10.xxxx/xxxxx)'
   }
   return null
+}
+
+/**
+ * Valida DOI normalizando prefijos doi.org
+ */
+export const validateDOINormalized = (doi: string | null | undefined): string | null => {
+  if (!doi || doi.trim() === '') return null
+  let normalized = doi.trim()
+  normalized = normalized.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')
+  normalized = normalized.replace(/^doi:\s*/i, '')
+  return validateDOI(normalized)
 }
 
 /**

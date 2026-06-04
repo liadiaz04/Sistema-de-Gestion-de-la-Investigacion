@@ -1,11 +1,15 @@
 import type { IStatisticsTabular, IStatisticsGraphical, IStatisticData, RecordType } from "../types"
 import { apiClient } from "./api/client"
 import { recordMetadataService } from "./record/recordMetadataService"
+import { projectService } from "./projectService"
+import type { Project, ProjectWithMembers } from "../types/api/project"
 import {
   buildEmptyXlsxInfoBlob,
-  buildStatisticsPlainText,
+  buildStatisticsPdfBlob,
   buildTabularStatisticsXlsxBlob,
-  plainTextToPdfBlob,
+  type RecordStatsForExport,
+  type StatisticsPdfBundle,
+  type StatisticsPdfChartOptions,
 } from "./statisticsReportExport"
 
 // Cache de facultades para evitar múltiples llamadas
@@ -32,6 +36,103 @@ async function getFacultyIdByName(facultyName: string): Promise<number | null> {
   const faculties = await getFacultiesCache()
   const match = faculties.find((f) => f.name === facultyName)
   return match?.id_faculty ?? null
+}
+
+const getFacultyLabelFromProject = (project: Project): string =>
+  project.faculty?.name?.trim() || "Sin facultad"
+
+const aggregateProjectsTabular = (
+  projects: ProjectWithMembers[],
+): {
+  porFacultad: Record<string, number>
+  integrantesPorProyecto: Record<string, number>
+} => {
+  const porFacultad: Record<string, number> = {}
+  const integrantesPorProyecto: Record<string, number> = {}
+
+  projects.forEach((project) => {
+    const facultad = getFacultyLabelFromProject(project)
+    porFacultad[facultad] = (porFacultad[facultad] || 0) + 1
+    const memberCount = Array.isArray(project.members) ? project.members.length : 0
+    integrantesPorProyecto[facultad] = (integrantesPorProyecto[facultad] || 0) + memberCount
+  })
+
+  return { porFacultad, integrantesPorProyecto }
+}
+
+const aggregateProjectsGraphical = (
+  projects: ProjectWithMembers[],
+): {
+  porFacultad: IStatisticData[]
+  porEstado: IStatisticData[]
+  porAño: Record<number, number>
+} => {
+  const porFacultadMap: Record<string, number> = {}
+  const estadoCounts: Record<string, number> = {}
+  const porAño: Record<number, number> = {}
+
+  projects.forEach((project) => {
+    const facultad = getFacultyLabelFromProject(project)
+    porFacultadMap[facultad] = (porFacultadMap[facultad] || 0) + 1
+
+    const estado =
+      project.state?.name ??
+      project.project_state?.name ??
+      (project as { estado?: string }).estado ??
+      "Sin estado"
+    estadoCounts[estado] = (estadoCounts[estado] || 0) + 1
+
+    const startDate = project.initial_date ?? project.start_date ?? null
+    if (startDate) {
+      const projectYear = new Date(startDate).getFullYear()
+      if (!Number.isNaN(projectYear)) {
+        porAño[projectYear] = (porAño[projectYear] || 0) + 1
+      }
+    }
+  })
+
+  return {
+    porFacultad: Object.entries(porFacultadMap).map(([label, value]) => ({ label, value })),
+    porEstado: Object.entries(estadoCounts).map(([label, value]) => ({ label, value })),
+    porAño,
+  }
+}
+
+async function fetchProjectsForStatistics(): Promise<ProjectWithMembers[]> {
+  const projects = await projectService.getAllProjects({ skip: 0, limit: 5000 })
+  return projects as ProjectWithMembers[]
+}
+
+const applyProjectCountRows = (
+  rows: unknown[],
+  proyectosPorFacultad: Record<string, number>,
+  integrantesPorProyecto: Record<string, number>,
+): void => {
+  rows.forEach((item: unknown) => {
+    if (!item || typeof item !== "object") return
+    const row = item as Record<string, unknown>
+    const facultad =
+      (typeof row.faculty_name === "string" && row.faculty_name) ||
+      (row.faculty && typeof row.faculty === "object" && typeof (row.faculty as { name?: string }).name === "string"
+        ? (row.faculty as { name: string }).name
+        : null) ||
+      (typeof row.name === "string" && row.name) ||
+      "Sin facultad"
+    const cantidad =
+      (typeof row.project_count === "number" && row.project_count) ||
+      (typeof row.total_projects === "number" && row.total_projects) ||
+      (typeof row.count === "number" && row.count) ||
+      0
+    proyectosPorFacultad[facultad] = (proyectosPorFacultad[facultad] || 0) + cantidad
+
+    const integrantes =
+      (typeof row.total_members === "number" && row.total_members) ||
+      (typeof row.member_count === "number" && row.member_count) ||
+      0
+    if (integrantes > 0) {
+      integrantesPorProyecto[facultad] = (integrantesPorProyecto[facultad] || 0) + integrantes
+    }
+  })
 }
 
 class StatisticsService {
@@ -190,22 +291,26 @@ class StatisticsService {
       const projectCounts = Array.isArray(projectCountsResponse.data)
         ? projectCountsResponse.data
         : []
-      projectCounts.forEach((item: any) => {
-        const facultad = item.faculty_name ?? item.faculty?.name ?? item.name ?? "Sin facultad"
-        const cantidad = item.total_projects ?? item.project_count ?? item.count ?? 0
-        proyectosPorFacultad[facultad] = (proyectosPorFacultad[facultad] || 0) + cantidad
-
-        // Si el backend proporciona integrantes por proyecto, usarlos
-        const integrantes = item.total_members ?? item.member_count ?? 0
-        if (integrantes > 0) {
-          integrantesPorProyecto[facultad] = (integrantesPorProyecto[facultad] || 0) + integrantes
-        }
-      })
+      applyProjectCountRows(projectCounts, proyectosPorFacultad, integrantesPorProyecto)
     } catch (e) {
       console.error("Error cargando conteos de proyectos por facultad:", e)
     }
 
-    const totalProyectos = Object.values(proyectosPorFacultad).reduce((acc, v) => acc + v, 0)
+    let totalProyectos = Object.values(proyectosPorFacultad).reduce((acc, v) => acc + v, 0)
+
+    if (totalProyectos === 0) {
+      try {
+        const projects = await fetchProjectsForStatistics()
+        if (projects.length > 0) {
+          const aggregated = aggregateProjectsTabular(projects)
+          Object.assign(proyectosPorFacultad, aggregated.porFacultad)
+          Object.assign(integrantesPorProyecto, aggregated.integrantesPorProyecto)
+          totalProyectos = projects.length
+        }
+      } catch (e) {
+        console.error("Error cargando proyectos para estadísticas tabulares:", e)
+      }
+    }
 
     return {
       grupos: {
@@ -355,54 +460,39 @@ class StatisticsService {
     // 3) Estadísticas de PROYECTOS
     let proyectosPorFacultad: IStatisticData[] = []
     let proyectosPorEstado: IStatisticData[] = []
+    let indicadoresProyectosPorAño: Record<number, number> = {}
 
     try {
       const projectCountsResponse = await apiClient.get("/projects/count/faculty/")
       const projectCounts = Array.isArray(projectCountsResponse.data)
         ? projectCountsResponse.data
         : []
-      proyectosPorFacultad = projectCounts.map((item: any) => ({
-        label: item.faculty_name ?? item.faculty?.name ?? item.name ?? "Sin facultad",
-        value: item.total_projects ?? item.project_count ?? item.count ?? 0,
+      const porFacultadMap: Record<string, number> = {}
+      const integrantesMap: Record<string, number> = {}
+      applyProjectCountRows(projectCounts, porFacultadMap, integrantesMap)
+      proyectosPorFacultad = Object.entries(porFacultadMap).map(([label, value]) => ({
+        label,
+        value,
       }))
     } catch (e) {
       console.error("Error cargando proyectos por facultad:", e)
     }
 
-    // Obtener proyectos por estado
+    let projectsForStats: Project[] = []
     try {
-      const projectsResponse = await apiClient.get("/projects/", { params: { limit: 1000 } })
-      const projects = Array.isArray(projectsResponse.data) ? projectsResponse.data : []
-
-      const estadoCounts: Record<string, number> = {}
-      projects.forEach((project: any) => {
-        const estado = project.state ?? project.estado ?? project.id_project_state?.name ?? "Sin estado"
-        estadoCounts[estado] = (estadoCounts[estado] || 0) + 1
-      })
-
-      proyectosPorEstado = Object.entries(estadoCounts).map(([label, value]) => ({
-        label,
-        value,
-      }))
+      projectsForStats = await fetchProjectsForStatistics()
     } catch (e) {
-      console.error("Error cargando proyectos por estado:", e)
+      console.error("Error cargando listado de proyectos para estadísticas:", e)
     }
 
-    // Obtener indicadores de proyectos por año
-    const indicadoresProyectosPorAño: Record<number, number> = {}
-    try {
-      const projectsResponse = await apiClient.get("/projects/", { params: { limit: 1000 } })
-      const projects = Array.isArray(projectsResponse.data) ? projectsResponse.data : []
-
-      projects.forEach((project: any) => {
-        const startDate = project.start_date ?? project.fecha_inicio
-        if (startDate) {
-          const projectYear = new Date(startDate).getFullYear()
-          indicadoresProyectosPorAño[projectYear] = (indicadoresProyectosPorAño[projectYear] || 0) + 1
-        }
-      })
-    } catch (e) {
-      console.error("Error cargando proyectos por año:", e)
+    if (projectsForStats.length > 0) {
+      const aggregated = aggregateProjectsGraphical(projectsForStats)
+      const proyectosPorFacultadTotal = proyectosPorFacultad.reduce((acc, item) => acc + item.value, 0)
+      if (proyectosPorFacultadTotal === 0) {
+        proyectosPorFacultad = aggregated.porFacultad
+      }
+      proyectosPorEstado = aggregated.porEstado
+      indicadoresProyectosPorAño = aggregated.porAño
     }
 
     return {
@@ -426,6 +516,9 @@ class StatisticsService {
     data: any,
     category?: "registros" | "grupos" | "proyectos",
     view?: "tabular" | "graphical",
+    recordStats?: RecordStatsForExport,
+    chartOptions?: StatisticsPdfChartOptions,
+    graphicalForPdf?: IStatisticsGraphical | null,
   ): Promise<Blob> {
     const fecha = new Date().toLocaleString("es-ES", {
       year: "numeric",
@@ -436,8 +529,14 @@ class StatisticsService {
     })
 
     if (tipo === "pdf") {
-      const text = buildStatisticsPlainText(data, category, view, fecha)
-      return plainTextToPdfBlob(text)
+      const bundle: StatisticsPdfBundle = {
+        tabular:
+          view === "tabular" && data && typeof data === "object" && "registros" in data
+            ? (data as IStatisticsTabular)
+            : null,
+        graphical: graphicalForPdf ?? (view === "graphical" ? (data as IStatisticsGraphical) : null),
+      }
+      return buildStatisticsPdfBlob(bundle, fecha, category, view, recordStats, chartOptions)
     }
 
     if (view !== "tabular" || !data) {
@@ -449,6 +548,7 @@ class StatisticsService {
       fecha,
       category,
       view,
+      recordStats,
     )
   }
 }

@@ -22,16 +22,12 @@ export const AuthForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    const emailValidation = validateEmailRequired(username, "Correo electrónico")
-    if (emailValidation) {
-      setError(emailValidation)
-      return
-    }
+    
 
     setLoading(true)
 
     try {
-      const response = await authService.login({ email: username.trim(), password })
+      const response = await authService.login({  username: username.trim(), password })
       login(response.token)
       // Actualizar el usuario en el store (el authService ya lo guarda en localStorage)
       // Pero necesitamos actualizar el store también
@@ -62,13 +58,13 @@ export const AuthForm: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="auth-form">
           <Input
-            label="Correo electrónico"
-            type="email"
+            label="Nombre de usuario"
+            type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="usuario@institucion.edu"
+            placeholder="Ingrese su nombre de usuario"
             required
-            autoComplete="username email"
+            autoComplete="username"
           />
 
           <Input

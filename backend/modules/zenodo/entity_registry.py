@@ -299,6 +299,13 @@ def build_storage_filename(entity_type: EntityType, entity_id: int, original_fil
     return f"{entity_type.value}_{entity_id}_{safe_name}"
 
 
+def entity_has_assigned_doi(entity_type: EntityType, record: Any) -> bool:
+    """Artículos con DOI ya están publicados y no deben re-publicarse en Zenodo."""
+    if entity_type != EntityType.article:
+        return False
+    return _normalize_doi(getattr(record, "doi", None)) is not None
+
+
 def _normalize_doi(doi: Optional[str]) -> Optional[str]:
     if not doi or not str(doi).strip():
         return None

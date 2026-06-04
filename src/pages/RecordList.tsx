@@ -18,8 +18,11 @@ import { zenodoService } from "../services/zenodoService";
 import { ZenodoPublishModal } from "../components/zenodo/ZenodoPublishModal";
 import {
   buildPublicationKey,
+  canPublishRecordToZenodo,
+  getRecordDoiFromRegistro,
   isRecordPublishedInZenodo,
   mapRecordTypeToEntityType,
+  recordHasDoi,
 } from "../utils/zenodoEntityMapper";
 import type { RecordType } from "../types";
 import type { ZenodoPublishTarget } from "../types/zenodo";
@@ -150,8 +153,22 @@ const RecordList: React.FC = () => {
   };
 
   const handleOpenZenodoPublish = (record: Registro) => {
+    if (!canPublishToZenodo()) {
+      return;
+    }
+
     const entityId = parseInt(record.id, 10);
     if (Number.isNaN(entityId)) return;
+
+    const isPublished = isRecordPublishedInZenodo(
+      record.tipo as RecordType,
+      record.id,
+      publishedZenodoKeys,
+    );
+    const recordDoi = getRecordDoiFromRegistro(record)
+    if (!canPublishRecordToZenodo(record.tipo as RecordType, recordDoi, isPublished)) {
+      return;
+    }
 
     setZenodoTarget({
       entityType: mapRecordTypeToEntityType(record.tipo as RecordType),
@@ -181,6 +198,10 @@ const RecordList: React.FC = () => {
 
     if (isPublished) {
       return <span className="badge-zenodo-published">Publicado</span>;
+    }
+
+    if (recordHasDoi(record.tipo as RecordType, getRecordDoiFromRegistro(record))) {
+      return <span className="badge-zenodo-doi">Con DOI</span>;
     }
 
     return <span className="badge-zenodo-unpublished">No publicado</span>;
@@ -221,7 +242,13 @@ const RecordList: React.FC = () => {
         const isPublished = zenodoStatusLoaded
           ? isRecordPublishedInZenodo(record.tipo as RecordType, record.id, publishedZenodoKeys)
           : false;
-        const canPublishRecord = canPublishToZenodo() && !isPublished;
+        const canPublishRecord =
+          canPublishToZenodo() &&
+          canPublishRecordToZenodo(
+            record.tipo as RecordType,
+            getRecordDoiFromRegistro(record),
+            isPublished,
+          );
 
         const menuOptions: Array<{ label: string; onClick: () => void; className?: string }> = [
           {

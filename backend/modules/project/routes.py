@@ -39,6 +39,14 @@ def read_projects(
         print(e)
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.get("/count/faculty/", response_model=list[schemas.ProjectCountByFaculty])
+def get_project_count_by_faculty_endpoint(db: Session = Depends(get_db)):
+    """
+    Devuelve una lista de facultades con la cantidad de proyectos asociados a cada una.
+    """
+    return crud.get_project_count_by_faculty(db)
+
+
 @router.get("/{project_id}", response_model=schemas.ProjectWithMembers)
 def read_project(project_id: int, db: Session = Depends(get_db)):
     db_project = crud.get_project(db, project_id)
@@ -76,10 +84,3 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     if db_project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return db_project
-
-@router.get("/count/faculty/", response_model=list[schemas.ProjectCountByFaculty])
-def get_project_count_by_faculty_endpoint(db: Session = Depends(get_db)):
-    """
-    Devuelve una lista de facultades con la cantidad de proyectos asociados a cada una.
-    """
-    return crud.get_project_count_by_faculty(db)

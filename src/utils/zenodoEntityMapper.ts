@@ -1,5 +1,7 @@
 import type { RecordType } from '../types';
 import type { ZenodoEntityType } from '../types/zenodo';
+import type { ArticuloRegistro, Registro } from '../types/recordList/Registros';
+import { normalizeDoiValue } from './doiUtils';
 
 export const RECORD_TYPE_TO_ENTITY_TYPE: Record<RecordType, ZenodoEntityType> = {
   articulo: 'article',
@@ -65,3 +67,20 @@ export const isRecordPublishedInZenodo = (
   if (Number.isNaN(entityId)) return false;
   return publishedKeys.has(buildPublicationKey(entityType, entityId));
 };
+
+/** Solo los artículos tienen DOI; si ya lo tienen, se consideran publicados fuera de Zenodo. */
+export const recordHasDoi = (
+  recordType: RecordType,
+  doi: string | null | undefined,
+): boolean => recordType === 'articulo' && normalizeDoiValue(doi) !== null;
+
+export const getRecordDoiFromRegistro = (record: Registro): string | null => {
+  if ((record.tipo as RecordType) !== 'articulo') return null;
+  return (record as ArticuloRegistro).doi;
+};
+
+export const canPublishRecordToZenodo = (
+  recordType: RecordType,
+  doi: string | null | undefined,
+  isPublishedInZenodo: boolean,
+): boolean => !isPublishedInZenodo && !recordHasDoi(recordType, doi);

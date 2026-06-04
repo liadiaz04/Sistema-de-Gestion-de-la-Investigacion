@@ -14,6 +14,8 @@ import { groupService } from "../services/groupService"
 import { integrantService } from "../services/integrantService"
 import type { IGroup, IUser } from "../types"
 import { usePermissions } from "../hooks/usePermissions"
+import { canEditGroupDetails } from "../utils/groupEditPermissions"
+import { useAuthStore } from "../stores/authStore"
 import type { Group } from "../types/api/group"
 import type { IntegrantWithRoles } from "../types/api/integrant"
 import "./GroupList.css"
@@ -137,6 +139,7 @@ const mapGroupToIGroup = (group: Group): IGroup => {
 export const GroupList: React.FC = () => {
   const navigate = useNavigate()
   const { canCreateGroups, canManageAllGroups } = usePermissions()
+  const { user } = useAuthStore()
   
   const [searchTerm, setSearchTerm] = useState("")
   const [groups, setGroups] = useState<IGroup[]>([])
@@ -254,15 +257,12 @@ export const GroupList: React.FC = () => {
     return matchesSearch
   })
 
-  const isUserResponsible = (group: IGroup) => {
-    if (!userId) return false
-    return group.responsable && parseInt(group.responsable.id) === userId
-  }
-
   const canEditGroup = (group: IGroup) => {
-    if (canManageAllGroups()) return true
-    if (isUserResponsible(group)) return true
-    return false
+    const parsedResponsableId = group.responsable?.id
+      ? parseInt(group.responsable.id, 10)
+      : NaN
+    const responsableId = Number.isNaN(parsedResponsableId) ? null : parsedResponsableId
+    return canEditGroupDetails(user, responsableId, canManageAllGroups())
   }
 
   const handleDelete = async (groupId: string) => {

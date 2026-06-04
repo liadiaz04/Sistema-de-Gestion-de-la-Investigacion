@@ -13,11 +13,13 @@ import "./GroupForm.css"
 import { mockGroups } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
 import { usePermissions } from "../hooks/usePermissions"
+import { useRequirePermission } from "../hooks/useRequirePermission"
 import { evaluationService } from "../services/evaluationService"
 import { integrantGroupEvaluationService } from "../services/integrantGroupEvaluationService"
 import type { Evaluation } from "../types/api/evaluation"
 import type { IntegrantGroupEvaluation } from "../types/api/integrantGroupEvaluation"
 import type { IUser } from "../types/index"
+import { canEditGroupDetails } from "../utils/groupEditPermissions"
 
 const readUserFromLocalStorage = (): IUser | null => {
   if (typeof window === "undefined") return null
@@ -44,12 +46,23 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { groupService } from "../services/groupService"
+import { integrantService } from "../services/integrantService"
+import {
+  IntegrantDetailsModal,
+  type IntegrantDetailsFallback,
+} from "../components/integrant/IntegrantDetailsModal"
 import {
   validateRequired,
   validateEmailRequired,
   validateLength,
+  validateNameRequired,
   extractErrorMessage,
 } from "../utils/validation"
+import {
+  IdentityDocumentField,
+  validateIdentityField,
+  type IdentityCountryOption,
+} from "../components/common/IdentityDocumentField"
 
 type IntegrantSearchHook = {
   term: string
@@ -111,13 +124,15 @@ export const GroupForm = () => {
   const location = useLocation()
   const { user: currentUserFromStore } = useAuthStore()
   const currentUser = currentUserFromStore ?? readUserFromLocalStorage()
-  const { isAutor } = usePermissions()
+  const { isAutor, canManageAllGroups, canCreateGroups } = usePermissions()
 
   const isAutorUser = isAutor()
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
   const isNewMode = !id
+
+  useRequirePermission(!isNewMode || canCreateGroups(), "/groups")
 
   const [isSaved, setIsSaved] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
@@ -155,6 +170,10 @@ export const GroupForm = () => {
   const [selectedMember, setSelectedMember] = useState<any>(null)
 
   const [showModifyMemberModal, setShowModifyMemberModal] = useState(false)
+  const [showIntegrantDetailsModal, setShowIntegrantDetailsModal] = useState(false)
+  const [integrantDetailsId, setIntegrantDetailsId] = useState<number | null>(null)
+  const [integrantDetailsFallback, setIntegrantDetailsFallback] =
+    useState<IntegrantDetailsFallback | null>(null)
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
   const memberSearch = useIntegrantSearch()
@@ -165,8 +184,12 @@ export const GroupForm = () => {
     numeroIdentidad: "",
     entidad: "",
     email: "",
+    id_country: null as number | null,
   })
   const [externalMemberEmailError, setExternalMemberEmailError] = useState<string | null>(null)
+  const [externalMemberCountryError, setExternalMemberCountryError] = useState<string | null>(null)
+  const [externalMemberIdentityError, setExternalMemberIdentityError] = useState<string | null>(null)
+  const [countries, setCountries] = useState<IdentityCountryOption[]>([])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -190,6 +213,14 @@ export const GroupForm = () => {
   const [editingEvaluationRow, setEditingEvaluationRow] = useState<IntegrantGroupEvaluation | null>(null)
   const [deleteEvaluationDialogOpen, setDeleteEvaluationDialogOpen] = useState(false)
   const [evaluationPendingDelete, setEvaluationPendingDelete] = useState<IntegrantGroupEvaluation | null>(null)
+  const [groupDetailsLoaded, setGroupDetailsLoaded] = useState(false)
+
+  useEffect(() => {
+    setGroupDetailsLoaded(false)
+    setSelectedResponsableId(0)
+    setSelectedResponsable(undefined)
+    setMembers([])
+  }, [id])
 
   const canManageGroupEvaluations = useMemo(() => {
     const roles = currentUser?.roles || []
@@ -220,6 +251,22 @@ export const GroupForm = () => {
       hasResponsableGrupoRoleForThisGroup
     )
   }, [currentUser, selectedResponsableId, members])
+
+  const canEditCurrentGroup = useMemo(() => {
+    if (!groupDetailsLoaded) return false
+    return canEditGroupDetails(
+      currentUser,
+      selectedResponsableId > 0 ? selectedResponsableId : null,
+      canManageAllGroups(),
+    )
+  }, [groupDetailsLoaded, currentUser, selectedResponsableId, canManageAllGroups])
+
+  useEffect(() => {
+    if (!isEditMode || !id || !groupDetailsLoaded) return
+    if (!canEditCurrentGroup) {
+      navigate(`/groups/${id}`, { replace: true })
+    }
+  }, [isEditMode, id, groupDetailsLoaded, canEditCurrentGroup, navigate])
 
   const loadEvaluationsTabData = useCallback(async () => {
     if (!id) return
@@ -483,12 +530,14 @@ export const GroupForm = () => {
       try {
         setIsMetadataLoading(true)
         setMetadataError("")
-        const [facultiesResponse, areasResponse] = await Promise.all([
+        const [facultiesResponse, areasResponse, countriesResponse] = await Promise.all([
           recordMetadataService.getFaculties(),
           recordMetadataService.getFacultyAreas(),
+          recordMetadataService.getCountries(),
         ])
         setFaculties(facultiesResponse)
         setFacultyAreas(areasResponse)
+        setCountries(countriesResponse)
       } catch (error) {
         setMetadataError((error as Error).message || "No se pudieron cargar los catálogos")
       } finally {
@@ -502,6 +551,7 @@ export const GroupForm = () => {
   useEffect(() => {
     const loadGroupData = async () => {
       if (id && (isViewMode || isEditMode)) {
+        setGroupDetailsLoaded(false)
         try {
           const group = await groupService.getGroupById(parseInt(id))
           
@@ -549,47 +599,77 @@ export const GroupForm = () => {
           setSelectedFacultyId(group.id_faculty)
           setSelectedFacultyAreaId(group.id_faculty_area||0)
           
-          // Cargar miembros
+          // Cargar miembros (con datos completos para distinguir externos)
           if (group.members) {
-            const memberIds = group.members.map(m => m.id_integrant)
+            const memberIds = group.members.map((m) => m.id_integrant)
             setSelectedMemberIds(memberIds)
-            // Mapear miembros a formato del formulario
-            const mappedMembers = group.members.map((m, idx) => ({
-              id: `member-${m.id_integrant || idx}`,
-              integrantId: m.id_integrant,
-              admin: m.admin,
-              usuario: m.integrant ? {
-                id: String(m.integrant.id_integrant),
-                nombre: m.integrant.name.split(" ")[0] || "",
-                apellidos: m.integrant.name.split(" ").slice(1).join(" ") || "",
-                correoElectronico: m.integrant.email || "",
-                nombreUsuario: "",
-                numeroIdentidad: "",
-                roles: [],
-                esExterno: false,
-                esAdministrador: false,
-              } : {
-                id: String(m.id_integrant),
-                nombre: m.name.split(" ")[0] || "",
-                apellidos: m.name.split(" ").slice(1).join(" ") || "",
-                correoElectronico: "",
-                nombreUsuario: "",
-                numeroIdentidad: "",
-                roles: [],
-                esExterno: false,
-                esAdministrador: false,
-              },
-              rol: "integrante_grupo",
-              evaluacion: null,
-              descripcionEvaluacion: "",
-            }))
+
+            const integrantCache = new Map<
+              number,
+              {
+                name: string
+                email?: string | null
+                external: boolean
+                identity?: string | null
+                work_center?: string | null
+              }
+            >()
+
+            const resolveMemberIntegrant = async (memberIntegrantId: number) => {
+              if (integrantCache.has(memberIntegrantId)) {
+                return integrantCache.get(memberIntegrantId)!
+              }
+              try {
+                const integrant = await integrantService.getIntegrantById(memberIntegrantId)
+                const summary = {
+                  name: integrant.name,
+                  email: integrant.email,
+                  external: integrant.external,
+                  identity: integrant.identity,
+                  work_center: integrant.work_center,
+                }
+                integrantCache.set(memberIntegrantId, summary)
+                return summary
+              } catch {
+                return null
+              }
+            }
+
+            const mappedMembers = await Promise.all(
+              group.members.map(async (m, idx) => {
+                const integrantInfo = await resolveMemberIntegrant(m.id_integrant)
+                const fullName = integrantInfo?.name?.trim() || m.name?.trim() || ""
+                return {
+                  id: `member-${m.id_integrant || idx}`,
+                  integrantId: m.id_integrant,
+                  admin: m.admin,
+                  usuario: {
+                    id: String(m.id_integrant),
+                    nombre: fullName.split(" ")[0] || "",
+                    apellidos: fullName.split(" ").slice(1).join(" ") || "",
+                    correoElectronico: integrantInfo?.email || m.integrant?.email || "",
+                    nombreUsuario: "",
+                    numeroIdentidad: integrantInfo?.identity || "",
+                    entidad: integrantInfo?.work_center || "",
+                    roles: [],
+                    esExterno: integrantInfo?.external ?? false,
+                    esAdministrador: false,
+                  },
+                  rol: "integrante_grupo",
+                  evaluacion: null,
+                  descripcionEvaluacion: "",
+                }
+              }),
+            )
             setMembers(mappedMembers)
           }
           
           setIsSaved(true)
+          setGroupDetailsLoaded(true)
         } catch (error) {
           console.error("Error cargando grupo:", error)
           setMetadataError((error as Error).message || "Error al cargar el grupo")
+          setGroupDetailsLoaded(false)
         }
       }
     }
@@ -724,21 +804,37 @@ export const GroupForm = () => {
   const handleAddExternalMember = (e: React.FormEvent) => {
     e.preventDefault()
     setExternalMemberEmailError(null)
+    setExternalMemberCountryError(null)
+    setExternalMemberIdentityError(null)
+
+    const nombreErr = validateNameRequired(externalMember.nombre, "Nombre")
+    const apellidosErr = validateNameRequired(externalMember.apellidos, "Apellidos")
+    const entidadErr = validateRequired(externalMember.entidad, "Entidad")
     const emailErr = validateEmailRequired(externalMember.email, "Correo electrónico")
-    if (emailErr) {
-      setExternalMemberEmailError(emailErr)
+    const { countryError, identityError } = validateIdentityField(
+      externalMember.numeroIdentidad,
+      externalMember.id_country,
+      countries,
+    )
+
+    if (nombreErr || apellidosErr || entidadErr || emailErr || countryError || identityError) {
+      if (emailErr) setExternalMemberEmailError(emailErr)
+      if (countryError) setExternalMemberCountryError(countryError)
+      if (identityError) setExternalMemberIdentityError(identityError)
       return
     }
+
     const newMember = {
       id: `external-${Date.now()}`,
       integrantId: null,
       usuario: {
         id: `external-${Date.now()}`,
-        nombre: externalMember.nombre,
-        apellidos: externalMember.apellidos,
-        numeroIdentidad: externalMember.numeroIdentidad,
-        entidad: externalMember.entidad,
-        correoElectronico: externalMember.email,
+        nombre: externalMember.nombre.trim(),
+        apellidos: externalMember.apellidos.trim(),
+        numeroIdentidad: externalMember.numeroIdentidad.trim(),
+        entidad: externalMember.entidad.trim(),
+        correoElectronico: externalMember.email.trim(),
+        id_country: externalMember.id_country,
         esExterno: true,
       },
       rol: "integrante_grupo",
@@ -748,13 +844,38 @@ export const GroupForm = () => {
     setMembers([...members, newMember])
     setExternalMembers([...externalMembers, newMember])
     setShowExternalModal(false)
-    setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
+    setExternalMember({
+      nombre: "",
+      apellidos: "",
+      numeroIdentidad: "",
+      entidad: "",
+      email: "",
+      id_country: null,
+    })
     setExternalMemberEmailError(null)
+    setExternalMemberCountryError(null)
+    setExternalMemberIdentityError(null)
     setSuccessMessage("Integrante externo agregado con éxito")
     setShowSuccessDialog(true)
   }
 
+  const handleViewMemberDetails = (member: any) => {
+    setIntegrantDetailsId(member.integrantId ?? null)
+    setIntegrantDetailsFallback({
+      nombre: member.usuario?.nombre,
+      apellidos: member.usuario?.apellidos,
+      correoElectronico: member.usuario?.correoElectronico,
+      numeroIdentidad: member.usuario?.numeroIdentidad,
+      entidad: member.usuario?.entidad,
+      esExterno: member.usuario?.esExterno,
+    })
+    setShowIntegrantDetailsModal(true)
+  }
+
   const handleModifyMember = (member: any) => {
+    if (isEditMode && !member.usuario?.esExterno) {
+      return
+    }
     setSelectedMember(member)
     setShowModifyMemberModal(true)
   }
@@ -777,6 +898,47 @@ export const GroupForm = () => {
     if (memberToRemove?.usuario?.esExterno) {
       setExternalMembers((prev) => prev.filter((m) => m.id !== memberId))
     }
+  }
+
+  const getIntegrantMenuOptions = (member: any, mode: "view" | "edit" | "manage") => {
+    const viewDetails = {
+      label: "Ver detalles",
+      onClick: () => handleViewMemberDetails(member),
+    }
+
+    if (mode === "view") {
+      return [viewDetails]
+    }
+
+    if (mode === "manage") {
+      return [
+        viewDetails,
+        {
+          label: "Modificar",
+          onClick: () => handleModifyMember(member),
+        },
+        {
+          label: "Eliminar integrante",
+          onClick: () => handleRemoveMember(member.id),
+        },
+      ]
+    }
+
+    if (member.usuario?.esExterno) {
+      return [
+        viewDetails,
+        {
+          label: "Modificar",
+          onClick: () => handleModifyMember(member),
+        },
+        {
+          label: "Eliminar integrante",
+          onClick: () => handleRemoveMember(member.id),
+        },
+      ]
+    }
+
+    return [viewDetails]
   }
 
   const handleSaveAllUpdates = async () => {
@@ -863,7 +1025,7 @@ export const GroupForm = () => {
       errors.area = "Debe seleccionar un área"
     }
 
-    // Validar emails de miembros externos
+    // Validar emails e identidad de miembros externos
     externalMembers.forEach((member, index) => {
       const emailError = validateEmailRequired(
         member.usuario?.correoElectronico,
@@ -871,6 +1033,14 @@ export const GroupForm = () => {
       )
       if (emailError) {
         errors[`externalMemberEmail_${index}`] = emailError
+      }
+      const { identityError } = validateIdentityField(
+        member.usuario?.numeroIdentidad ?? "",
+        member.usuario?.id_country ?? null,
+        countries,
+      )
+      if (identityError) {
+        errors[`externalMemberIdentity_${index}`] = identityError
       }
     })
 
@@ -1074,14 +1244,23 @@ export const GroupForm = () => {
               required
             />
           </div>
-          <div className="form-group">
-            <label>Carnet de Identidad *</label>
-            <Input
-              value={externalMember.numeroIdentidad}
-              onChange={(e) => setExternalMember({ ...externalMember, numeroIdentidad: e.target.value })}
-              required
-            />
-          </div>
+          <IdentityDocumentField
+            countries={countries}
+            countryId={externalMember.id_country}
+            onCountryIdChange={(id_country) =>
+              setExternalMember({ ...externalMember, id_country })
+            }
+            identity={externalMember.numeroIdentidad}
+            onIdentityChange={(numeroIdentidad) =>
+              setExternalMember({ ...externalMember, numeroIdentidad })
+            }
+            onClearErrors={() => {
+              setExternalMemberCountryError(null)
+              setExternalMemberIdentityError(null)
+            }}
+            countryError={externalMemberCountryError}
+            identityError={externalMemberIdentityError}
+          />
           <div className="form-group">
             <label>Entidad a la que pertenece *</label>
             <Input
@@ -1120,6 +1299,17 @@ export const GroupForm = () => {
           </div>
         </form>
       </Modal>
+
+      <IntegrantDetailsModal
+        isOpen={showIntegrantDetailsModal}
+        onClose={() => {
+          setShowIntegrantDetailsModal(false)
+          setIntegrantDetailsId(null)
+          setIntegrantDetailsFallback(null)
+        }}
+        integrantId={integrantDetailsId}
+        fallback={integrantDetailsFallback}
+      />
 
       <Modal
         isOpen={showModifyMemberModal}
@@ -1598,16 +1788,7 @@ export const GroupForm = () => {
                             {!isNewMode && (
                               <td>
                                 <OptionsMenu
-                                  options={[
-                                    {
-                                      label: "Modificar",
-                                      onClick: () => handleModifyMember(member),
-                                    },
-                                    {
-                                      label: "Eliminar integrante",
-                                      onClick: () => handleRemoveMember(member.id),
-                                    },
-                                  ]}
+                                  options={getIntegrantMenuOptions(member, "manage")}
                                 />
                               </td>
                             )}
@@ -1811,16 +1992,7 @@ export const GroupForm = () => {
                             <td>{member.usuario?.esExterno ? "Externo" : "CUJAE"}</td>
                             <td>
                               <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Modificar",
-                                    onClick: () => handleModifyMember(member),
-                                  },
-                                  {
-                                    label: "Eliminar integrante",
-                                    onClick: () => handleRemoveMember(member.id),
-                                  },
-                                ]}
+                                options={getIntegrantMenuOptions(member, "view")}
                               />
                             </td>
                           </tr>
@@ -1838,7 +2010,11 @@ export const GroupForm = () => {
           <Card>
             <div className="form-actions">
               <Button onClick={() => navigate("/groups")}>Volver a Grupos</Button>
-              <Button onClick={() => navigate(`/groups/${id}/edit`)}>Editar Grupo</Button>
+              {groupDetailsLoaded && canEditCurrentGroup ? (
+                <Button type="button" onClick={() => navigate(`/groups/${id}/edit`)}>
+                  Editar Grupo
+                </Button>
+              ) : null}
             </div>
           </Card>
         </>
@@ -2035,20 +2211,7 @@ export const GroupForm = () => {
                             <td>{member.usuario.esExterno ? "Externo" : "CUJAE"}</td>
                             <td>
                               <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Ver detalles",
-                                    onClick: () => alert(`Ver detalles de ${member.usuario.nombre}`),
-                                  },
-                                  {
-                                    label: "Modificar",
-                                    onClick: () => handleModifyMember(member),
-                                  },
-                                  {
-                                    label: "Eliminar integrante",
-                                    onClick: () => handleRemoveMember(member.id),
-                                  },
-                                ]}
+                                options={getIntegrantMenuOptions(member, "edit")}
                               />
                             </td>
                           </tr>

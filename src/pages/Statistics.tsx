@@ -204,7 +204,37 @@ export const Statistics = () => {
 
   const handleExportPDF = async () => {
     const data = view === "tabular" ? tabularData : graphicalData
-    const blob = await statisticsService.generateReport("pdf", data, category, view)
+    const statsForRegistros =
+      view === "tabular" && category === "registros" && Object.keys(recordStats).length > 0
+        ? recordStats
+        : undefined
+
+    let graphicalForPdf = graphicalData
+    if (!graphicalForPdf) {
+      try {
+        graphicalForPdf = await statisticsService.getGraphicalStatistics(
+          selectedYear,
+          selectedFacultad === "Todas" ? undefined : selectedFacultad,
+        )
+      } catch (error) {
+        console.error("Error cargando datos gráficos para PDF:", error)
+      }
+    }
+
+    const blob = await statisticsService.generateReport(
+      "pdf",
+      data,
+      category,
+      view,
+      statsForRegistros,
+      {
+        selectedYear,
+        selectedFacultad,
+        groupVisualizationType,
+        projectVisualizationType,
+      },
+      graphicalForPdf,
+    )
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -220,7 +250,15 @@ export const Statistics = () => {
     if (view !== "tabular") return
     const data = tabularData
     if (!data) return
-    const blob = await statisticsService.generateReport("xlsx", data, category, view)
+    const statsForRegistros =
+      category === "registros" && Object.keys(recordStats).length > 0 ? recordStats : undefined
+    const blob = await statisticsService.generateReport(
+      "xlsx",
+      data,
+      category,
+      view,
+      statsForRegistros,
+    )
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url

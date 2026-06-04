@@ -9,9 +9,11 @@ from core.config import settings
 from . import crud, schemas
 from .entity_registry import (
     ENTITY_REGISTRY,
+    _normalize_doi,
     apply_publication_doi_to_entity,
     build_metadata,
     build_storage_filename,
+    entity_has_assigned_doi,
     get_entity_record,
 )
 from .service import ZenodoService, save_local_copy, validate_pdf_file
@@ -123,6 +125,15 @@ async def publish_to_zenodo(
         )
 
     record = get_entity_record(db, entity_type, entity_id)
+    if entity_has_assigned_doi(entity_type, record):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Este registro ya tiene un DOI asignado y no puede publicarse en Zenodo",
+                "doi": _normalize_doi(getattr(record, "doi", None)),
+            },
+        )
+
     file_bytes = await file.read()
     original_filename = file.filename or "documento.pdf"
     validate_pdf_file(original_filename, file_bytes)

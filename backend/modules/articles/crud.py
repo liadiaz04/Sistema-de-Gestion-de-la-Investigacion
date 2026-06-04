@@ -186,16 +186,21 @@ def update_article(db: Session, article_id: int, article_update: schemas.Article
     update_data = article_update.model_dump(exclude_unset=True)
 
     if "doi" in update_data:
+        current_doi = _normalize_doi(db_article.doi)
+        requested_doi = _normalize_doi(update_data.get("doi"))
         zenodo_publication = zenodo_crud.get_publication_by_entity(db, "article", article_id)
         if zenodo_publication:
-            current_doi = _normalize_doi(db_article.doi)
-            requested_doi = _normalize_doi(update_data.get("doi"))
             if requested_doi != current_doi:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="No se puede modificar el DOI de un registro publicado en Zenodo",
                 )
             update_data.pop("doi", None)
+        elif current_doi and requested_doi != current_doi:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No se puede modificar el DOI de un artículo que ya tiene DOI asignado",
+            )
 
     # Validar FKs
     if "id_country" in update_data and update_data["id_country"] is not None:

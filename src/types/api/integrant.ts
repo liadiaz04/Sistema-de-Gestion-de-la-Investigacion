@@ -106,6 +106,7 @@ export interface IntegrantUpdate {
   id_docent_degree?: number | null;
   id_general_category?: number | null;
   role_ids?: number[];
+  roles_list?: number[];
 }
 
 // Parámetros de filtro para GET /integrants/

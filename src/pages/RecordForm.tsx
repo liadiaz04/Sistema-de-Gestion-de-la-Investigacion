@@ -43,29 +43,36 @@ import type {
 } from "../types/recordList/Registros"
 import { recordDetailService } from "../services/record/recordDetailService"
 import { usePermissions } from "../hooks/usePermissions"
+import { useRequirePermission } from "../hooks/useRequirePermission"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { ZenodoPublishModal } from "../components/zenodo/ZenodoPublishModal"
 import {
   extractEntityIdFromResponse,
   mapRecordTypeToEntityType,
+  canPublishRecordToZenodo,
 } from "../utils/zenodoEntityMapper"
 import { zenodoService } from "../services/zenodoService"
 import type { ZenodoPublishTarget } from "../types/zenodo"
 import {
   validateRequired,
   validateEmailRequired,
-  validateDOI,
+  validateDOINormalized,
   validateISSN,
   validateISBN,
   validateYear,
   validateAuthors,
   validateKeywords,
-  validateName,
+  validateNameRequired,
   validateLength,
+  validatePages,
   extractErrorMessage,
   isDuplicateIdentifierError,
   getDuplicateIdentifierMessage,
 } from "../utils/validation"
+import {
+  IdentityDocumentField,
+  validateIdentityField,
+} from "../components/common/IdentityDocumentField"
 import { scrollToFirstFormError, scrollToFormError } from "../utils/scrollToFormError"
 import { normalizeDoiValue } from "../utils/doiUtils"
 import {
@@ -361,11 +368,14 @@ export const RecordForm = () => {
   const recordNumericId = parsedRecordKey?.id ?? null
 
   const { user: currentUser } = useAuthStore()
-  const { canPublishToZenodo } = usePermissions()
+  const { canCreateRecords, canPublishToZenodo, canModifyRecord } = usePermissions()
   const isAdmin = currentUser?.roles?.includes("admin") || false
 
   const isEditMode = Boolean(id && location.pathname.includes("/edit"))
   const isViewMode = Boolean(id && !location.pathname.includes("/edit"))
+  const isNewRecord = !id
+
+  useRequirePermission(!isNewRecord || canCreateRecords(), "/records")
 
   const [recordType, setRecordType] = useState<RecordType>(
     (parsedRecordKey?.type as RecordType | undefined) ??
@@ -373,6 +383,25 @@ export const RecordForm = () => {
       "articulo"
   )
   const [recordData, setRecordData] = useState<Registro | null>(recordFromLocation ?? null)
+  const editPermissionReady = !isEditMode || recordData !== null
+  const currentIntegrantId = (() => {
+    const uid = localStorage.getItem("user_id")
+    if (!uid) return null
+    const parsed = parseInt(uid, 10)
+    return Number.isNaN(parsed) ? null : parsed
+  })()
+  const isCurrentUserRecordAuthor = Boolean(
+    currentIntegrantId &&
+      recordData?.autores?.some((autor) => autor.id_integrant === currentIntegrantId),
+  )
+  const editDeniedRedirect =
+    isEditMode && id ? location.pathname.replace(/\/edit$/, "") || "/records" : "/records"
+
+  useRequirePermission(
+    !isEditMode || !editPermissionReady || canModifyRecord(isCurrentUserRecordAuthor),
+    editDeniedRedirect,
+  )
+
   const [recordLoading, setRecordLoading] = useState(false)
   const [recordLoadError, setRecordLoadError] = useState<string | null>(null)
   const [isSaved, setIsSaved] = useState(false)
@@ -392,8 +421,11 @@ export const RecordForm = () => {
     numeroIdentidad: "",
     entidad: "",
     email: "",
+    id_country: null as number | null,
   })
   const [externalPersonEmailError, setExternalPersonEmailError] = useState<string | null>(null)
+  const [externalPersonCountryError, setExternalPersonCountryError] = useState<string | null>(null)
+  const [externalPersonIdentityError, setExternalPersonIdentityError] = useState<string | null>(null)
   const [countries, setCountries] = useState<CountryOption[]>([])
   const [articleTypes, setArticleTypes] = useState<NamedOption[]>([])
   const [normTypes, setNormTypes] = useState<NamedOption[]>([])
@@ -410,6 +442,7 @@ export const RecordForm = () => {
   const [isMetadataLoading, setIsMetadataLoading] = useState(true)
   const [metadataReloadKey, setMetadataReloadKey] = useState(0)
   const [externalAuthors, setExternalAuthors] = useState<any[]>([])
+  const [editingExternalId, setEditingExternalId] = useState<string | null>(null)
   const [selectedAuthorIds, setSelectedAuthorIds] = useState<number[]>([])
   const [selectedTutorIds, setSelectedTutorIds] = useState<number[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -419,7 +452,7 @@ export const RecordForm = () => {
   const [showZenodoModal, setShowZenodoModal] = useState(false)
   const [zenodoTarget, setZenodoTarget] = useState<ZenodoPublishTarget | null>(null)
   const [pendingNavigation, setPendingNavigation] = useState(false)
-  const [isDoiLockedByZenodo, setIsDoiLockedByZenodo] = useState(false)
+  const [isZenodoPublished, setIsZenodoPublished] = useState(false)
 
   const authorSearch = useIntegrantSearch()
   const tutorSearch = useIntegrantSearch()
@@ -427,6 +460,12 @@ export const RecordForm = () => {
   const projectSearch = useProjectSearch()
 
   const [formData, setFormData] = useState<RecordFormState>(createInitialFormData)
+
+  const isEditingExistingArticle =
+    recordType === "articulo" && recordNumericId !== null
+  const hasPersistedArticleDoi =
+    isEditingExistingArticle && Boolean(normalizeDoiValue(formData.doi))
+  const isDoiLocked = isZenodoPublished || hasPersistedArticleDoi
 
   const recordTypes: { value: RecordType; label: string }[] = [
     { value: "articulo", label: "Artículo" },
@@ -565,13 +604,13 @@ export const RecordForm = () => {
   useEffect(() => {
     const recordTypeForZenodo = (parsedRecordKey?.type ?? recordType) as RecordType
     if (recordTypeForZenodo !== "articulo" || !recordNumericId) {
-      setIsDoiLockedByZenodo(false)
+      setIsZenodoPublished(false)
       return
     }
 
     const entityId = Number(recordNumericId)
     if (Number.isNaN(entityId)) {
-      setIsDoiLockedByZenodo(false)
+      setIsZenodoPublished(false)
       return
     }
 
@@ -582,7 +621,7 @@ export const RecordForm = () => {
       .then((publication) => {
         if (!isMounted) return
         const isPublished = publication?.status === "published"
-        setIsDoiLockedByZenodo(isPublished)
+        setIsZenodoPublished(isPublished)
         if (isPublished) {
           const publishedDoi = normalizeDoiValue(publication?.doi)
           if (publishedDoi) {
@@ -592,7 +631,7 @@ export const RecordForm = () => {
       })
       .catch(() => {
         if (!isMounted) return
-        setIsDoiLockedByZenodo(false)
+        setIsZenodoPublished(false)
       })
 
     return () => {
@@ -785,7 +824,7 @@ export const RecordForm = () => {
       ...resolvedTypes,
       id_group: selectedGroup?.id ?? null,
       id_project: selectedProject?.id ?? null,
-      includeDoi: options?.includeDoi ?? !isDoiLockedByZenodo,
+      includeDoi: options?.includeDoi ?? !isDoiLocked,
     }
   }
 
@@ -933,43 +972,144 @@ export const RecordForm = () => {
     )
   }
 
-  const handleAddExternal = (e: React.FormEvent) => {
-    e.preventDefault()
+  const clearExternalModalErrors = () => {
     setExternalPersonEmailError(null)
+    setExternalPersonCountryError(null)
+    setExternalPersonIdentityError(null)
+  }
+
+  const resetExternalModal = () => {
+    setShowExternalModal(false)
+    setEditingExternalId(null)
+    setExternalPerson({
+      nombre: "",
+      apellidos: "",
+      numeroIdentidad: "",
+      entidad: "",
+      email: "",
+      id_country: null,
+    })
+    clearExternalModalErrors()
+  }
+
+  const openCreateExternalModal = (type: "author" | "tutor") => {
+    setModalType(type)
+    setEditingExternalId(null)
+    setExternalPerson({
+      nombre: "",
+      apellidos: "",
+      numeroIdentidad: "",
+      entidad: "",
+      email: "",
+      id_country: null,
+    })
+    clearExternalModalErrors()
+    setShowExternalModal(true)
+  }
+
+  const openEditExternalModal = (type: "author" | "tutor", person: (typeof authors)[number]) => {
+    setModalType(type)
+    setEditingExternalId(person.id)
+    setExternalPerson({
+      nombre: person.nombre ?? "",
+      apellidos: person.apellidos ?? "",
+      numeroIdentidad: person.usuario?.numeroIdentidad ?? "",
+      entidad: person.usuario?.entidad ?? "",
+      email: person.usuario?.correoElectronico ?? "",
+      id_country: person.usuario?.id_country ?? null,
+    })
+    clearExternalModalErrors()
+    setShowExternalModal(true)
+  }
+
+  const handleSubmitExternal = (e: React.FormEvent) => {
+    e.preventDefault()
+    clearExternalModalErrors()
+
+    const nombreErr = validateNameRequired(externalPerson.nombre, "Nombre")
+    const apellidosErr = validateNameRequired(externalPerson.apellidos, "Apellidos")
+    const entidadErr = validateRequired(externalPerson.entidad, "Entidad")
     const emailErr = validateEmailRequired(externalPerson.email, "Correo electrónico")
-    if (emailErr) {
-      setExternalPersonEmailError(emailErr)
+    const { countryError, identityError } = validateIdentityField(
+      externalPerson.numeroIdentidad,
+      externalPerson.id_country,
+      countries,
+    )
+
+    if (nombreErr || apellidosErr || entidadErr || emailErr || countryError || identityError) {
+      if (emailErr) setExternalPersonEmailError(emailErr)
+      if (countryError) setExternalPersonCountryError(countryError)
+      if (identityError) setExternalPersonIdentityError(identityError)
       return
     }
-    const newPerson = {
-      id: `external-${Date.now()}`,
-      integrantId: null,
-      usuario: {
-        id: `external-${Date.now()}`,
-        nombre: externalPerson.nombre,
-        apellidos: externalPerson.apellidos,
-        numeroIdentidad: externalPerson.numeroIdentidad,
-        entidad: externalPerson.entidad,
-        correoElectronico: externalPerson.email,
-        esExterno: true,
-      },
-      nombre: externalPerson.nombre,
-      apellidos: externalPerson.apellidos,
-      esExterno: true,
-      esPrincipal: false,
-      orden: (modalType === "author" ? authors.length : tutors.length) + 1,
+
+    const trimmedPerson = {
+      nombre: externalPerson.nombre.trim(),
+      apellidos: externalPerson.apellidos.trim(),
+      numeroIdentidad: externalPerson.numeroIdentidad.trim(),
+      entidad: externalPerson.entidad.trim(),
+      correoElectronico: externalPerson.email.trim(),
+      id_country: externalPerson.id_country,
     }
-    if (modalType === "author") {
-      setAuthors([...authors, newPerson])
-      setExternalAuthors([...externalAuthors, newPerson])
-      setSuccessMessage("Autor externo agregado con éxito")
+
+    if (editingExternalId) {
+      const updatePerson = (person: (typeof authors)[number]) => {
+        if (person.id !== editingExternalId) return person
+        return {
+          ...person,
+          nombre: trimmedPerson.nombre,
+          apellidos: trimmedPerson.apellidos,
+          usuario: {
+            ...person.usuario,
+            nombre: trimmedPerson.nombre,
+            apellidos: trimmedPerson.apellidos,
+            numeroIdentidad: trimmedPerson.numeroIdentidad,
+            entidad: trimmedPerson.entidad,
+            correoElectronico: trimmedPerson.correoElectronico,
+            id_country: trimmedPerson.id_country,
+          },
+        }
+      }
+
+      if (modalType === "author") {
+        setAuthors((prev) => prev.map(updatePerson))
+        setExternalAuthors((prev) => prev.map(updatePerson))
+        setSuccessMessage("Autor externo modificado con éxito")
+      } else {
+        setTutors((prev) => prev.map(updatePerson))
+        setSuccessMessage("Tutor externo modificado con éxito")
+      }
     } else {
-      setTutors([...tutors, newPerson])
-      setSuccessMessage("Tutor externo agregado con éxito")
+      const newPerson = {
+        id: `external-${Date.now()}`,
+        integrantId: null,
+        usuario: {
+          id: `external-${Date.now()}`,
+          nombre: trimmedPerson.nombre,
+          apellidos: trimmedPerson.apellidos,
+          numeroIdentidad: trimmedPerson.numeroIdentidad,
+          entidad: trimmedPerson.entidad,
+          correoElectronico: trimmedPerson.correoElectronico,
+          id_country: trimmedPerson.id_country,
+          esExterno: true,
+        },
+        nombre: trimmedPerson.nombre,
+        apellidos: trimmedPerson.apellidos,
+        esExterno: true,
+        esPrincipal: false,
+        orden: (modalType === "author" ? authors.length : tutors.length) + 1,
+      }
+      if (modalType === "author") {
+        setAuthors([...authors, newPerson])
+        setExternalAuthors([...externalAuthors, newPerson])
+        setSuccessMessage("Autor externo agregado con éxito")
+      } else {
+        setTutors([...tutors, newPerson])
+        setSuccessMessage("Tutor externo agregado con éxito")
+      }
     }
-    setShowExternalModal(false)
-    setExternalPerson({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
-    setExternalPersonEmailError(null)
+
+    resetExternalModal()
     setShowSuccessDialog(true)
   }
 
@@ -985,6 +1125,9 @@ export const RecordForm = () => {
     }
     
     setAuthors(authors.filter((a) => a.id !== authorId))
+    if (editingExternalId === authorId) {
+      resetExternalModal()
+    }
     if (authorToRemove?.integrantId) {
       setSelectedAuthorIds((prev) => prev.filter((value) => value !== authorToRemove.integrantId))
     }
@@ -996,6 +1139,9 @@ export const RecordForm = () => {
   const handleRemoveTutor = (tutorId: string) => {
     const tutorToRemove = tutors.find((tutor) => tutor.id === tutorId)
     setTutors(tutors.filter((t) => t.id !== tutorId))
+    if (editingExternalId === tutorId) {
+      resetExternalModal()
+    }
     if (tutorToRemove?.integrantId) {
       setSelectedTutorIds((prev) => prev.filter((value) => value !== tutorToRemove.integrantId))
     }
@@ -1036,7 +1182,7 @@ export const RecordForm = () => {
         name: `${external.nombre} ${external.apellidos}`,
         work_center: external.usuario?.entidad || "",
         email: external.usuario?.correoElectronico || "",
-        id_country: selectedCountryId || 1, // Usar país seleccionado o default
+        id_country: external.usuario?.id_country ?? selectedCountryId ?? countries[0]?.id_country ?? 1,
       }
       authorIds.push(externalAuthor)
     })
@@ -1067,16 +1213,28 @@ export const RecordForm = () => {
 
     // Validaciones específicas por tipo de registro
     switch (recordType) {
-      case "articulo":
+      case "articulo": {
+        const revistaError = validateRequired(formData.revista, "Revista")
+        if (revistaError) errors.revista = revistaError
+        const volumenError = validateRequired(formData.volumen, "Volumen")
+        if (volumenError) errors.volumen = volumenError
+        const paginasError = validateRequired(formData.paginas, "Páginas")
+        if (paginasError) errors.paginas = paginasError
+        if (formData.paginas?.includes("-")) {
+          const [start, end] = formData.paginas.split("-")
+          const pagesRangeError = validatePages(start.trim(), end.trim())
+          if (pagesRangeError) errors.paginas = pagesRangeError
+        }
         if (formData.issn) {
           const issnError = validateISSN(formData.issn)
           if (issnError) errors.issn = issnError
         }
-        if (formData.doi && !isDoiLockedByZenodo) {
-          const doiError = validateDOI(formData.doi)
+        if (formData.doi && !isDoiLocked) {
+          const doiError = validateDOINormalized(formData.doi)
           if (doiError) errors.doi = doiError
         }
         break
+      }
       case "libro":
         if (formData.isbn) {
           const isbnError = validateISBN(formData.isbn)
@@ -1091,7 +1249,6 @@ export const RecordForm = () => {
         break
     }
 
-    // Validar emails de autores externos
     externalAuthors.forEach((author, index) => {
       const emailError = validateEmailRequired(
         author.usuario?.correoElectronico,
@@ -1099,6 +1256,14 @@ export const RecordForm = () => {
       )
       if (emailError) {
         errors[`externalAuthorEmail_${index}`] = emailError
+      }
+      const { identityError } = validateIdentityField(
+        author.usuario?.numeroIdentidad ?? "",
+        author.usuario?.id_country ?? null,
+        countries,
+      )
+      if (identityError) {
+        errors[`externalAuthorIdentity_${index}`] = identityError
       }
     })
 
@@ -1242,7 +1407,11 @@ export const RecordForm = () => {
       setSuccessMessage("Registro científico guardado con éxito")
       setShowSuccessDialog(true)
 
-      if (canPublishToZenodo() && createdEntityId !== null) {
+      if (
+        canPublishToZenodo() &&
+        createdEntityId !== null &&
+        canPublishRecordToZenodo(recordType, formData.doi, false)
+      ) {
         setZenodoTarget({
           entityType: mapRecordTypeToEntityType(recordType),
           entityId: createdEntityId,
@@ -1375,7 +1544,7 @@ export const RecordForm = () => {
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    if (e.target.name === "doi" && isDoiLockedByZenodo) {
+    if (e.target.name === "doi" && isDoiLocked) {
       return
     }
     setFormData({
@@ -1402,6 +1571,7 @@ export const RecordForm = () => {
                 placeholder="Nombre de la revista"
                 required
                 disabled={isViewMode ? true : false}
+                error={fieldErrors.revista}
               />
             </div>
             <div className="form-group relative">
@@ -1442,8 +1612,8 @@ export const RecordForm = () => {
                 onChange={handleChange}
                 placeholder="0000-0000"
                 disabled={isViewMode ? true : false}
+                error={fieldErrors.issn}
               />
-              {fieldErrors.issn && <span className="field-error">{fieldErrors.issn}</span>}
             </div>
             <div className="form-group">
               <label htmlFor="volumen">Volumen</label>
@@ -1454,6 +1624,7 @@ export const RecordForm = () => {
                 value={formData.volumen}
                 onChange={handleChange}
                 disabled={isViewMode ? true : false}
+                error={fieldErrors.volumen}
               />
             </div>
             <div className="form-group">
@@ -1477,6 +1648,7 @@ export const RecordForm = () => {
                 onChange={handleChange}
                 placeholder="Ej: 123-145"
                 disabled={isViewMode ? true : false}
+                error={fieldErrors.paginas}
               />
             </div>
             <div className="form-group full-width">
@@ -1488,21 +1660,19 @@ export const RecordForm = () => {
                 value={formData.doi}
                 onChange={handleChange}
                 placeholder="10.1000/xyz123"
-                disabled={isViewMode || isDoiLockedByZenodo}
-                readOnly={isDoiLockedByZenodo}
+                disabled={isViewMode || isDoiLocked}
+                readOnly={isDoiLocked}
                 aria-describedby="doi-hint"
-                aria-readonly={isDoiLockedByZenodo}
+                aria-readonly={isDoiLocked}
+                error={fieldErrors.doi}
               />
               <small id="doi-hint" className="form-hint">
-                {isDoiLockedByZenodo
+                {isZenodoPublished
                   ? "Este registro fue publicado en Zenodo. El DOI asignado no puede modificarse."
-                  : "Complételo solo si la publicación es de acceso público. Al publicar en Zenodo, el DOI asignado se guardará aquí automáticamente."}
+                  : hasPersistedArticleDoi
+                    ? "Este artículo ya tiene un DOI asignado (publicación externa). No puede modificarse ni publicarse en Zenodo."
+                    : "Complételo solo si la publicación es de acceso público. Si indica un DOI, no podrá publicarse en Zenodo. Al publicar en Zenodo, el DOI se guardará aquí automáticamente."}
               </small>
-              {fieldErrors.doi && (
-                <span className="field-error" role="alert">
-                  {fieldErrors.doi}
-                </span>
-              )}
             </div>
           </>
         )
@@ -1917,13 +2087,12 @@ export const RecordForm = () => {
 
       <Modal
         isOpen={showExternalModal}
-        onClose={() => {
-          setShowExternalModal(false)
-          setExternalPersonEmailError(null)
-        }}
-        title={`Agregar ${modalType === "author" ? "Autor" : "Tutor"} Externo`}
+        onClose={resetExternalModal}
+        title={`${editingExternalId ? "Modificar" : "Agregar"} ${
+          modalType === "author" ? "Autor" : "Tutor"
+        } Externo`}
       >
-        <form onSubmit={handleAddExternal} className="modal-form">
+        <form onSubmit={handleSubmitExternal} className="modal-form">
           <div className="form-group">
             <label>Nombre *</label>
             <Input
@@ -1940,14 +2109,23 @@ export const RecordForm = () => {
               required
             />
           </div>
-          <div className="form-group">
-            <label>Carnet de Identidad *</label>
-            <Input
-              value={externalPerson.numeroIdentidad}
-              onChange={(e) => setExternalPerson({ ...externalPerson, numeroIdentidad: e.target.value })}
-              required
-            />
-          </div>
+          <IdentityDocumentField
+            countries={countries}
+            countryId={externalPerson.id_country}
+            onCountryIdChange={(id_country) =>
+              setExternalPerson({ ...externalPerson, id_country })
+            }
+            identity={externalPerson.numeroIdentidad}
+            onIdentityChange={(numeroIdentidad) =>
+              setExternalPerson({ ...externalPerson, numeroIdentidad })
+            }
+            onClearErrors={() => {
+              setExternalPersonCountryError(null)
+              setExternalPersonIdentityError(null)
+            }}
+            countryError={externalPersonCountryError}
+            identityError={externalPersonIdentityError}
+          />
           <div className="form-group">
             <label>Entidad a la que pertenece *</label>
             <Input
@@ -1972,17 +2150,10 @@ export const RecordForm = () => {
             />
           </div>
           <div className="modal-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setShowExternalModal(false)
-                setExternalPersonEmailError(null)
-              }}
-            >
+            <Button type="button" variant="secondary" onClick={resetExternalModal}>
               Cancelar
             </Button>
-            <Button type="submit">Agregar</Button>
+            <Button type="submit">{editingExternalId ? "Guardar" : "Agregar"}</Button>
           </div>
         </form>
       </Modal>
@@ -2007,7 +2178,7 @@ export const RecordForm = () => {
         }}
         onPublished={(_url, publication) => {
           if (publication?.status === "published") {
-            setIsDoiLockedByZenodo(true)
+            setIsZenodoPublished(true)
           }
           const publishedDoi = normalizeDoiValue(publication?.doi)
           if (publishedDoi && recordType === "articulo") {
@@ -2250,11 +2421,7 @@ export const RecordForm = () => {
                       type="button"
                       variant="secondary"
                       aria-label="Agregar autor externo"
-                      onClick={() => {
-                        setModalType("author")
-                        setExternalPersonEmailError(null)
-                        setShowExternalModal(true)
-                      }}
+                      onClick={() => openCreateExternalModal("author")}
                     >
                       Registrar Autor Externo
                     </Button>
@@ -2323,50 +2490,54 @@ export const RecordForm = () => {
                       <tr>
                         <th>Nombre</th>
                         <th>Apellidos</th>
+                        <th>Carnet</th>
+                        <th>Entidad</th>
+                        <th>Correo</th>
                         <th>Tipo</th>
                         {!isViewMode && <th>Opciones</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {authors.map((author) => (
-                        <tr key={author.id}>
-                          <td>{author.nombre}</td>
-                          <td>{author.apellidos}</td>
-                          <td>{author.usuario?.esExterno ? "Externo" : "CUJAE"}</td>
-                          {!isViewMode && (
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Eliminar",
-                                    onClick: () => handleRemoveAuthor(author.id),
-                                    className: (() => {
-                                      const userId = currentUser?.id ? parseInt(currentUser.id) : null
-                                      const isCurrentUser = author.integrantId && userId && author.integrantId === userId
-                                      return isCurrentUser ? "disabled" : ""
-                                    })(),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          )}
-                        </tr>
-                      ))}
+                      {authors.map((author) => {
+                        const isExternal = author.usuario?.esExterno === true
+                        const userId = currentUser?.id ? parseInt(currentUser.id) : null
+                        const isCurrentUser =
+                          author.integrantId && userId && author.integrantId === userId
+
+                        return (
+                          <tr key={author.id}>
+                            <td>{author.nombre}</td>
+                            <td>{author.apellidos}</td>
+                            <td>{author.usuario?.numeroIdentidad || "—"}</td>
+                            <td>{author.usuario?.entidad || "—"}</td>
+                            <td>{author.usuario?.correoElectronico || "—"}</td>
+                            <td>{isExternal ? "Externo" : "CUJAE"}</td>
+                            {!isViewMode && (
+                              <td className="member-actions-cell">
+                                <OptionsMenu
+                                  options={[
+                                    ...(isExternal
+                                      ? [
+                                          {
+                                            label: "Modificar",
+                                            onClick: () => openEditExternalModal("author", author),
+                                          },
+                                        ]
+                                      : []),
+                                    {
+                                      label: "Eliminar",
+                                      onClick: () => handleRemoveAuthor(author.id),
+                                      className: isCurrentUser ? "disabled" : "",
+                                    },
+                                  ]}
+                                />
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
-                </div>
-              )}
-
-              {externalAuthors.length > 0 && (
-                <div className="external-authors">
-                  <h4>Autores externos registrados</h4>
-                  <ul>
-                    {externalAuthors.map((author) => (
-                      <li key={author.id}>{`${author.nombre} ${author.apellidos} - ${
-                        author.usuario?.entidad || "Sin entidad"
-                      }`}</li>
-                    ))}
-                  </ul>
                 </div>
               )}
             </div>
@@ -2382,11 +2553,7 @@ export const RecordForm = () => {
                       type="button"
                       variant="secondary"
                       aria-label="Agregar tutor externo"
-                      onClick={() => {
-                        setModalType("tutor")
-                        setExternalPersonEmailError(null)
-                        setShowExternalModal(true)
-                      }}
+                      onClick={() => openCreateExternalModal("tutor")}
                     >
                       Registrar Tutor Externo
                     </Button>
@@ -2448,30 +2615,48 @@ export const RecordForm = () => {
                       <tr>
                         <th>Nombre</th>
                         <th>Apellidos</th>
+                        <th>Carnet</th>
+                        <th>Entidad</th>
+                        <th>Correo</th>
                         <th>Tipo</th>
                         {!isViewMode && <th>Opciones</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {tutors.map((tutor) => (
-                        <tr key={tutor.id}>
-                          <td>{tutor.nombre}</td>
-                          <td>{tutor.apellidos}</td>
-                          <td>{tutor.usuario?.esExterno ? "Externo" : "CUJAE"}</td>
-                          {!isViewMode && (
-                            <td>
-                              <OptionsMenu
-                                options={[
-                                  {
-                                    label: "Eliminar",
-                                    onClick: () => handleRemoveTutor(tutor.id),
-                                  },
-                                ]}
-                              />
-                            </td>
-                          )}
-                        </tr>
-                      ))}
+                      {tutors.map((tutor) => {
+                        const isExternal = tutor.usuario?.esExterno === true
+
+                        return (
+                          <tr key={tutor.id}>
+                            <td>{tutor.nombre}</td>
+                            <td>{tutor.apellidos}</td>
+                            <td>{tutor.usuario?.numeroIdentidad || "—"}</td>
+                            <td>{tutor.usuario?.entidad || "—"}</td>
+                            <td>{tutor.usuario?.correoElectronico || "—"}</td>
+                            <td>{isExternal ? "Externo" : "CUJAE"}</td>
+                            {!isViewMode && (
+                              <td className="member-actions-cell">
+                                <OptionsMenu
+                                  options={[
+                                    ...(isExternal
+                                      ? [
+                                          {
+                                            label: "Modificar",
+                                            onClick: () => openEditExternalModal("tutor", tutor),
+                                          },
+                                        ]
+                                      : []),
+                                    {
+                                      label: "Eliminar",
+                                      onClick: () => handleRemoveTutor(tutor.id),
+                                    },
+                                  ]}
+                                />
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

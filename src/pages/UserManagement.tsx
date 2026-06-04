@@ -3,247 +3,139 @@
 import { useState, useEffect } from "react"
 import type { IUser, UserRole } from "../types"
 import { userService } from "../services/userService"
-import { roleService } from "../services/roleService"
-import { useAuthStore } from "../stores/authStore"
 import { usePermissions } from "../hooks/usePermissions"
 import { Button } from "../components/common/Button"
 import { Card } from "../components/common/Card"
-import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { OptionsMenu } from "../components/common/OptionsMenu"
-import { Loader2, AlertCircle } from "lucide-react"
-import type { Role } from "../types/api/role"
+import { Loader2, AlertCircle, Plus } from "lucide-react"
+import {
+  ASSIGNABLE_USER_ROLES,
+  getAddableRolesForDraft,
+  isLockedUserRole,
+  normalizeUserRolesForDisplay,
+  ROLE_DISPLAY_LABELS,
+} from "../utils/userRoleManagement"
 import "./UserManagement.css"
-
-// Mapeo de role_name del backend a UserRole del frontend
-// Backend roles: ADMIN (id:1), USUARIO (id:2), CONSEJO (id:3), AUTOR (id:4)
-const mapRoleNameToUserRole = (role: { id_role: number; role_name: string }): UserRole => {
-  const roleName = role.role_name.toUpperCase();
-  const normalized = role.role_name
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/-/g, "_");
-  
-  // Mapear según los IDs primero (más confiable)
-  if (role.id_role === 1 || roleName === 'ADMIN') return 'admin';
-  if (role.id_role === 2 || roleName === 'USUARIO') return 'integrant';
-  if (role.id_role === 3 || roleName === 'CONSEJO') return 'consejo';
-  if (role.id_role === 4 || roleName === 'AUTOR') return 'autor_registro';
-  if (roleName === 'PUBLICADOR') return 'publicador';
-  
-  // Mapeo por nombre para roles adicionales
-  const roleMap: Record<string, UserRole> = {
-    'responsable_proyecto': 'responsable_proyecto',
-    'responsable_grupo': 'responsable_grupo',
-    'integrante_proyecto': 'integrante_proyecto',
-    'integrante_grupo': 'integrante_grupo',
-    'consejo_cientifico': 'consejo',
-    'autor_registro': 'autor_registro',
-    'publicador': 'publicador',
-    'usuario': 'usuario',
-  }
-  
-  return roleMap[normalized] || 'usuario'
-}
-
-// Mapeo de UserRole a etiqueta legible
-const roleLabels: Record<UserRole, string> = {
-  admin: "Administrador",
-  integrant: "Integrante",
-  consejo: "Consejo Científico",
-  responsable_proyecto: "Responsable de Proyecto",
-  responsable_grupo: "Responsable de Grupo",
-  integrante_proyecto: "Integrante de Proyecto",
-  integrante_grupo: "Integrante de Grupo",
-  consejo_cientifico: "Consejo Científico",
-  autor_registro: "Autor de Registro",
-  publicador: "Publicador",
-  usuario: "Usuario",
-}
 
 export const UserManagement = () => {
   const { isAdmin } = usePermissions()
   const [users, setUsers] = useState<IUser[]>([])
-  const [availableRoles, setAvailableRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedUser, setSelectedUser] = useState<IUser | null>(null)
-  const [newRole, setNewRole] = useState<UserRole>("usuario")
+  const [roleDraft, setRoleDraft] = useState<UserRole[]>([])
+  const [roleToAdd, setRoleToAdd] = useState<UserRole>(ASSIGNABLE_USER_ROLES[0])
   const [showViewRolesModal, setShowViewRolesModal] = useState(false)
-  const [showAddRoleModal, setShowAddRoleModal] = useState(false)
-  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
-  const [roleToRemove, setRoleToRemove] = useState<{ userId: string; role: UserRole } | null>(null)
+  const [showModifyRolesModal, setShowModifyRolesModal] = useState(false)
+  const [isSavingRoles, setIsSavingRoles] = useState(false)
   const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null)
-  const currentUser = useAuthStore((state) => state.user)
-
-  // Convertir roles del backend a UserRole[] (eliminar duplicados)
-  const roles: UserRole[] = Array.from(
-    new Set(availableRoles.map(r => mapRoleNameToUserRole(r)))
-  )
 
   useEffect(() => {
-    loadData()
+    void loadUsers()
   }, [])
 
-  const loadData = async () => {
+  const loadUsers = async () => {
     setLoading(true)
     setError(null)
     try {
-      // Cargar usuarios y roles en paralelo
-      const [usersData, rolesData] = await Promise.all([
-        userService.getAllUsers(),
-        roleService.getAllRoles({ limit: 100 }),
-      ])
+      const usersData = await userService.getAllUsers()
       setUsers(usersData)
-      setAvailableRoles(rolesData)
-      
       if (selectedUser) {
-        const updatedUser = usersData.find((u) => u.id === selectedUser.id)
-        if (updatedUser) {
-          setSelectedUser(updatedUser)
+        const updated = usersData.find((u) => u.id === selectedUser.id)
+        if (updated) {
+          setSelectedUser(updated)
         }
       }
     } catch (err) {
-      console.error("Error loading data:", err)
-      setError(err instanceof Error ? err.message : "Error al cargar los datos")
+      console.error("Error loading users:", err)
+      setError(err instanceof Error ? err.message : "Error al cargar los usuarios")
     } finally {
       setLoading(false)
     }
   }
 
-  const loadUsers = async () => {
-    try {
-      const data = await userService.getAllUsers()
-      setUsers(data)
-      if (selectedUser) {
-        const updatedUser = data.find((u) => u.id === selectedUser.id)
-        if (updatedUser) {
-          setSelectedUser(updatedUser)
-        }
-      }
-    } catch (error) {
-      console.error("Error loading users:", error)
-      showNotification("Error al cargar los usuarios", "error")
-    }
-  }
-
-  const handleModifyRole = async () => {
-    if (!selectedUser) {
-      showNotification("No hay usuario seleccionado", "error")
-      return
-    }
-    const addableRoles = getAddableRoles(selectedUser)
-    console.log("[UserManagement] Intento agregar rol", {
-      selectedUserId: selectedUser.id,
-      selectedUserRoles: selectedUser.roles,
-      availableRolesMapped: roles,
-      addableRoles,
-      newRole,
-    })
-    if (addableRoles.length === 0) {
-      showNotification("No hay roles disponibles para agregar a este usuario", "error")
-      return
-    }
-
-    const roleToAdd = addableRoles.includes(newRole) ? newRole : addableRoles[0]
-    try {
-      await userService.modifyUserRole(selectedUser.id, roleToAdd, currentUser ?? ({} as IUser))
-      await loadUsers()
-      const updatedUser = await userService.getUserById(selectedUser.id)
-      setSelectedUser(updatedUser)
-      const addableRoles = getAddableRoles(updatedUser)
-      setNewRole(addableRoles[0] ?? "usuario")
-      showNotification("Rol agregado exitosamente", "success")
-    } catch (error) {
-      console.error("Error modifying role:", error)
-      showNotification("Error al agregar el rol", "error")
-    }
-  }
-
-  const handleRemoveRole = async () => {
-    if (!roleToRemove) {
-      showNotification("No hay rol seleccionado para eliminar", "error")
-      return
-    }
-    try {
-      const updatedUser = await userService.removeUserRole(
-        roleToRemove.userId,
-        roleToRemove.role,
-        currentUser ?? ({} as IUser),
-      )
-      await loadUsers()
-      setShowRemoveConfirm(false)
-      setRoleToRemove(null)
-
-      if (selectedUser && selectedUser.id === updatedUser.id) {
-        setSelectedUser(updatedUser)
-        const addableRoles = getAddableRoles(updatedUser)
-        setNewRole(addableRoles[0] ?? "usuario")
-      }
-
-      showNotification("Rol eliminado exitosamente", "success")
-    } catch (error) {
-      console.error("Error removing role:", error)
-      showNotification("Error al eliminar el rol", "error")
-    }
-  }
-
   const showNotification = (message: string, type: "success" | "error") => {
     setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3000)
+    setTimeout(() => setNotification(null), 3500)
   }
 
-  const initiateViewRoles = (user: IUser) => {
+  const handleOpenViewRoles = (user: IUser) => {
     setSelectedUser(user)
     setShowViewRolesModal(true)
   }
 
-  const initiateModifyRole = (user: IUser) => {
+  const handleOpenModifyRoles = (user: IUser) => {
+    const normalized = normalizeUserRolesForDisplay(user.roles)
     setSelectedUser(user)
-    const addableRoles = getAddableRoles(user)
-    setNewRole(addableRoles[0] ?? "usuario")
-    setShowAddRoleModal(true)
+    setRoleDraft(normalized)
+    const addable = getAddableRolesForDraft(normalized)
+    setRoleToAdd(addable[0] ?? ASSIGNABLE_USER_ROLES[0])
+    setShowModifyRolesModal(true)
   }
 
-  const initiateRemoveRole = (userId: string, role: UserRole) => {
-    if (role === "admin" || role === "usuario") {
-      showNotification(`El rol "${roleLabels[role]}" no puede ser eliminado`, "error")
+  const handleCloseModifyRoles = () => {
+    setShowModifyRolesModal(false)
+    setSelectedUser(null)
+    setRoleDraft([])
+    setIsSavingRoles(false)
+  }
+
+  const handleAddRoleToDraft = () => {
+    const addable = getAddableRolesForDraft(roleDraft)
+    if (addable.length === 0) {
+      showNotification("No hay más roles disponibles para agregar", "error")
       return
     }
-    setRoleToRemove({ userId, role })
-    setShowRemoveConfirm(true)
-  }
 
-  const getInitials = (nombre: string, apellidos: string) => {
-    return `${nombre.charAt(0)}${apellidos.charAt(0)}`.toUpperCase()
-  }
-
-  const getAddableRoles = (user: IUser): UserRole[] => {
-    return roles.filter((role) => role !== "admin" && role !== "usuario" && !user.roles.includes(role))
-  }
-
-  const getPrimaryRole = (roles: UserRole[]): UserRole => {
-    const rolePriority: UserRole[] = [
-      "admin",
-      "consejo",
-      "responsable_grupo",
-      "responsable_proyecto",
-      "consejo_cientifico",
-      "autor_registro",
-      "integrante_grupo",
-      "integrante_proyecto",
-      "integrant",
-      "usuario",
-    ]
-
-    for (const role of rolePriority) {
-      if (roles.includes(role)) {
-        return role
-      }
+    const role = addable.includes(roleToAdd) ? roleToAdd : addable[0]
+    if (roleDraft.includes(role)) {
+      showNotification("Ese rol ya está asignado", "error")
+      return
     }
-    return "usuario"
+
+    const nextDraft = normalizeUserRolesForDisplay([...roleDraft, role])
+    setRoleDraft(nextDraft)
+    const nextAddable = getAddableRolesForDraft(nextDraft)
+    setRoleToAdd(nextAddable[0] ?? ASSIGNABLE_USER_ROLES[0])
   }
+
+  const handleRemoveRoleFromDraft = (role: UserRole) => {
+    if (isLockedUserRole(role)) {
+      showNotification(`El rol "${ROLE_DISPLAY_LABELS[role]}" no puede eliminarse`, "error")
+      return
+    }
+
+    const nextDraft = normalizeUserRolesForDisplay(roleDraft.filter((r) => r !== role))
+    setRoleDraft(nextDraft)
+    const nextAddable = getAddableRolesForDraft(nextDraft)
+    setRoleToAdd(nextAddable[0] ?? ASSIGNABLE_USER_ROLES[0])
+  }
+
+  const handleSaveRoles = async () => {
+    if (!selectedUser) {
+      showNotification("No hay usuario seleccionado", "error")
+      return
+    }
+
+    setIsSavingRoles(true)
+    try {
+      const updatedUser = await userService.saveUserRoles(selectedUser.id, roleDraft)
+      await loadUsers()
+      setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)))
+      showNotification("Roles guardados correctamente", "success")
+      handleCloseModifyRoles()
+    } catch (err) {
+      console.error("Error saving roles:", err)
+      const message = err instanceof Error ? err.message : "Error al guardar los roles"
+      showNotification(message, "error")
+    } finally {
+      setIsSavingRoles(false)
+    }
+  }
+
+  const getInitials = (nombre: string, apellidos: string) =>
+    `${nombre.charAt(0)}${apellidos.charAt(0)}`.toUpperCase()
 
   const filteredUsers = users.filter(
     (user) =>
@@ -253,24 +145,25 @@ export const UserManagement = () => {
       user.correoElectronico.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
+  const addableRoles = getAddableRolesForDraft(roleDraft)
+
   if (loading) {
     return (
       <div className="user-management">
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-          <Loader2 className="animate-spin" size={32} />
-          <span style={{ marginLeft: '1rem' }}>Cargando usuarios...</span>
+        <div className="user-management-loading">
+          <Loader2 className="animate-spin" size={32} aria-hidden="true" />
+          <span>Cargando usuarios...</span>
         </div>
       </div>
     )
   }
 
-  // Verificar permisos
   if (!isAdmin()) {
     return (
       <div className="user-management">
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <AlertCircle size={48} style={{ margin: '0 auto 1rem', color: '#c33' }} />
-          <h2>Acceso Denegado</h2>
+        <div className="user-management-denied">
+          <AlertCircle size={48} aria-hidden="true" />
+          <h2>Acceso denegado</h2>
           <p>No tienes permisos para acceder a esta sección.</p>
         </div>
       </div>
@@ -279,38 +172,42 @@ export const UserManagement = () => {
 
   return (
     <div className="user-management">
-      {notification && <div className={`notification notification-${notification.type}`}>{notification.message}</div>}
+      {notification && (
+        <div
+          className={`notification notification-${notification.type}`}
+          role="status"
+          aria-live="polite"
+        >
+          {notification.message}
+        </div>
+      )}
+
       {error && (
-        <div style={{ 
-          padding: '1rem', 
-          margin: '1rem', 
-          backgroundColor: '#fee', 
-          color: '#c33',
-          borderRadius: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem'
-        }}>
-          <AlertCircle size={20} />
+        <div className="user-management-error" role="alert">
+          <AlertCircle size={20} aria-hidden="true" />
           <span>{error}</span>
         </div>
       )}
 
       <div className="page-header">
         <div className="header-content">
-          <h1>Usuarios</h1>
-          <p className="subtitle">Gestiona los usuarios del sistema</p>
+          <h1>Gestión de roles por usuario</h1>
+          <p className="subtitle">
+            Cada usuario puede tener varios roles. Usuario y Administrador son fijos; Consejo, Autor y
+            Publicador se gestionan desde aquí.
+          </p>
         </div>
       </div>
 
       <Card>
         <div className="search-bar">
           <input
-            type="text"
+            type="search"
             placeholder="Buscar usuarios..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
+            aria-label="Buscar usuarios"
           />
         </div>
       </Card>
@@ -321,58 +218,83 @@ export const UserManagement = () => {
             <thead>
               <tr>
                 <th>Usuario</th>
-                <th>Rol</th>
+                <th>Roles</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.map((user) => (
-                <tr key={user.id}>
-                  <td className="user-info-cell">
-                    <div className="user-info">
-                      <div className="user-avatar">{getInitials(user.nombre, user.apellidos)}</div>
-                      <div className="user-details">
-                        <div className="user-name">
-                          {user.nombre} {user.apellidos}
+              {filteredUsers.map((user) => {
+                const displayRoles = normalizeUserRolesForDisplay(user.roles)
+                return (
+                  <tr key={user.id}>
+                    <td className="user-info-cell">
+                      <div className="user-info">
+                        <div className="user-avatar" aria-hidden="true">
+                          {getInitials(user.nombre, user.apellidos)}
                         </div>
-                        <div className="user-email">{user.correoElectronico}</div>
+                        <div className="user-details">
+                          <div className="user-name">
+                            {user.nombre} {user.apellidos}
+                          </div>
+                          <div className="user-email">{user.correoElectronico}</div>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="role-cell">
-                    <span className="role-tag">
-                      {roleLabels[getPrimaryRole(user.roles)] || getPrimaryRole(user.roles)}
-                    </span>
-                  </td>
-                  <td className="actions-cell">
-                    {isAdmin() && (
+                    </td>
+                    <td className="role-cell">
+                      <ul className="roles-tags-list" aria-label="Roles del usuario">
+                        {displayRoles.map((role) => (
+                          <li key={`${user.id}-${role}`}>
+                            <span
+                              className={`role-tag ${isLockedUserRole(role) ? "role-tag--locked" : ""}`}
+                            >
+                              {ROLE_DISPLAY_LABELS[role] || role}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                    <td className="actions-cell">
                       <OptionsMenu
                         options={[
                           {
-                            label: "Ver roles actuales",
-                            onClick: () => initiateViewRoles(user),
+                            label: "Ver roles",
+                            onClick: () => handleOpenViewRoles(user),
                           },
                           {
                             label: "Modificar roles",
-                            onClick: () => initiateModifyRole(user),
+                            onClick: () => handleOpenModifyRoles(user),
                           },
                         ]}
                       />
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       </Card>
 
       {showViewRolesModal && selectedUser && (
-        <div className="modal-overlay" onClick={() => setShowViewRolesModal(false)}>
-          <div className="modal-content-clean" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowViewRolesModal(false)}
+        >
+          <div
+            className="modal-content-clean"
+            role="dialog"
+            aria-labelledby="view-roles-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2>Roles Actuales</h2>
-              <button className="modal-close" onClick={() => setShowViewRolesModal(false)}>
+              <h2 id="view-roles-title">Roles del usuario</h2>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setShowViewRolesModal(false)}
+                aria-label="Cerrar"
+              >
                 ×
               </button>
             </div>
@@ -383,21 +305,21 @@ export const UserManagement = () => {
                 </strong>
               </p>
               <p className="user-email-text">{selectedUser.correoElectronico}</p>
-
-              <div className="roles-display">
-                {selectedUser.roles.length > 0 ? (
-                  selectedUser.roles.map((role) => (
-                    <div key={role} className="role-badge">
-                      {roleLabels[role] || role}
-                    </div>
-                  ))
-                ) : (
-                  <p className="helper-text">El usuario no tiene roles asignados</p>
-                )}
-              </div>
+              <ul className="roles-display-list">
+                {normalizeUserRolesForDisplay(selectedUser.roles).map((role) => (
+                  <li key={role}>
+                    <span
+                      className={`role-badge ${isLockedUserRole(role) ? "role-badge--locked" : ""}`}
+                    >
+                      {ROLE_DISPLAY_LABELS[role] || role}
+                      {isLockedUserRole(role) ? " (fijo)" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
             <div className="modal-footer">
-              <Button variant="secondary" onClick={() => setShowViewRolesModal(false)}>
+              <Button variant="secondary" type="button" onClick={() => setShowViewRolesModal(false)}>
                 Cerrar
               </Button>
             </div>
@@ -405,12 +327,27 @@ export const UserManagement = () => {
         </div>
       )}
 
-      {showAddRoleModal && selectedUser && (
-        <div className="modal-overlay" onClick={() => setShowAddRoleModal(false)}>
-          <div className="modal-content-clean" onClick={(e) => e.stopPropagation()}>
+      {showModifyRolesModal && selectedUser && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={handleCloseModifyRoles}
+        >
+          <div
+            className="modal-content-clean modal-content-clean--wide"
+            role="dialog"
+            aria-labelledby="modify-roles-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2>Modificar Roles</h2>
-              <button className="modal-close" onClick={() => setShowAddRoleModal(false)}>
+              <h2 id="modify-roles-title">Modificar roles</h2>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={handleCloseModifyRoles}
+                aria-label="Cerrar"
+                disabled={isSavingRoles}
+              >
                 ×
               </button>
             </div>
@@ -420,78 +357,86 @@ export const UserManagement = () => {
                   {selectedUser.nombre} {selectedUser.apellidos}
                 </strong>
               </p>
-              <p className="helper-text" style={{ marginTop: '0.5rem', marginBottom: '1rem', color: '#666' }}>
-                Puede eliminar roles actuales y agregar nuevos. El rol admin no se puede otorgar por esta vía.
+              <p className="helper-text roles-helper">
+                Agregue o quite roles y pulse <strong>Guardar cambios</strong>. Los roles Usuario y
+                Administrador no se pueden modificar desde aquí.
               </p>
 
               <div className="current-roles">
-                <label>Roles actuales</label>
-                <div className="roles-list">
-                  {selectedUser.roles.length > 0 ? (
-                    selectedUser.roles.map((role) => (
-                      <div key={role} className="role-item">
-                        <span>{roleLabels[role] || role}</span>
+                <label>Roles asignados</label>
+                <ul className="roles-list">
+                  {roleDraft.map((role) => (
+                    <li key={role} className="role-item">
+                      <span className="role-item__label">
+                        {ROLE_DISPLAY_LABELS[role] || role}
+                        {isLockedUserRole(role) && (
+                          <span className="role-item__hint">No editable</span>
+                        )}
+                      </span>
+                      {!isLockedUserRole(role) && (
                         <button
                           type="button"
                           className="remove-role-btn"
-                          onClick={() => initiateRemoveRole(selectedUser.id, role)}
-                          title={`Eliminar ${roleLabels[role] || role}`}
+                          onClick={() => handleRemoveRoleFromDraft(role)}
+                          aria-label={`Quitar ${ROLE_DISPLAY_LABELS[role]}`}
+                          disabled={isSavingRoles}
                         >
                           ×
                         </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="helper-text">El usuario no tiene roles asignados</p>
-                  )}
-                </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
-              <div className="form-group">
-                <label>Agregar rol</label>
-                <select
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as UserRole)}
-                  className="form-select"
-                  disabled={getAddableRoles(selectedUser).length === 0}
-                >
-                  {getAddableRoles(selectedUser).length === 0 ? (
-                    <option value="usuario">No hay roles disponibles para agregar</option>
-                  ) : (
-                    getAddableRoles(selectedUser).map((role) => (
-                      <option key={role} value={role}>
-                        {roleLabels[role] || role}
-                      </option>
-                    ))
-                  )}
-                </select>
+              <div className="add-role-section">
+                <label htmlFor="role-to-add">Agregar otro rol</label>
+                <div className="add-role-row">
+                  <select
+                    id="role-to-add"
+                    value={roleToAdd}
+                    onChange={(e) => setRoleToAdd(e.target.value as UserRole)}
+                    className="form-select"
+                    disabled={addableRoles.length === 0 || isSavingRoles}
+                  >
+                    {addableRoles.length === 0 ? (
+                      <option value="">Sin roles disponibles</option>
+                    ) : (
+                      addableRoles.map((role) => (
+                        <option key={role} value={role}>
+                          {ROLE_DISPLAY_LABELS[role]}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleAddRoleToDraft}
+                    disabled={addableRoles.length === 0 || isSavingRoles}
+                    aria-label="Agregar rol seleccionado"
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                    Agregar
+                  </Button>
+                </div>
               </div>
             </div>
             <div className="modal-footer">
-              <Button variant="secondary" onClick={() => setShowAddRoleModal(false)}>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={handleCloseModifyRoles}
+                disabled={isSavingRoles}
+              >
                 Cancelar
               </Button>
-              <Button onClick={handleModifyRole} disabled={getAddableRoles(selectedUser).length === 0}>
-                Agregar
+              <Button type="button" onClick={handleSaveRoles} disabled={isSavingRoles}>
+                {isSavingRoles ? "Guardando..." : "Guardar cambios"}
               </Button>
             </div>
           </div>
         </div>
-      )}
-
-      {showRemoveConfirm && roleToRemove && (
-        <ConfirmDialog
-          isOpen={showRemoveConfirm}
-          title="Confirmar Eliminación"
-          message={`¿Está seguro que desea eliminar el rol "${roleLabels[roleToRemove.role]}" de este usuario?`}
-          onConfirm={handleRemoveRole}
-          onCancel={() => {
-            setShowRemoveConfirm(false)
-            setRoleToRemove(null)
-          }}
-          confirmText="Eliminar"
-          confirmVariant="danger"
-        />
       )}
     </div>
   )

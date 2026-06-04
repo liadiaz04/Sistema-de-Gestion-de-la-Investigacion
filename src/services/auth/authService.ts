@@ -7,7 +7,11 @@ import type {
 import type { AxiosResponse } from 'axios';
 import { integrantService } from '../integrantService';
 import type { IntegrantWithRoles } from '../../types/api/integrant';
-import type { IUser } from '../../types';
+import type { IUser, UserRole } from '../../types';
+import {
+  mapBackendRoleToUserRole,
+  normalizeUserRolesForDisplay,
+} from '../../utils/userRoleManagement';
 
 /**
  * Transforma la respuesta del servidor al modelo de dominio
@@ -27,33 +31,11 @@ const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
   const nombre = nameParts[0] || '';
   const apellidos = nameParts.slice(1).join(' ') || '';
 
-  // Mapear roles del backend al formato del frontend
-  // Backend roles: ADMIN (id:1), USUARIO (id:2), CONSEJO (id:3), AUTOR (id:4)
-  const roleMap: Record<string, import('../../types').UserRole> = {
-    'admin': 'admin',
-    'integrant': 'integrant',
-    'consejo': 'consejo',
-    // Mantener compatibilidad con roles antiguos si existen
-    'responsable_proyecto': 'responsable_proyecto',
-    'responsable_grupo': 'responsable_grupo',
-    'integrante_proyecto': 'integrante_proyecto',
-    'integrante_grupo': 'integrante_grupo',
-    'consejo_cientifico': 'consejo',
-    'autor_registro': 'autor_registro',
-    'publicador': 'publicador',
-    'usuario': 'usuario',
-  };
-
-  const roles = integrant.roles?.map(r => {
-    const roleName = r.role_name.toUpperCase();
-    // Mapear según los IDs o nombres
-    if (roleName === 'ADMIN' || r.id_role === 1) return 'admin';
-    if (roleName === 'USUARIO' || r.id_role === 2) return 'integrant';
-    if (roleName === 'CONSEJO' || r.id_role === 3) return 'consejo'
-    if (roleName === 'AUTOR' || r.id_role === 4) return 'autor_registro';
-    if (roleName === 'PUBLICADOR') return 'publicador';
-    return roleMap[r.role_name.toLowerCase()] || 'usuario';
-  }) || [];
+  const roles: UserRole[] = integrant.roles?.length
+    ? normalizeUserRolesForDisplay(
+        integrant.roles.map((r) => mapBackendRoleToUserRole(r)),
+      )
+    : (['usuario'] as UserRole[]);
 
   return {
     id: integrant.id_integrant.toString(),
@@ -83,7 +65,7 @@ export const authService = {
   async login(credentials: LoginRequest): Promise<{ token: string, user: IUser }> {
     console.log(credentials);
     const response = await apiClient.post('/auth/login', {
-      'email': credentials.email,
+      'user_name': credentials.username,
       'password': credentials.password
     });
     console.log(response.data);

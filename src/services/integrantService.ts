@@ -58,29 +58,17 @@ export const integrantService = {
    * Actualiza los roles del integrante enviando la lista completa de role_ids
    */
   async updateIntegrantRoles(integrantId: number, roleIds: number[]): Promise<IntegrantGet> {
-    return this.updateIntegrant(integrantId, { roles_list: roleIds });
+    const validRoleIds = roleIds.filter(
+      (id) => typeof id === 'number' && Number.isFinite(id),
+    );
+    if (validRoleIds.length === 0) {
+      throw new Error('La lista de roles no contiene identificadores válidos');
+    }
+    return this.updateIntegrant(integrantId, { roles_list: validRoleIds });
   },
 
   /**
    * Modifica los roles del integrante enviando roles_list con el nuevo rol
    * Envía PUT a /integrants/{id} con body: { roles_list: [id_del_rol] }
    */
-  async modifyIntegrantRole(integrantId: number, roleId: number): Promise<IntegrantGet> {
-    // Asegurar que roleId sea un número entero
-    ;
-    
-    // Crear el body con roles_list como array de números enteros
-    const body: { roles_list: number[] } = {
-      roles_list: [roleId]
-    };
-    
-    console.log('Modificando rol del integrante:', {
-      integrantId,
-      roleId: roleId,
-      body
-    });
-    
-    const response = await apiClient.put<IntegrantGet>(`/integrants/${integrantId}`, body);
-    return response.data;
-  },
 };

@@ -1,6 +1,13 @@
 // Tipos para las respuestas de la API de roles
 
-// Rol básico (respuesta de GET /roles/)
+/** Rol en API: FastAPI puede serializar el id como `id_rol` o `id_role`. */
+export type RoleApiPayload = {
+  id_role?: number;
+  id_rol?: number;
+  role_name: string;
+};
+
+// Rol básico (respuesta de GET /roles/) — siempre normalizado con `id_role`
 export interface Role {
   id_role: number;
   role_name: string;

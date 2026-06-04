@@ -18,7 +18,12 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { groupService } from "../services/groupService"
-import { validateEmailRequired } from "../utils/validation"
+import { validateEmailRequired, validateNameRequired, validateRequired } from "../utils/validation"
+import {
+  IdentityDocumentField,
+  validateIdentityField,
+  type IdentityCountryOption,
+} from "../components/common/IdentityDocumentField"
 import "./GroupForm.css"
 
 type IntegrantSearchHook = {
@@ -121,8 +126,12 @@ export const GroupEdit = () => {
     numeroIdentidad: "",
     entidad: "",
     email: "",
+    id_country: null as number | null,
   })
   const [externalMemberEmailError, setExternalMemberEmailError] = useState<string | null>(null)
+  const [externalMemberCountryError, setExternalMemberCountryError] = useState<string | null>(null)
+  const [externalMemberIdentityError, setExternalMemberIdentityError] = useState<string | null>(null)
+  const [countries, setCountries] = useState<IdentityCountryOption[]>([])
 
   // Verificar si el usuario actual es responsable y es autor
   const isCurrentUserResponsable = Boolean(isAutorUser && selectedResponsableId && currentUser && 
@@ -133,12 +142,14 @@ export const GroupEdit = () => {
     const loadMetadata = async () => {
       try {
         setIsMetadataLoading(true)
-        const [facultiesData, areasData] = await Promise.all([
+        const [facultiesData, areasData, countriesData] = await Promise.all([
           recordMetadataService.getFaculties(),
           recordMetadataService.getFacultyAreas(),
+          recordMetadataService.getCountries(),
         ])
         setFaculties(facultiesData)
         setFacultyAreas(areasData)
+        setCountries(countriesData)
       } catch (error) {
         console.error("Error cargando metadata:", error)
       } finally {
@@ -299,21 +310,37 @@ export const GroupEdit = () => {
   const handleAddExternalMember = (e: React.FormEvent) => {
     e.preventDefault()
     setExternalMemberEmailError(null)
+    setExternalMemberCountryError(null)
+    setExternalMemberIdentityError(null)
+
     const emailErr = validateEmailRequired(externalMember.email, "Correo electrónico")
-    if (emailErr) {
-      setExternalMemberEmailError(emailErr)
+    const nombreErr = validateNameRequired(externalMember.nombre, "Nombre")
+    const apellidosErr = validateNameRequired(externalMember.apellidos, "Apellidos")
+    const entidadErr = validateRequired(externalMember.entidad, "Entidad")
+    const { countryError, identityError } = validateIdentityField(
+      externalMember.numeroIdentidad,
+      externalMember.id_country,
+      countries,
+    )
+
+    if (emailErr || nombreErr || apellidosErr || entidadErr || countryError || identityError) {
+      if (emailErr) setExternalMemberEmailError(emailErr)
+      if (countryError) setExternalMemberCountryError(countryError)
+      if (identityError) setExternalMemberIdentityError(identityError)
       return
     }
+
     const newMember = {
       id: `external-${Date.now()}`,
       integrantId: null,
       usuario: {
         id: `external-${Date.now()}`,
-        nombre: externalMember.nombre,
-        apellidos: externalMember.apellidos,
-        numeroIdentidad: externalMember.numeroIdentidad,
-        entidad: externalMember.entidad,
-        correoElectronico: externalMember.email,
+        nombre: externalMember.nombre.trim(),
+        apellidos: externalMember.apellidos.trim(),
+        numeroIdentidad: externalMember.numeroIdentidad.trim(),
+        entidad: externalMember.entidad.trim(),
+        correoElectronico: externalMember.email.trim(),
+        id_country: externalMember.id_country,
         esExterno: true,
       },
       rol: "integrante_grupo",
@@ -323,8 +350,17 @@ export const GroupEdit = () => {
     setMembers([...members, newMember])
     setExternalMembers([...externalMembers, newMember])
     setShowExternalModal(false)
-    setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
+    setExternalMember({
+      nombre: "",
+      apellidos: "",
+      numeroIdentidad: "",
+      entidad: "",
+      email: "",
+      id_country: null,
+    })
     setExternalMemberEmailError(null)
+    setExternalMemberCountryError(null)
+    setExternalMemberIdentityError(null)
     setSuccessMessage("Integrante externo agregado con éxito")
     setShowSuccessDialog(true)
   }
@@ -752,14 +788,23 @@ export const GroupEdit = () => {
               required
             />
           </div>
-          <div className="form-group">
-            <label>Número de Identidad</label>
-            <Input
-              type="text"
-              value={externalMember.numeroIdentidad}
-              onChange={(e) => setExternalMember({ ...externalMember, numeroIdentidad: e.target.value })}
-            />
-          </div>
+          <IdentityDocumentField
+            countries={countries}
+            countryId={externalMember.id_country}
+            onCountryIdChange={(id_country) =>
+              setExternalMember({ ...externalMember, id_country })
+            }
+            identity={externalMember.numeroIdentidad}
+            onIdentityChange={(numeroIdentidad) =>
+              setExternalMember({ ...externalMember, numeroIdentidad })
+            }
+            onClearErrors={() => {
+              setExternalMemberCountryError(null)
+              setExternalMemberIdentityError(null)
+            }}
+            countryError={externalMemberCountryError}
+            identityError={externalMemberIdentityError}
+          />
           <div className="form-group">
             <label>Entidad</label>
             <Input

@@ -1,6 +1,6 @@
 // Request Types
 export interface LoginRequest {
-  email: string;
+  username: string;
   password: string;
 }
 

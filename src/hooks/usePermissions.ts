@@ -1,173 +1,110 @@
 import { useAuthStore } from '../stores/authStore';
 import type { UserRole } from '../types';
 
+const matchesRole = (userRoles: UserRole[], role: UserRole): boolean => {
+  if (userRoles.includes(role)) return true;
+
+  if (role === 'consejo') {
+    return userRoles.includes('consejo_cientifico');
+  }
+  if (role === 'consejo_cientifico') {
+    return userRoles.includes('consejo');
+  }
+  if (role === 'usuario') {
+    return userRoles.includes('integrant');
+  }
+  if (role === 'integrant') {
+    return userRoles.includes('usuario');
+  }
+
+  return false;
+};
+
 /**
- * Hook para gestionar permisos basados en roles
- * Roles del backend: ADMIN (id:1), USUARIO (id:2), CONSEJO (id:3), AUTOR (id:4)
+ * Hook para gestionar permisos basados en roles.
+ * Reglas: Autor → crear/editar sus registros; Consejo → grupos/proyectos; Publicador → Zenodo; Usuario base → solo lectura; Admin → todo.
  */
 export const usePermissions = () => {
   const user = useAuthStore((state) => state.user);
+  const userRoles = user?.roles ?? [];
 
-  /**
-   * Verifica si el usuario tiene un rol específico
-   */
   const hasRole = (role: UserRole): boolean => {
-    if (!user?.roles) return false;
-    return user.roles.includes(role);
+    if (!user?.roles?.length) return false;
+    return matchesRole(user.roles, role);
   };
 
-  /**
-   * Verifica si el usuario tiene alguno de los roles especificados
-   */
   const hasAnyRole = (roles: UserRole[]): boolean => {
-    if (!user?.roles) return false;
-    return roles.some(role => user.roles.includes(role));
+    if (!user?.roles?.length) return false;
+    return roles.some((role) => matchesRole(user.roles, role));
   };
 
-  /**
-   * Verifica si el usuario tiene todos los roles especificados
-   */
   const hasAllRoles = (roles: UserRole[]): boolean => {
-    if (!user?.roles) return false;
-    return roles.every(role => user.roles.includes(role));
+    if (!user?.roles?.length) return false;
+    return roles.every((role) => matchesRole(user.roles, role));
   };
 
-  /**
-   * Verifica si el usuario es administrador
-   */
-  const isAdmin = (): boolean => {
-    return hasRole('admin');
-  };
+  const isAdmin = (): boolean => hasRole('admin');
 
-  /**
-   * Verifica si el usuario es integrante/usuario (solo lectura, no puede crear)
-   */
   const isIntegrant = (): boolean => {
-    return hasRole('integrant') && !isAdmin() && !isConsejo() && !isAutor();
+    const hasOnlyBaseUser =
+      matchesRole(userRoles, 'usuario') || matchesRole(userRoles, 'integrant');
+    return (
+      hasOnlyBaseUser &&
+      !isAdmin() &&
+      !isConsejo() &&
+      !isAutor() &&
+      !isPublicador()
+    );
   };
 
-  /**
-   * Verifica si el usuario es consejo
-   */
-  const isConsejo = (): boolean => {
-    return hasRole('consejo');
-  };
+  const isConsejo = (): boolean =>
+    hasRole('consejo') || hasRole('consejo_cientifico');
 
-  /**
-   * Verifica si el usuario es autor (puede crear registros)
-   */
-  const isAutor = (): boolean => {
-    return hasRole('autor_registro');
-  };
+  const isAutor = (): boolean => hasRole('autor_registro');
 
-  /**
-   * Verifica si el usuario puede crear registros
-   * USUARIO (integrant) no puede crear, AUTOR, CONSEJO y ADMIN sí
-   */
-  const canCreateRecords = (): boolean => {
-    return isAdmin() || isConsejo() || isAutor();
-  };
+  const isPublicador = (): boolean => hasRole('publicador');
 
-  /**
-   * Verifica si el usuario puede crear grupos
-   * INTEGRANT no puede crear, CONSEJO y ADMIN sí
-   */
-  const canCreateGroups = (): boolean => {
-    return isAdmin() || isConsejo();
-  };
+  /** Solo Autor o Administrador pueden crear registros nuevos. */
+  const canCreateRecords = (): boolean => isAdmin() || isAutor();
 
-  /**
-   * Verifica si el usuario puede crear proyectos
-   * INTEGRANT no puede crear, CONSEJO y ADMIN sí
-   */
-  const canCreateProjects = (): boolean => {
-    return isAdmin() || isConsejo();
-  };
+  /** Solo Consejo Científico o Administrador pueden crear grupos. */
+  const canCreateGroups = (): boolean => isAdmin() || isConsejo();
 
-  /**
-   * Verifica si el usuario puede modificar/eliminar todos los grupos
-   * CONSEJO y ADMIN pueden modificar/eliminar todos
-   */
-  const canManageAllGroups = (): boolean => {
-    return isAdmin() || isConsejo();
-  };
+  /** Solo Consejo Científico o Administrador pueden crear proyectos. */
+  const canCreateProjects = (): boolean => isAdmin() || isConsejo();
 
-  /**
-   * Verifica si el usuario puede modificar/eliminar todos los proyectos
-   * CONSEJO y ADMIN pueden modificar/eliminar todos
-   */
-  const canManageAllProjects = (): boolean => {
-    return isAdmin() || isConsejo();
-  };
+  const canManageAllGroups = (): boolean => isAdmin() || isConsejo();
 
-  /**
-   * Verifica si el usuario puede gestionar proyectos (como responsable)
-   */
+  const canManageAllProjects = (): boolean => isAdmin() || isConsejo();
+
   const canManageProjects = (): boolean => {
     return isAdmin() || isConsejo() || hasRole('responsable_proyecto');
   };
 
-  /**
-   * Verifica si el usuario puede gestionar grupos (como responsable)
-   */
   const canManageGroups = (): boolean => {
     return isAdmin() || isConsejo() || hasRole('responsable_grupo');
   };
 
-  /**
-   * Verifica si el usuario puede ver estadísticas
-   * CONSEJO y ADMIN pueden ver estadísticas
-   */
-  const canViewStatistics = (): boolean => {
-    return isAdmin() || isConsejo();
-  };
+  const canViewStatistics = (): boolean => isAdmin() || isConsejo();
 
-  /**
-   * Verifica si el usuario puede gestionar usuarios
-   * Solo ADMIN puede gestionar usuarios
-   */
-  const canManageUsers = (): boolean => {
-    return isAdmin();
-  };
+  const canManageUsers = (): boolean => isAdmin();
 
-  /**
-   * Verifica si el usuario puede ver bitácora/auditoría
-   * Solo ADMIN puede ver trazas
-   */
-  const canViewAuditLog = (): boolean => {
-    return isAdmin();
-  };
+  const canViewAuditLog = (): boolean => isAdmin();
 
-  /**
-   * Verifica si el usuario puede publicar registros en Zenodo
-   */
-  const canPublishToZenodo = (): boolean => {
-    return isAdmin() || hasRole('publicador');
-  };
+  /** Solo Publicador o Administrador pueden publicar registros en Zenodo. */
+  const canPublishToZenodo = (): boolean => isAdmin() || isPublicador();
 
-  /**
-   * Verifica si el usuario puede modificar un registro
-   * AUTOR puede modificar solo si es autor del registro
-   * CONSEJO y ADMIN pueden modificar todos
-   * USUARIO (integrant) no puede modificar
-   */
+  /** Consejo y usuario base no modifican registros; Admin todos; Autor solo los suyos. */
   const canModifyRecord = (isAuthor: boolean): boolean => {
-    if (isAdmin() || isConsejo()) return true;
+    if (isAdmin()) return true;
     if (isAutor() && isAuthor) return true;
-    if (isIntegrant() && isAuthor) return true; // Por compatibilidad
     return false;
   };
 
-  /**
-   * Verifica si el usuario puede eliminar un registro
-   * AUTOR puede eliminar solo si es autor del registro
-   * CONSEJO y ADMIN pueden eliminar todos
-   * USUARIO (integrant) no puede eliminar
-   */
+  /** Consejo y usuario base no eliminan registros; Admin todos; Autor solo los suyos. */
   const canDeleteRecord = (isAuthor: boolean): boolean => {
-    if (isAdmin() || isConsejo()) return true;
+    if (isAdmin()) return true;
     if (isAutor() && isAuthor) return true;
-    if (isIntegrant() && isAuthor) return true; // Por compatibilidad
     return false;
   };
 
@@ -180,6 +117,7 @@ export const usePermissions = () => {
     isIntegrant,
     isConsejo,
     isAutor,
+    isPublicador,
     canCreateRecords,
     canCreateGroups,
     canCreateProjects,
