@@ -21,6 +21,7 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { projectService, type CreateProjectPayload } from "../services/projectService"
+import { useToast } from "../contexts/ToastContext"
 import { integrantService } from "../services/integrantService"
 import {
   syncProjectMembersToIntegrants,
@@ -96,6 +97,7 @@ const useIntegrantSearch = (): IntegrantSearchHook => {
 }
 
 export const ProjectForm = () => {
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const { id } = useParams()
@@ -118,8 +120,6 @@ export const ProjectForm = () => {
 
   const [isSaved, setIsSaved] = useState(false)
   const [activeTab, setActiveTab] = useState("datos-iniciales")
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false)
-  const [successMessage, setSuccessMessage] = useState("")
 
   const [projectTypes, setProjectTypes] = useState<ProjectTypeOption[]>([])
   const [projectStates, setProjectStates] = useState<ProjectStateOption[]>([])
@@ -164,7 +164,6 @@ export const ProjectForm = () => {
   const [countries, setCountries] = useState<IdentityCountryOption[]>([])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const [formData, setFormData] = useState({
@@ -223,7 +222,9 @@ export const ProjectForm = () => {
         setProjectClassifications(classificationsResponse)
         setCountries(countriesResponse)
       } catch (error) {
-        setMetadataError((error as Error).message || "No se pudieron cargar los catálogos")
+        const message = (error as Error).message || "No se pudieron cargar los catálogos"
+        setMetadataError(message)
+        showToast(message, "error")
       } finally {
         setIsMetadataLoading(false)
       }
@@ -385,7 +386,9 @@ export const ProjectForm = () => {
           setIsSaved(true)
         } catch (error) {
           console.error("Error cargando proyecto:", error)
-          setMetadataError((error as Error).message || "Error al cargar el proyecto")
+          const message = (error as Error).message || "Error al cargar el proyecto"
+          setMetadataError(message)
+          showToast(message, "error")
         }
       }
     }
@@ -410,22 +413,19 @@ export const ProjectForm = () => {
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
-      setSuccessMessage("Por favor, complete todos los campos requeridos")
-      setShowSuccessDialog(true)
+      showToast("Por favor, complete todos los campos requeridos", "error")
       return
     }
 
     setFieldErrors({})
 
     if (isEditMode) {
-      setSuccessMessage("Use el botón «Actualizar Proyecto» al final del formulario para guardar los cambios.")
-      setShowSuccessDialog(true)
+      showToast("Use el botón «Actualizar Proyecto» al final del formulario para guardar los cambios.", "error")
       return
     }
 
     setIsSaved(true)
-    setSuccessMessage("Datos iniciales guardados. Por favor, complete los demás campos del proyecto.")
-    setShowSuccessDialog(true)
+    showToast("Datos iniciales guardados. Por favor, complete los demás campos del proyecto.", "success")
     setActiveTab("detalles-cientificos")
   }
 
@@ -460,14 +460,12 @@ export const ProjectForm = () => {
     } as IUser)
     setShowResponsableModal(false)
     responsableSearch.setTerm("")
-    setSuccessMessage("Responsable seleccionado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Responsable seleccionado con éxito", "success")
   }
 
   const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
     if (selectedMemberIds.includes(integrant.id_integrant)) {
-      setSuccessMessage("Este integrante ya está agregado")
-      setShowSuccessDialog(true)
+      showToast("Este integrante ya está agregado", "error")
       return
     }
     const newMember = {
@@ -490,8 +488,7 @@ export const ProjectForm = () => {
     setSelectedMemberIds([...selectedMemberIds, integrant.id_integrant])
     memberSearch.setTerm("")
     setShowDirectoryModal(false)
-    setSuccessMessage("Integrante agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante agregado con éxito", "success")
   }
 
   const handleAddExternalMember = (e: React.FormEvent) => {
@@ -546,8 +543,7 @@ export const ProjectForm = () => {
     setExternalMemberEmailError(null)
     setExternalMemberCountryError(null)
     setExternalMemberIdentityError(null)
-    setSuccessMessage("Integrante externo agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante externo agregado con éxito", "success")
   }
 
   const handleRemoveMember = (memberId: string) => {
@@ -662,8 +658,7 @@ export const ProjectForm = () => {
     if (!records.find((r) => r.id === record.id)) {
       setRecords([...records, record])
       setShowRecordModal(false)
-      setSuccessMessage("Registro científico asociado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Registro científico asociado con éxito", "success")
     }
   }
 
@@ -737,31 +732,26 @@ export const ProjectForm = () => {
   const handleSaveCompleteProject = async () => {
     const projectValidationErrors = validateProjectForm()
     if (Object.keys(projectValidationErrors).length > 0) {
-      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage(Object.values(projectValidationErrors).join(" · "))
-      setShowSuccessDialog(true)
+      showToast(Object.values(projectValidationErrors).join(" · "), "error")
       return
     }
 
     try {
       setIsSubmitting(true)
-      setSubmitError(null)
       setFieldErrors({})
 
       await persistProject()
-      setSuccessMessage(
+      showToast(
         isEditMode && id ? "Proyecto actualizado con éxito" : "Proyecto completado y guardado con éxito",
+        "success",
       )
 
-      setShowSuccessDialog(true)
       setTimeout(() => {
         navigate("/projects")
       }, 1500)
     } catch (error: any) {
       const errorMessage = extractErrorMessage(error) || "Error al guardar el proyecto"
-      setSubmitError(errorMessage)
-      setSuccessMessage(errorMessage)
-      setShowSuccessDialog(true)
+      showToast(errorMessage, "error")
     } finally {
       setIsSubmitting(false)
     }
@@ -772,28 +762,23 @@ export const ProjectForm = () => {
 
     const projectValidationErrors = validateProjectForm()
     if (Object.keys(projectValidationErrors).length > 0) {
-      setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage(Object.values(projectValidationErrors).join(" · "))
-      setShowSuccessDialog(true)
+      showToast(Object.values(projectValidationErrors).join(" · "), "error")
       return
     }
 
     try {
       setIsSubmitting(true)
-      setSubmitError(null)
 
       await persistProject()
 
-      setSuccessMessage("Proyecto actualizado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Proyecto actualizado con éxito", "success")
       setTimeout(() => {
         navigate("/projects")
       }, 1500)
     } catch (error) {
       console.error("Error actualizando proyecto:", error)
       const errorMessage = (error as Error).message || "Error al actualizar el proyecto"
-      setSuccessMessage(errorMessage)
-      setShowSuccessDialog(true)
+      showToast(errorMessage, "error")
     } finally {
       setIsSubmitting(false)
     }
@@ -825,17 +810,7 @@ export const ProjectForm = () => {
   )
 
   return (
-    <div className="project-form">
-      {showSuccessDialog && (
-        <div className="success-dialog-overlay">
-          <div className="success-dialog">
-            <div className="success-icon">✓</div>
-            <h2>{successMessage}</h2>
-            <Button onClick={() => setShowSuccessDialog(false)}>Aceptar</Button>
-          </div>
-        </div>
-      )}
-
+    <div className="form-page project-form">
       <Modal
         isOpen={showResponsableModal}
         onClose={() => {
@@ -1027,15 +1002,10 @@ export const ProjectForm = () => {
         </div>
       </Modal>
 
-      <div className="form-header">
-        <h1>
-          {isViewMode
-            ? "Detalles del Proyecto"
-            : isEditMode
-              ? "Editar Proyecto de Investigación"
-              : "Adicionar Proyecto de Investigación"}
-        </h1>
-        <p>{isViewMode ? "Información del proyecto" : "Complete la información del proyecto"}</p>
+      <div className="page-toolbar form-page__toolbar">
+        <p className="page-toolbar__lead">
+          {isViewMode ? "Información del proyecto" : "Complete la información del proyecto"}
+        </p>
       </div>
 
       {(isSaved || isViewMode || isEditMode) && (

@@ -29,7 +29,7 @@ export const GroupDetails = () => {
 
   if (!group) {
     return (
-      <div className="group-form">
+      <div className="form-page group-form">
         <Card>
           <p>Cargando detalles del grupo...</p>
         </Card>
@@ -38,10 +38,9 @@ export const GroupDetails = () => {
   }
 
   return (
-    <div className="group-form">
-      <div className="form-header">
-        <h1>Detalles del Grupo</h1>
-        <p>Visualización de información del grupo de investigación</p>
+    <div className="form-page group-form">
+      <div className="page-toolbar form-page__toolbar">
+        <p className="page-toolbar__lead">Visualización de información del grupo de investigación</p>
       </div>
 
       <div className="form-tabs">

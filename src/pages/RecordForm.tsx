@@ -44,6 +44,7 @@ import type {
 import { recordDetailService } from "../services/record/recordDetailService"
 import { usePermissions } from "../hooks/usePermissions"
 import { useRequirePermission } from "../hooks/useRequirePermission"
+import { useToast } from "../contexts/ToastContext"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { ZenodoPublishModal } from "../components/zenodo/ZenodoPublishModal"
 import {
@@ -358,6 +359,7 @@ const useIntegrantSearch = (): IntegrantSearchHook => {
   return { term, setTerm, results, isLoading, error }
 }
 export const RecordForm = () => {
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const { id } = useParams()
@@ -405,8 +407,6 @@ export const RecordForm = () => {
   const [recordLoading, setRecordLoading] = useState(false)
   const [recordLoadError, setRecordLoadError] = useState<string | null>(null)
   const [isSaved, setIsSaved] = useState(false)
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false)
-  const [successMessage, setSuccessMessage] = useState("")
   const [activeTab, setActiveTab] = useState("datos-basicos")
 
   const [authors, setAuthors] = useState<any[]>([])
@@ -446,7 +446,6 @@ export const RecordForm = () => {
   const [selectedAuthorIds, setSelectedAuthorIds] = useState<number[]>([])
   const [selectedTutorIds, setSelectedTutorIds] = useState<number[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [showZenodoConfirm, setShowZenodoConfirm] = useState(false)
   const [showZenodoModal, setShowZenodoModal] = useState(false)
@@ -506,7 +505,9 @@ export const RecordForm = () => {
         setNormTypes(normTypesResponse)
         setEncounterTypes(encounterTypesResponse)
       } catch (error) {
-        setMetadataError((error as Error).message || "No se pudieron cargar los catálogos")
+        const message = (error as Error).message || "No se pudieron cargar los catálogos"
+        setMetadataError(message)
+        showToast(message, "error")
       } finally {
         setIsMetadataLoading(false)
       }
@@ -556,7 +557,9 @@ export const RecordForm = () => {
   useEffect(() => {
     if (!id) return
     if (parsedRecordKey?.type) return
-    setRecordLoadError("No se pudo determinar el tipo de registro. Acceda desde la lista e inténtelo nuevamente.")
+    const message = "No se pudo determinar el tipo de registro. Acceda desde la lista e inténtelo nuevamente."
+    setRecordLoadError(message)
+    showToast(message, "error")
   }, [id, parsedRecordKey?.type])
 
   useEffect(() => {
@@ -589,7 +592,9 @@ export const RecordForm = () => {
       })
       .catch((error) => {
         if (!isMounted) return
-        setRecordLoadError(error.message || "No se pudo cargar la información del registro seleccionado")
+        const message = error.message || "No se pudo cargar la información del registro seleccionado"
+        setRecordLoadError(message)
+        showToast(message, "error")
       })
       .finally(() => {
         if (!isMounted) return
@@ -783,8 +788,7 @@ export const RecordForm = () => {
 
     setIsSaved(true)
     setActiveTab("autores")
-    setSuccessMessage("Datos básicos guardados con éxito. Complete autores y, si aplica, grupo o proyecto.")
-    setShowSuccessDialog(true)
+    showToast("Datos básicos guardados con éxito. Complete autores y, si aplica, grupo o proyecto.", "success")
   }
 
   const getAuthorIdsForUpdate = (): number[] =>
@@ -835,12 +839,12 @@ export const RecordForm = () => {
         : selectedTutorIds.includes(integrant.id_integrant)
 
     if (alreadySelected) {
-      setSuccessMessage(
+      showToast(
         type === "author"
           ? "Este integrante ya forma parte de los autores"
-          : "Este integrante ya está registrado como tutor"
+          : "Este integrante ya está registrado como tutor",
+        "error",
       )
-      setShowSuccessDialog(true)
       return
     }
 
@@ -871,8 +875,7 @@ export const RecordForm = () => {
       setSelectedTutorIds([...selectedTutorIds, integrant.id_integrant])
     }
 
-    setSuccessMessage(type === "author" ? "Autor agregado con éxito" : "Tutor agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast(type === "author" ? "Autor agregado con éxito" : "Tutor agregado con éxito", "success")
   }
 
   const handleCountryChange = (value: string) => {
@@ -1074,10 +1077,10 @@ export const RecordForm = () => {
       if (modalType === "author") {
         setAuthors((prev) => prev.map(updatePerson))
         setExternalAuthors((prev) => prev.map(updatePerson))
-        setSuccessMessage("Autor externo modificado con éxito")
+        showToast("Autor externo modificado con éxito", "success")
       } else {
         setTutors((prev) => prev.map(updatePerson))
-        setSuccessMessage("Tutor externo modificado con éxito")
+        showToast("Tutor externo modificado con éxito", "success")
       }
     } else {
       const newPerson = {
@@ -1102,15 +1105,14 @@ export const RecordForm = () => {
       if (modalType === "author") {
         setAuthors([...authors, newPerson])
         setExternalAuthors([...externalAuthors, newPerson])
-        setSuccessMessage("Autor externo agregado con éxito")
+        showToast("Autor externo agregado con éxito", "success")
       } else {
         setTutors([...tutors, newPerson])
-        setSuccessMessage("Tutor externo agregado con éxito")
+        showToast("Tutor externo agregado con éxito", "success")
       }
     }
 
     resetExternalModal()
-    setShowSuccessDialog(true)
   }
 
   const handleRemoveAuthor = (authorId: string) => {
@@ -1119,8 +1121,7 @@ export const RecordForm = () => {
     // Prevenir que el usuario se elimine a sí mismo como autor
     const userId = currentUser?.id ? parseInt(currentUser.id) : null
     if (authorToRemove?.integrantId && userId && authorToRemove.integrantId === userId) {
-      setSuccessMessage("No puede eliminarse a sí mismo como autor del registro")
-      setShowSuccessDialog(true)
+      showToast("No puede eliminarse a sí mismo como autor del registro", "error")
       return
     }
     
@@ -1284,9 +1285,7 @@ export const RecordForm = () => {
 
   const applyValidationErrors = (errors: Record<string, string>) => {
     setFieldErrors(errors)
-    setSubmitError(
-      `Por favor, corrija los errores en el formulario: ${Object.values(errors).join(" · ")}`,
-    )
+    showToast(Object.values(errors).join(" · "), "error")
     scrollToFirstFormError(errors, {
       setActiveTab,
       recordType,
@@ -1319,7 +1318,6 @@ export const RecordForm = () => {
 
     try {
       setIsSubmitting(true)
-      setSubmitError(null)
       setFieldErrors({})
 
       const authorIds = buildAuthorIds()
@@ -1404,8 +1402,7 @@ export const RecordForm = () => {
           throw new Error("Tipo de registro no válido")
       }
 
-      setSuccessMessage("Registro científico guardado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Registro científico guardado con éxito", "success")
 
       if (
         canPublishToZenodo() &&
@@ -1426,11 +1423,11 @@ export const RecordForm = () => {
     } catch (error: unknown) {
       if (isDuplicateIdentifierError(error)) {
         const friendlyMessage = getDuplicateIdentifierMessage(error)
-        setSubmitError(friendlyMessage)
+        showToast(friendlyMessage, "error")
         scrollToDuplicateFieldError(friendlyMessage)
       } else {
         const errorMessage = extractErrorMessage(error) || "Error al guardar el registro"
-        setSubmitError(errorMessage)
+        showToast(errorMessage, "error")
       }
     } finally {
       setIsSubmitting(false)
@@ -1458,12 +1455,12 @@ export const RecordForm = () => {
     const effectiveRecordType = (parsedRecordKey?.type ?? recordType) as RecordType
 
     if (!recordNumericId) {
-      setSubmitError("No se pudo identificar el registro a actualizar.")
+      showToast("No se pudo identificar el registro a actualizar.", "error")
       return
     }
 
     if (!isRecordTypeValue(effectiveRecordType)) {
-      setSubmitError("No se pudo determinar el tipo de registro para actualizar.")
+      showToast("No se pudo determinar el tipo de registro para actualizar.", "error")
       return
     }
 
@@ -1475,14 +1472,13 @@ export const RecordForm = () => {
 
     const entityId = Number(recordNumericId)
     if (Number.isNaN(entityId)) {
-      setSubmitError("El identificador del registro no es válido.")
+      showToast("El identificador del registro no es válido.", "error")
       scrollToFormError({ fieldKey: "titulo", setActiveTab, recordType })
       return
     }
 
     try {
       setIsSubmitting(true)
-      setSubmitError(null)
       setFieldErrors({})
 
       const authorIdsForUpdate = getAuthorIdsForUpdate()
@@ -1523,20 +1519,19 @@ export const RecordForm = () => {
           throw new Error("Tipo de registro no válido")
       }
 
-      setSuccessMessage("Registro actualizado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Registro actualizado con éxito", "success")
       setTimeout(() => {
         navigate("/records")
       }, 1500)
     } catch (error: unknown) {
       if (isDuplicateIdentifierError(error)) {
         const friendlyMessage = getDuplicateIdentifierMessage(error)
-        setSubmitError(friendlyMessage)
+        showToast(friendlyMessage, "error")
         scrollToDuplicateFieldError(friendlyMessage)
         return
       }
       const errorMessage = extractErrorMessage(error) || "Error al actualizar el registro"
-      setSubmitError(errorMessage)
+      showToast(errorMessage, "error")
       scrollToFormError({ fieldKey: "titulo", setActiveTab, recordType })
     } finally {
       setIsSubmitting(false)
@@ -2050,7 +2045,7 @@ export const RecordForm = () => {
 
   if (isMetadataLoading) {
     return (
-      <div className="record-form">
+      <div className="form-page record-form">
         <Card>
           <p>Cargando catálogos iniciales...</p>
         </Card>
@@ -2060,7 +2055,7 @@ export const RecordForm = () => {
 
   if (metadataError) {
     return (
-      <div className="record-form">
+      <div className="form-page record-form">
         <Card>
           <p className="error-message">{metadataError}</p>
           <div className="form-actions">
@@ -2074,17 +2069,7 @@ export const RecordForm = () => {
   }
 
   return (
-    <div className="record-form">
-      {showSuccessDialog && (
-        <div className="success-dialog-overlay">
-          <div className="success-dialog">
-            <div className="success-icon">✓</div>
-            <h2>{successMessage}</h2>
-            <Button onClick={() => setShowSuccessDialog(false)}>Aceptar</Button>
-          </div>
-        </div>
-      )}
-
+    <div className="form-page record-form">
       <Modal
         isOpen={showExternalModal}
         onClose={resetExternalModal}
@@ -2200,9 +2185,8 @@ export const RecordForm = () => {
         </Card>
       )}
 
-      <div className="form-header" id="record-form-top">
-        <h1>{id ? "Editar Registro Científico" : "Adicionar Registro Científico"}</h1>
-        <p>Complete la información del registro</p>
+      <div className="page-toolbar form-page__toolbar" id="record-form-top">
+        <p className="page-toolbar__lead">Complete la información del registro científico</p>
       </div>
 
       <div className="record-type-menu">
@@ -2670,7 +2654,6 @@ export const RecordForm = () => {
       {isSaved && !isViewMode && !isEditMode && (
         <Card>
           <div className="form-actions">
-            {submitError && <p className="error-message">{submitError}</p>}
             <Button type="button" onClick={handleSaveCompleteRecord} disabled={isSubmitting}>
               {isSubmitting ? "Guardando..." : "Guardar Registro Completo"}
             </Button>
@@ -2681,7 +2664,6 @@ export const RecordForm = () => {
       {isEditMode && (
         <Card>
           <div className="form-actions">
-            {submitError && <p className="error-message">{submitError}</p>}
             <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
               Cancelar
             </Button>

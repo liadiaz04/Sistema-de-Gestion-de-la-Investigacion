@@ -5,25 +5,24 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Input } from "../common/Input"
 import { Button } from "../common/Button"
-import { Card } from "../common/Card"
 import { useAuthStore } from "../../stores/authStore"
 import { authService } from "../../services/auth/authService"
-import { validateEmailRequired } from "../../utils/validation"
+import { useToast } from "../../contexts/ToastContext"
 import "./AuthForm.css"
+
+const LOGIN_BACKGROUND_URL = "/images/login-cujae.png"
+const CUJAE_LOGO_URL = "/images/logo-cujae.png"
 
 export const AuthForm: React.FC = () => {
   const navigate = useNavigate()
+  const { showToast } = useToast()
   const { login, updateUser } = useAuthStore()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    
-
     setLoading(true)
 
     try {
@@ -42,53 +41,85 @@ export const AuthForm: React.FC = () => {
       }
       navigate("/dashboard")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al iniciar sesión")
+      showToast(err instanceof Error ? err.message : "Error al iniciar sesión", "error")
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="auth-container">
-      <Card className="auth-card">
-        <div className="auth-header">
-          <h1>Sistema de Gestión de Investigación</h1>
-          <p>Iniciar Sesión</p>
-        </div>
+    <div className="auth-page">
+      <div
+        className="auth-page__background"
+        style={{ backgroundImage: `url(${LOGIN_BACKGROUND_URL})` }}
+        aria-hidden="true"
+      />
+      <div className="auth-page__overlay" aria-hidden="true" />
 
-        <form onSubmit={handleSubmit} className="auth-form">
-          <Input
-            label="Nombre de usuario"
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Ingrese su nombre de usuario"
-            required
-            autoComplete="username"
-          />
-
-          <Input
-            label="Contraseña"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Ingrese su contraseña"
-            required
-          />
-
-          {error && <div className="auth-error">{error}</div>}
-
-          <Button type="submit" fullWidth disabled={loading}>
-            {loading ? "Iniciando sesión..." : "Entrar"}
-          </Button>
-        </form>
-
-        <div className="auth-demo-info">
-          <p>
-            <strong>Demo:</strong> Correo: jperez@cujae.edu.cu | Contraseña: password123
+      <div className="auth-page__layout">
+        <section className="auth-page__hero" aria-labelledby="auth-hero-title">
+          <h1 id="auth-hero-title" className="auth-page__hero-title">
+            Sistema de Gestión de Investigación
+          </h1>
+          <p className="auth-page__hero-text">
+            Plataforma para investigadores, responsables de grupo/proyecto y administración de la gestión de investigación universitaria.
           </p>
-        </div>
-      </Card>
+        </section>
+
+        <section className="auth-page__panel" aria-labelledby="auth-panel-title">
+          <div className="auth-card">
+            <header className="auth-card__header">
+              <div className="auth-card__logo">
+                <img
+                  src={CUJAE_LOGO_URL}
+                  alt="Logo CUJAE"
+                  className="auth-card__logo-image"
+                  width={56}
+                  height={56}
+                />
+              </div>
+              <div className="auth-card__titles">
+                <h2 id="auth-panel-title" className="auth-card__title">
+                  Sistema de Gestión de Investigación
+                </h2>
+                <p className="auth-card__subtitle">Iniciar sesión</p>
+              </div>
+            </header>
+
+            <form onSubmit={handleSubmit} className="auth-form">
+              <Input
+                label="Nombre de usuario"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Ingrese su nombre de usuario"
+                required
+                autoComplete="username"
+              />
+
+              <Input
+                label="Contraseña"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Ingrese su contraseña"
+                required
+                autoComplete="current-password"
+              />
+
+              <Button type="submit" fullWidth disabled={loading} aria-busy={loading}>
+                {loading ? "Iniciando sesión..." : "Entrar"}
+              </Button>
+            </form>
+
+            <div className="auth-demo-info">
+              <p>
+                <strong>Demo:</strong> Correo: jperez@cujae.edu.cu | Contraseña: password123
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

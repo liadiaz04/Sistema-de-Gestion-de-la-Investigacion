@@ -7,7 +7,7 @@ import { usePermissions } from "../hooks/usePermissions"
 import { Button } from "../components/common/Button"
 import { Card } from "../components/common/Card"
 import { OptionsMenu } from "../components/common/OptionsMenu"
-import { Loader2, AlertCircle, Plus } from "lucide-react"
+import { Loader2, AlertCircle, Plus, Search } from "lucide-react"
 import {
   ASSIGNABLE_USER_ROLES,
   getAddableRolesForDraft,
@@ -15,13 +15,14 @@ import {
   normalizeUserRolesForDisplay,
   ROLE_DISPLAY_LABELS,
 } from "../utils/userRoleManagement"
+import { useToast } from "../contexts/ToastContext"
 import "./UserManagement.css"
 
 export const UserManagement = () => {
+  const { showToast } = useToast()
   const { isAdmin } = usePermissions()
   const [users, setUsers] = useState<IUser[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedUser, setSelectedUser] = useState<IUser | null>(null)
   const [roleDraft, setRoleDraft] = useState<UserRole[]>([])
@@ -29,15 +30,12 @@ export const UserManagement = () => {
   const [showViewRolesModal, setShowViewRolesModal] = useState(false)
   const [showModifyRolesModal, setShowModifyRolesModal] = useState(false)
   const [isSavingRoles, setIsSavingRoles] = useState(false)
-  const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null)
-
   useEffect(() => {
     void loadUsers()
   }, [])
 
   const loadUsers = async () => {
     setLoading(true)
-    setError(null)
     try {
       const usersData = await userService.getAllUsers()
       setUsers(usersData)
@@ -49,15 +47,10 @@ export const UserManagement = () => {
       }
     } catch (err) {
       console.error("Error loading users:", err)
-      setError(err instanceof Error ? err.message : "Error al cargar los usuarios")
+      showToast(err instanceof Error ? err.message : "Error al cargar los usuarios", "error")
     } finally {
       setLoading(false)
     }
-  }
-
-  const showNotification = (message: string, type: "success" | "error") => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3500)
   }
 
   const handleOpenViewRoles = (user: IUser) => {
@@ -84,13 +77,13 @@ export const UserManagement = () => {
   const handleAddRoleToDraft = () => {
     const addable = getAddableRolesForDraft(roleDraft)
     if (addable.length === 0) {
-      showNotification("No hay más roles disponibles para agregar", "error")
+      showToast("No hay más roles disponibles para agregar", "error")
       return
     }
 
     const role = addable.includes(roleToAdd) ? roleToAdd : addable[0]
     if (roleDraft.includes(role)) {
-      showNotification("Ese rol ya está asignado", "error")
+      showToast("Ese rol ya está asignado", "error")
       return
     }
 
@@ -102,7 +95,7 @@ export const UserManagement = () => {
 
   const handleRemoveRoleFromDraft = (role: UserRole) => {
     if (isLockedUserRole(role)) {
-      showNotification(`El rol "${ROLE_DISPLAY_LABELS[role]}" no puede eliminarse`, "error")
+      showToast(`El rol "${ROLE_DISPLAY_LABELS[role]}" no puede eliminarse`, "error")
       return
     }
 
@@ -114,7 +107,7 @@ export const UserManagement = () => {
 
   const handleSaveRoles = async () => {
     if (!selectedUser) {
-      showNotification("No hay usuario seleccionado", "error")
+      showToast("No hay usuario seleccionado", "error")
       return
     }
 
@@ -123,12 +116,12 @@ export const UserManagement = () => {
       const updatedUser = await userService.saveUserRoles(selectedUser.id, roleDraft)
       await loadUsers()
       setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)))
-      showNotification("Roles guardados correctamente", "success")
+      showToast("Roles guardados correctamente", "success")
       handleCloseModifyRoles()
     } catch (err) {
       console.error("Error saving roles:", err)
       const message = err instanceof Error ? err.message : "Error al guardar los roles"
-      showNotification(message, "error")
+      showToast(message, "error")
     } finally {
       setIsSavingRoles(false)
     }
@@ -149,8 +142,8 @@ export const UserManagement = () => {
 
   if (loading) {
     return (
-      <div className="user-management">
-        <div className="user-management-loading">
+      <div className="list-page user-management">
+        <div className="list-page__loading" role="status" aria-live="polite">
           <Loader2 className="animate-spin" size={32} aria-hidden="true" />
           <span>Cargando usuarios...</span>
         </div>
@@ -160,7 +153,7 @@ export const UserManagement = () => {
 
   if (!isAdmin()) {
     return (
-      <div className="user-management">
+      <div className="list-page user-management">
         <div className="user-management-denied">
           <AlertCircle size={48} aria-hidden="true" />
           <h2>Acceso denegado</h2>
@@ -171,49 +164,31 @@ export const UserManagement = () => {
   }
 
   return (
-    <div className="user-management">
-      {notification && (
-        <div
-          className={`notification notification-${notification.type}`}
-          role="status"
-          aria-live="polite"
-        >
-          {notification.message}
-        </div>
-      )}
-
-      {error && (
-        <div className="user-management-error" role="alert">
-          <AlertCircle size={20} aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <div className="page-header">
-        <div className="header-content">
-          <h1>Gestión de roles por usuario</h1>
-          <p className="subtitle">
-            Cada usuario puede tener varios roles. Usuario y Administrador son fijos; Consejo, Autor y
-            Publicador se gestionan desde aquí.
-          </p>
-        </div>
+    <div className="list-page user-management">
+      <div className="page-toolbar list-page__toolbar">
+        <p className="page-toolbar__lead">
+          Gestiona los usuarios y roles del sistema. Usuario y Administrador son fijos; Consejo, Autor y
+          Publicador se gestionan desde aquí.
+        </p>
       </div>
 
-      <Card>
-        <div className="search-bar">
-          <input
-            type="search"
-            placeholder="Buscar usuarios..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="search-input"
-            aria-label="Buscar usuarios"
-          />
+      <Card className="list-page__panel">
+        <div className="list-page__filters">
+          <div className="list-page__search">
+            <Search size={20} aria-hidden />
+            <input
+              type="search"
+              placeholder="Buscar usuarios..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="list-page__search-input"
+              aria-label="Buscar usuarios"
+            />
+          </div>
         </div>
-      </Card>
 
-      <Card>
-        <div className="table-container">
+        <div className="list-page__body">
+          <div className="table-container">
           <table className="users-table">
             <thead>
               <tr>
@@ -272,6 +247,7 @@ export const UserManagement = () => {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </Card>
 

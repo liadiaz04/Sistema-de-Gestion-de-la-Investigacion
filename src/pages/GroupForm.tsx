@@ -46,6 +46,7 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { groupService } from "../services/groupService"
+import { useToast } from "../contexts/ToastContext"
 import { integrantService } from "../services/integrantService"
 import {
   IntegrantDetailsModal,
@@ -119,6 +120,7 @@ const useIntegrantSearch = (): IntegrantSearchHook => {
 }
 
 export const GroupForm = () => {
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
@@ -135,8 +137,6 @@ export const GroupForm = () => {
   useRequirePermission(!isNewMode || canCreateGroups(), "/groups")
 
   const [isSaved, setIsSaved] = useState(false)
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false)
-  const [successMessage, setSuccessMessage] = useState("")
   const [activeTab, setActiveTab] = useState<"datos" | "integrantes" | "evaluacion_integrantes">("datos")
 
   const [faculties, setFaculties] = useState<FacultyOption[]>([])
@@ -354,14 +354,12 @@ export const GroupForm = () => {
     if (!evaluationPendingDelete) return
     try {
       await integrantGroupEvaluationService.remove(evaluationPendingDelete.id_integrant_group_evaluation)
-      setSuccessMessage("Evaluación eliminada correctamente.")
-      setShowSuccessDialog(true)
+      showToast("Evaluación eliminada correctamente.", "success")
       setDeleteEvaluationDialogOpen(false)
       setEvaluationPendingDelete(null)
       await loadEvaluationsTabData()
     } catch (err) {
-      setSuccessMessage(extractErrorMessage(err) || "Error al eliminar la evaluación")
-      setShowSuccessDialog(true)
+      showToast(extractErrorMessage(err) || "Error al eliminar la evaluación", "error")
     }
   }
 
@@ -371,8 +369,7 @@ export const GroupForm = () => {
 
     if (evaluationModalMode === "edit" && editingEvaluationRow) {
       if (evalFormEvaluationId === "" || evalFormEvaluationId === null) {
-        setSuccessMessage("Debe seleccionar obligatoriamente una evaluación del catálogo.")
-        setShowSuccessDialog(true)
+        showToast("Debe seleccionar obligatoriamente una evaluación del catálogo.", "error")
         return
       }
       try {
@@ -381,13 +378,11 @@ export const GroupForm = () => {
           id_evaluation: Number(evalFormEvaluationId),
           description: evalFormDescription.trim() ? evalFormDescription.trim() : null,
         })
-        setSuccessMessage("Evaluación actualizada correctamente.")
-        setShowSuccessDialog(true)
+        showToast("Evaluación actualizada correctamente.", "success")
         handleCloseAddEvaluationModal()
         await loadEvaluationsTabData()
       } catch (err) {
-        setSuccessMessage(extractErrorMessage(err) || "Error al actualizar la evaluación")
-        setShowSuccessDialog(true)
+        showToast(extractErrorMessage(err) || "Error al actualizar la evaluación", "error")
       } finally {
         setEvalFormSubmitting(false)
       }
@@ -395,14 +390,12 @@ export const GroupForm = () => {
     }
 
     if (!evalFormSelectedMember?.integrantId) {
-      setSuccessMessage("Debe buscar y seleccionar un integrante del grupo.")
-      setShowSuccessDialog(true)
+      showToast("Debe buscar y seleccionar un integrante del grupo.", "error")
       return
     }
 
     if (evalFormEvaluationId === "" || evalFormEvaluationId === null) {
-      setSuccessMessage("Debe seleccionar obligatoriamente una evaluación del catálogo.")
-      setShowSuccessDialog(true)
+      showToast("Debe seleccionar obligatoriamente una evaluación del catálogo.", "error")
       return
     }
 
@@ -417,13 +410,11 @@ export const GroupForm = () => {
         id_evaluation: Number(evalFormEvaluationId),
         description: evalFormDescription.trim() ? evalFormDescription.trim() : null,
       })
-      setSuccessMessage("Evaluación registrada correctamente.")
-      setShowSuccessDialog(true)
+      showToast("Evaluación registrada correctamente.", "success")
       handleCloseAddEvaluationModal()
       await loadEvaluationsTabData()
     } catch (err) {
-      setSuccessMessage(extractErrorMessage(err) || "Error al crear la evaluación")
-      setShowSuccessDialog(true)
+      showToast(extractErrorMessage(err) || "Error al crear la evaluación", "error")
     } finally {
       setEvalFormSubmitting(false)
     }
@@ -710,14 +701,12 @@ export const GroupForm = () => {
     } as IUser)
     setShowResponsableModal(false)
     responsableSearch.setTerm("")
-    setSuccessMessage("Responsable seleccionado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Responsable seleccionado con éxito", "success")
   }
 
   const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
     if (selectedMemberIds.includes(integrant.id_integrant)) {
-      setSuccessMessage("Este integrante ya está agregado")
-      setShowSuccessDialog(true)
+      showToast("Este integrante ya está agregado", "error")
       return
     }
     const newMember = {
@@ -742,8 +731,7 @@ export const GroupForm = () => {
     setSelectedMemberIds([...selectedMemberIds, integrant.id_integrant])
     memberSearch.setTerm("")
     setShowDirectoryModal(false)
-    setSuccessMessage("Integrante agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante agregado con éxito", "success")
   }
 
   const handleSaveInitialData = (e: React.FormEvent) => {
@@ -768,8 +756,7 @@ export const GroupForm = () => {
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
-      setSuccessMessage("Por favor, complete todos los campos requeridos")
-      setShowSuccessDialog(true)
+      showToast("Por favor, complete todos los campos requeridos", "error")
       return
     }
 
@@ -789,16 +776,14 @@ export const GroupForm = () => {
           responsable: selectedResponsable,
           fechaActualizacion: new Date().toISOString(),
         }
-        setSuccessMessage("Datos iniciales actualizados con éxito")
-        setShowSuccessDialog(true)
+        showToast("Datos iniciales actualizados con éxito", "success")
       }
       return
     }
 
     setIsSaved(true)
     setActiveTab("integrantes")
-    setSuccessMessage("Datos iniciales guardados")
-    setShowSuccessDialog(true)
+    showToast("Datos iniciales guardados", "success")
   }
 
   const handleAddExternalMember = (e: React.FormEvent) => {
@@ -855,8 +840,7 @@ export const GroupForm = () => {
     setExternalMemberEmailError(null)
     setExternalMemberCountryError(null)
     setExternalMemberIdentityError(null)
-    setSuccessMessage("Integrante externo agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante externo agregado con éxito", "success")
   }
 
   const handleViewMemberDetails = (member: any) => {
@@ -885,8 +869,7 @@ export const GroupForm = () => {
     setMembers(members.map((m) => (m.id === selectedMember.id ? selectedMember : m)))
     setShowModifyMemberModal(false)
     setSelectedMember(null)
-    setSuccessMessage("Integrante modificado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante modificado con éxito", "success")
   }
 
   const handleRemoveMember = (memberId: string) => {
@@ -947,8 +930,7 @@ export const GroupForm = () => {
     const groupValidationErrors = validateGroupForm()
     if (Object.keys(groupValidationErrors).length > 0) {
       setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage(Object.values(groupValidationErrors).join(" · "))
-      setShowSuccessDialog(true)
+      showToast(Object.values(groupValidationErrors).join(" · "), "error")
       return
     }
 
@@ -970,15 +952,13 @@ export const GroupForm = () => {
 
       await groupService.updateGroupWithPayload(parseInt(id), payload)
 
-      setSuccessMessage("Grupo actualizado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Grupo actualizado con éxito", "success")
       setTimeout(() => {
         navigate("/groups")
       }, 1500)
     } catch (error) {
       console.error("Error actualizando grupo:", error)
-      setSuccessMessage("Error al actualizar el grupo")
-      setShowSuccessDialog(true)
+      showToast("Error al actualizar el grupo", "error")
     } finally {
       setIsSubmitting(false)
     }
@@ -1052,8 +1032,7 @@ export const GroupForm = () => {
     const groupValidationErrors = validateGroupForm()
     if (Object.keys(groupValidationErrors).length > 0) {
       setSubmitError("Por favor, corrija los errores en el formulario antes de continuar")
-      setSuccessMessage(Object.values(groupValidationErrors).join(" · "))
-      setShowSuccessDialog(true)
+      showToast(Object.values(groupValidationErrors).join(" · "), "error")
       return
     }
 
@@ -1076,7 +1055,7 @@ export const GroupForm = () => {
           id_faculty_area: selectedFacultyAreaId,
         }
         await groupService.updateGroupWithPayload(parseInt(id), updatePayload)
-        setSuccessMessage("Grupo actualizado con éxito")
+        showToast("Grupo actualizado con éxito", "success")
       } else {
         const createPayload = {
           name: formData.nombre,
@@ -1090,41 +1069,23 @@ export const GroupForm = () => {
           id_faculty_area: selectedFacultyAreaId,
         }
         await groupService.createGroup(createPayload)
-        setSuccessMessage("Grupo completado y guardado con éxito")
+        showToast("Grupo completado y guardado con éxito", "success")
       }
 
-      setShowSuccessDialog(true)
       setTimeout(() => {
         navigate("/groups")
       }, 1500)
     } catch (error: any) {
       const errorMessage = extractErrorMessage(error) || "Error al guardar el grupo"
       setSubmitError(errorMessage)
-      setSuccessMessage(errorMessage)
-      setShowSuccessDialog(true)
+      showToast(errorMessage, "error")
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const pageTitle = isViewMode
-    ? "Ver Grupo de Investigación"
-    : isEditMode
-      ? "Editar Grupo de Investigación"
-      : "Adicionar Grupo de Investigación"
-
   return (
-    <div className="group-form">
-      {showSuccessDialog && (
-        <div className="success-dialog-overlay">
-          <div className="success-dialog">
-            <div className="success-icon">✓</div>
-            <h2>{successMessage}</h2>
-            <Button onClick={() => setShowSuccessDialog(false)}>Aceptar</Button>
-          </div>
-        </div>
-      )}
-
+    <div className="form-page group-form">
       <Modal
         isOpen={showResponsableModal}
         onClose={() => setShowResponsableModal(false)}
@@ -1511,9 +1472,14 @@ export const GroupForm = () => {
         }}
       />
 
-      <div className="form-header">
-        <h1>{pageTitle}</h1>
-        <p>{isViewMode ? "Detalles del grupo de investigación" : "Complete la información del grupo"}</p>
+      <div className="page-toolbar form-page__toolbar">
+        <p className="page-toolbar__lead">
+          {isViewMode
+            ? "Detalles del grupo de investigación"
+            : isEditMode
+              ? "Modifique la información del grupo"
+              : "Complete la información del grupo"}
+        </p>
       </div>
 
       {isMetadataLoading && (
