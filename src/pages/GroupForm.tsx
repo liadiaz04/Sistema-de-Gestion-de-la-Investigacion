@@ -19,7 +19,8 @@ import { integrantGroupEvaluationService } from "../services/integrantGroupEvalu
 import type { Evaluation } from "../types/api/evaluation"
 import type { IntegrantGroupEvaluation } from "../types/api/integrantGroupEvaluation"
 import type { IUser } from "../types/index"
-import { canEditGroupDetails } from "../utils/groupEditPermissions"
+import { canChangeEntityResponsable, canEditGroupDetails } from "../utils/groupEditPermissions"
+import { useEditFormDirty } from "../hooks/useEditFormDirty"
 
 const readUserFromLocalStorage = (): IUser | null => {
   if (typeof window === "undefined") return null
@@ -126,9 +127,7 @@ export const GroupForm = () => {
   const location = useLocation()
   const { user: currentUserFromStore } = useAuthStore()
   const currentUser = currentUserFromStore ?? readUserFromLocalStorage()
-  const { isAutor, canManageAllGroups, canCreateGroups } = usePermissions()
-
-  const isAutorUser = isAutor()
+  const { isAdmin, canManageAllGroups, canCreateGroups } = usePermissions()
 
   const isViewMode = id && !location.pathname.includes("/edit")
   const isEditMode = id && location.pathname.includes("/edit")
@@ -157,12 +156,24 @@ export const GroupForm = () => {
 
   const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
   const [selectedResponsableId, setSelectedResponsableId] = useState<number>(0)
+  const [loadedResponsableId, setLoadedResponsableId] = useState<number>(0)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
-  
-  // Verificar si el usuario actual es responsable y es autor
-  const isCurrentUserResponsable = Boolean(isEditMode && isAutorUser && selectedResponsableId && currentUser && 
-                                   parseInt(currentUser.id) === selectedResponsableId)
+
+  const canChangeGroupResponsable = useMemo(
+    () =>
+      canChangeEntityResponsable(
+        currentUser,
+        loadedResponsableId || selectedResponsableId,
+        isAdmin(),
+        !isEditMode,
+      ),
+    [currentUser, loadedResponsableId, selectedResponsableId, isAdmin, isEditMode],
+  )
+
+  const responsableIdForPayload = canChangeGroupResponsable
+    ? selectedResponsableId
+    : loadedResponsableId || selectedResponsableId
 
   const [members, setMembers] = useState<any[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([])
@@ -557,10 +568,13 @@ export const GroupForm = () => {
           
           if (group.leader) {
             setSelectedResponsableId(group.leader.id_integrant)
+            setLoadedResponsableId(group.leader.id_integrant)
+            const leaderName = group.leader.name?.trim() || ""
+            const [leaderNombre, ...leaderApellidos] = leaderName.length > 0 ? leaderName.split(" ") : [""]
             setSelectedResponsable({
               id: String(group.leader.id_integrant),
-              nombre: group.leader.name.split(" ")[0] || "",
-              apellidos: group.leader.name.split(" ").slice(1).join(" ") || "",
+              nombre: leaderNombre || "",
+              apellidos: leaderApellidos.join(" ") || "",
               correoElectronico: group.leader.email || "",
               nombreUsuario: "",
               numeroIdentidad: "",
@@ -568,23 +582,31 @@ export const GroupForm = () => {
               esExterno: false,
               esAdministrador: false,
             } as IUser)
-          } else if (group.id_admin != null && group.id_admin !== undefined) {
-            setSelectedResponsableId(group.id_admin)
-            const responsableMember = group.members?.find((m) => m.id_integrant === group.id_admin)
-            const displayName = responsableMember?.name || ""
-            setSelectedResponsable({
-              id: String(group.id_admin),
-              nombre: displayName.split(" ")[0] || "",
-              apellidos: displayName.split(" ").slice(1).join(" ") || "",
-              correoElectronico: responsableMember?.integrant?.email || "",
-              nombreUsuario: "",
-              numeroIdentidad: "",
-              roles: [],
-              esExterno: false,
-              esAdministrador: false,
-            } as IUser)
-          } else if (group.id_integrant) {
-            setSelectedResponsableId(group.id_integrant)
+          } else {
+            const adminId = group.id_admin ?? group.id_integrant
+            if (adminId != null && adminId !== undefined) {
+              setSelectedResponsableId(adminId)
+              setLoadedResponsableId(adminId)
+              const responsableMember = group.members?.find((m) => m.id_integrant === adminId)
+              const displayName =
+                responsableMember?.name?.trim() ||
+                responsableMember?.integrant?.name?.trim() ||
+                ""
+              if (displayName) {
+                const [nombre, ...apellidos] = displayName.split(" ")
+                setSelectedResponsable({
+                  id: String(adminId),
+                  nombre: nombre || "",
+                  apellidos: apellidos.join(" ") || "",
+                  correoElectronico: responsableMember?.integrant?.email || "",
+                  nombreUsuario: "",
+                  numeroIdentidad: "",
+                  roles: [],
+                  esExterno: false,
+                  esAdministrador: false,
+                } as IUser)
+              }
+            }
           }
           
           setSelectedFacultyId(group.id_faculty)
@@ -672,6 +694,92 @@ export const GroupForm = () => {
   const filteredFacultyAreas = facultyAreas.filter((area) => area.id_faculty === selectedFacultyId)
   const hasFacultyAreasAvailable =
     selectedFacultyId > 0 && filteredFacultyAreas.length > 0
+
+  const responsableDisplayName = useMemo(() => {
+    if (!selectedResponsable) {
+      return selectedResponsableId > 0 ? `Integrante #${selectedResponsableId}` : "No asignado"
+    }
+
+    const fullName = `${selectedResponsable.nombre} ${selectedResponsable.apellidos}`.trim()
+    if (fullName) {
+      return selectedResponsable.facultad ? `${fullName} - ${selectedResponsable.facultad}` : fullName
+    }
+    if (selectedResponsable.correoElectronico) return selectedResponsable.correoElectronico
+    if (selectedResponsable.nombreUsuario) return selectedResponsable.nombreUsuario
+    return selectedResponsableId > 0 ? `Integrante #${selectedResponsableId}` : "No asignado"
+  }, [selectedResponsable, selectedResponsableId])
+
+  const renderGroupResponsableField = () => {
+    const hasResponsable = Boolean(selectedResponsable || selectedResponsableId > 0)
+
+    if (isEditMode && !canChangeGroupResponsable) {
+      return (
+        <>
+          <div className="selected-responsable selected-responsable--readonly">
+            <span className="selected-responsable__name">{responsableDisplayName}</span>
+          </div>
+          <p className="form-hint" role="status">
+            Solo el responsable del grupo o un administrador pueden cambiar el responsable.
+          </p>
+        </>
+      )
+    }
+
+    return (
+      <>
+        {hasResponsable ? (
+          <div className="selected-responsable">
+            <span className="selected-responsable__name">{responsableDisplayName}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowResponsableModal(true)}
+              aria-label="Cambiar responsable del grupo"
+            >
+              Cambiar
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setShowResponsableModal(true)}
+          >
+            Seleccionar Responsable
+          </Button>
+        )}
+      </>
+    )
+  }
+
+  const groupEditSnapshot = useMemo(
+    () => ({
+      nombre: formData.nombre,
+      descripcion: formData.descripcion,
+      tematicas: formData.tematicas,
+      departamento: formData.departamento,
+      id_faculty: selectedFacultyId,
+      id_faculty_area: selectedFacultyAreaId || null,
+      id_admin: responsableIdForPayload,
+      member_ids: [...selectedMemberIds].sort((a, b) => a - b),
+    }),
+    [
+      formData.nombre,
+      formData.descripcion,
+      formData.tematicas,
+      formData.departamento,
+      selectedFacultyId,
+      selectedFacultyAreaId,
+      responsableIdForPayload,
+      selectedMemberIds,
+    ],
+  )
+
+  const isGroupEditDirty = useEditFormDirty(
+    Boolean(isEditMode && groupDetailsLoaded),
+    groupEditSnapshot,
+  )
 
   const handleFacultyChange = (facultyId: string) => {
     const id = facultyId ? Number(facultyId) : null
@@ -954,7 +1062,7 @@ export const GroupForm = () => {
         name: formData.nombre,
         subjects: formData.tematicas || "",
         problems: formData.descripcion || "",
-        id_admin: selectedResponsableId,
+        id_admin: responsableIdForPayload,
         id_faculty: selectedFacultyId,
         id_faculty_area: selectedFacultyAreaId || null,
         update_date: now,
@@ -1060,7 +1168,7 @@ export const GroupForm = () => {
           name: formData.nombre,
           subjects: formData.tematicas || "",
           problems: formData.descripcion || "",
-          id_admin: selectedResponsableId,
+          id_admin: responsableIdForPayload,
           id_faculty: selectedFacultyId,
           update_date: now,
           member_update_ids: selectedMemberIds,
@@ -1073,7 +1181,7 @@ export const GroupForm = () => {
           name: formData.nombre,
           subjects: formData.tematicas || "",
           problems: formData.descripcion || "",
-          id_admin: selectedResponsableId,
+          id_admin: responsableIdForPayload,
           id_faculty: selectedFacultyId,
           create_date: now,
           update_date: now,
@@ -1610,45 +1718,7 @@ export const GroupForm = () => {
                 </div>
                 <div className="form-group">
                   <label>Responsable del Grupo *</label>
-                  <div className="responsable-selector">
-                    {selectedResponsable ? (
-                      <div className="selected-responsable">
-                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos}${selectedResponsable.facultad ? ` - ${selectedResponsable.facultad}` : ''}`}</span>
-                        {!isEditMode && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setShowResponsableModal(true)}
-                            disabled={isCurrentUserResponsable}
-                          >
-                            Cambiar
-                          </Button>
-                        )}
-                      </div>
-                    ) : (
-                      !isEditMode && (
-                        <Button 
-                          type="button" 
-                          variant="secondary" 
-                          onClick={() => setShowResponsableModal(true)}
-                          disabled={isCurrentUserResponsable}
-                        >
-                          Seleccionar Responsable
-                        </Button>
-                      )
-                    )}
-                    {isEditMode && selectedResponsable && (
-                      <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
-                        El responsable no puede ser modificado
-                      </p>
-                    )}
-                    {isCurrentUserResponsable && (
-                      <p className="form-hint" style={{ color: '#c33', marginTop: '0.5rem' }}>
-                        Como autor, no puede cambiar el responsable del grupo
-                      </p>
-                    )}
-                  </div>
+                  <div className="responsable-selector">{renderGroupResponsableField()}</div>
                   {fieldErrors.responsable && <span className="field-error">{fieldErrors.responsable}</span>}
                 </div>
                 <div className="form-actions">
@@ -2106,36 +2176,8 @@ export const GroupForm = () => {
                 </div>
                 <div className="form-group">
                   <label>Responsable del Grupo *</label>
-                  <div className="responsable-selector">
-                    {selectedResponsable ? (
-                      <div className="selected-responsable">
-                        <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos}${selectedResponsable.facultad ? ` - ${selectedResponsable.facultad}` : ''}`}</span>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setShowResponsableModal(true)}
-                          disabled={isCurrentUserResponsable}
-                        >
-                          Cambiar
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button 
-                        type="button" 
-                        variant="secondary" 
-                        onClick={() => setShowResponsableModal(true)}
-                        disabled={isCurrentUserResponsable}
-                      >
-                        Seleccionar Responsable
-                      </Button>
-                    )}
-                    {isCurrentUserResponsable && (
-                      <p className="form-hint" style={{ color: '#c33', marginTop: '0.5rem' }}>
-                        Como autor, no puede cambiar el responsable del grupo
-                      </p>
-                    )}
-                  </div>
+                  <div className="responsable-selector">{renderGroupResponsableField()}</div>
+                  {fieldErrors.responsable && <span className="field-error">{fieldErrors.responsable}</span>}
                 </div>
               </form>
             </Card>
@@ -2201,7 +2243,12 @@ export const GroupForm = () => {
               <Button type="button" variant="secondary" onClick={() => navigate("/groups")}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={handleSaveAllUpdates} disabled={isSubmitting}>
+              <Button
+                type="button"
+                onClick={handleSaveAllUpdates}
+                disabled={isSubmitting || !isGroupEditDirty}
+                title={!isGroupEditDirty ? "No hay cambios para guardar" : undefined}
+              >
                 {isSubmitting ? "Guardando..." : "Actualizar Grupo"}
               </Button>
             </div>

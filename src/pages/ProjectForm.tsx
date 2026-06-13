@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
@@ -10,8 +10,10 @@ import { Modal } from "../components/common/Modal"
 import "./ProjectForm.css"
 import { mockRecords } from "../services/mockData"
 import { useAuthStore } from "../stores/authStore"
+import { canChangeEntityResponsable } from "../utils/groupEditPermissions"
 import { usePermissions } from "../hooks/usePermissions"
 import { useRequirePermission } from "../hooks/useRequirePermission"
+import { useEditFormDirty } from "../hooks/useEditFormDirty"
 import type { IUser } from "../types/index"
 import {
   recordMetadataService,
@@ -132,13 +134,33 @@ export const ProjectForm = () => {
 
   const [selectedResponsable, setSelectedResponsable] = useState<IUser | undefined>(undefined)
   const [selectedResponsableId, setSelectedResponsableId] = useState<number | null>(null)
+  const [loadedResponsableId, setLoadedResponsableId] = useState<number | null>(null)
   const [showResponsableModal, setShowResponsableModal] = useState(false)
   const responsableSearch = useIntegrantSearch()
   const [originalInitialDate, setOriginalInitialDate] = useState<string>("")
-  
-  // Verificar si el usuario actual es responsable y es autor
-  const isCurrentUserResponsable = Boolean(isEditMode && isAutorUser && selectedResponsableId && currentUser && 
-                                   parseInt(currentUser.id) === selectedResponsableId)
+
+  const canChangeProjectResponsable = useMemo(
+    () =>
+      canChangeEntityResponsable(
+        currentUser,
+        loadedResponsableId ?? selectedResponsableId,
+        isAdmin(),
+        !isEditMode,
+      ),
+    [currentUser, loadedResponsableId, selectedResponsableId, isAdmin, isEditMode],
+  )
+
+  const responsableIdForPayload = canChangeProjectResponsable
+    ? selectedResponsableId
+    : loadedResponsableId ?? selectedResponsableId
+
+  const isCurrentUserResponsable = Boolean(
+    isEditMode &&
+      isAutorUser &&
+      selectedResponsableId &&
+      currentUser &&
+      parseInt(currentUser.id) === selectedResponsableId,
+  )
 
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
@@ -165,6 +187,7 @@ export const ProjectForm = () => {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [projectDetailsLoaded, setProjectDetailsLoaded] = useState(false)
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -234,8 +257,13 @@ export const ProjectForm = () => {
   }, [])
 
   useEffect(() => {
+    setProjectDetailsLoaded(false)
+  }, [id])
+
+  useEffect(() => {
     const loadProjectData = async () => {
       if (id && (isViewMode || isEditMode)) {
+        setProjectDetailsLoaded(false)
         try {
           const project = await projectService.getProjectById(parseInt(id))
           
@@ -283,6 +311,7 @@ export const ProjectForm = () => {
           
           if (project.responsible) {
             setSelectedResponsableId(project.responsible.id_integrant)
+            setLoadedResponsableId(project.responsible.id_integrant)
             setSelectedResponsable({
               id: String(project.responsible.id_integrant),
               nombre: project.responsible.name.split(" ")[0] || "",
@@ -294,6 +323,9 @@ export const ProjectForm = () => {
               esExterno: false,
               esAdministrador: false,
             } as IUser)
+          } else if (project.id_responsible) {
+            setSelectedResponsableId(project.id_responsible)
+            setLoadedResponsableId(project.id_responsible)
           }
           
           setSelectedProjectTypeId(project.id_type || project.id_project_type || null)
@@ -384,17 +416,105 @@ export const ProjectForm = () => {
           }
           
           setIsSaved(true)
+          setProjectDetailsLoaded(true)
         } catch (error) {
           console.error("Error cargando proyecto:", error)
           const message = (error as Error).message || "Error al cargar el proyecto"
           setMetadataError(message)
           showToast(message, "error")
+          setProjectDetailsLoaded(false)
         }
       }
     }
     
     loadProjectData()
   }, [id, isViewMode, isEditMode])
+
+  const projectEditSnapshot = useMemo(
+    () => ({
+      formData,
+      selectedProjectTypeId,
+      selectedProjectStateId,
+      selectedProjectClassificationId,
+      selectedResponsableId: responsableIdForPayload,
+      members: members.map((member) => ({
+        integrantId: member.integrantId,
+        rol: member.rol,
+        nombre: member.usuario.nombre,
+        apellidos: member.usuario.apellidos,
+        correoElectronico: member.usuario.correoElectronico,
+        numeroIdentidad: member.usuario.numeroIdentidad,
+        entidad: member.usuario.entidad,
+        esExterno: member.usuario.esExterno,
+      })),
+    }),
+    [
+      formData,
+      selectedProjectTypeId,
+      selectedProjectStateId,
+      selectedProjectClassificationId,
+      members,
+      responsableIdForPayload,
+    ],
+  )
+
+  const responsableDisplayName = useMemo(() => {
+    if (!selectedResponsable) {
+      return selectedResponsableId ? `Integrante #${selectedResponsableId}` : "No asignado"
+    }
+
+    const fullName = `${selectedResponsable.nombre} ${selectedResponsable.apellidos}`.trim()
+    if (fullName) {
+      return selectedResponsable.facultad ? `${fullName} - ${selectedResponsable.facultad}` : fullName
+    }
+    if (selectedResponsable.correoElectronico) return selectedResponsable.correoElectronico
+    return selectedResponsableId ? `Integrante #${selectedResponsableId}` : "No asignado"
+  }, [selectedResponsable, selectedResponsableId])
+
+  const renderProjectResponsableField = () => {
+    const hasResponsable = Boolean(selectedResponsable || selectedResponsableId)
+
+    if (isEditMode && !canChangeProjectResponsable) {
+      return (
+        <>
+          <div className="selected-responsable selected-responsable--readonly">
+            <span className="selected-responsable__name">{responsableDisplayName}</span>
+          </div>
+          <p className="form-hint" role="status">
+            Solo el responsable del proyecto o un administrador pueden cambiar el responsable.
+          </p>
+        </>
+      )
+    }
+
+    return (
+      <div className="responsable-selector">
+        {hasResponsable ? (
+          <div className="selected-responsable">
+            <span className="selected-responsable__name">{responsableDisplayName}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowResponsableModal(true)}
+              aria-label="Cambiar responsable del proyecto"
+            >
+              Cambiar
+            </Button>
+          </div>
+        ) : (
+          <Button type="button" variant="secondary" onClick={() => setShowResponsableModal(true)}>
+            Seleccionar Responsable
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  const isProjectEditDirty = useEditFormDirty(
+    Boolean(isEditMode && projectDetailsLoaded),
+    projectEditSnapshot,
+  )
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -600,7 +720,7 @@ export const ProjectForm = () => {
       other_data: toNullIfEmpty(formData.otrosDatos),
       keywords: formData.palabrasClave || "",
       member_ids: memberIds,
-      id_responsible: selectedResponsableId,
+      id_responsible: responsableIdForPayload,
       thematic: formData.tematica || "",
       id_project_type: selectedProjectTypeId,
       art_state: formData.artState || "",
@@ -1252,47 +1372,11 @@ export const ProjectForm = () => {
                   {isViewMode ? (
                     <Input
                       type="text"
-                      value={
-                        selectedResponsable
-                          ? `${selectedResponsable.nombre} ${selectedResponsable.apellidos} - ${selectedResponsable.facultad}`
-                          : "No asignado"
-                      }
+                      value={responsableDisplayName}
                       disabled={true}
                     />
                   ) : (
-                    <div className="responsable-selector">
-                      {selectedResponsable ? (
-                        <div className="selected-responsable">
-                          <span>{`${selectedResponsable.nombre} ${selectedResponsable.apellidos}${selectedResponsable.facultad ? ` - ${selectedResponsable.facultad}` : ''}`}</span>
-                          {!isEditMode && (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setShowResponsableModal(true)}
-                            >
-                              Cambiar
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        !isEditMode && (
-                      <Button 
-                        type="button" 
-                        variant="secondary" 
-                        onClick={() => setShowResponsableModal(true)}
-                        disabled={isCurrentUserResponsable}
-                      >
-                        Seleccionar Responsable
-                      </Button>
-                        )
-                      )}
-                      {isEditMode && selectedResponsable && (
-                        <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
-                          El responsable no puede ser modificado
-                        </p>
-                      )}
-                    </div>
+                    renderProjectResponsableField()
                   )}
                   {fieldErrors.responsable && <span className="field-error">{fieldErrors.responsable}</span>}
                 </div>
@@ -1837,8 +1921,13 @@ export const ProjectForm = () => {
                     <Button type="button" variant="secondary" onClick={() => navigate("/projects")}>
                       Cancelar
                     </Button>
-                    <Button type="button" onClick={handleSaveAllUpdates}>
-                      Actualizar Proyecto
+                    <Button
+                      type="button"
+                      onClick={handleSaveAllUpdates}
+                      disabled={isSubmitting || !isProjectEditDirty}
+                      title={!isProjectEditDirty ? "No hay cambios para guardar" : undefined}
+                    >
+                      {isSubmitting ? "Guardando..." : "Actualizar Proyecto"}
                     </Button>
                   </>
                 ) : (

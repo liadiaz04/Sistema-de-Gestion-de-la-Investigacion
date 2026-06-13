@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
@@ -44,6 +44,7 @@ import type {
 import { recordDetailService } from "../services/record/recordDetailService"
 import { usePermissions } from "../hooks/usePermissions"
 import { useRequirePermission } from "../hooks/useRequirePermission"
+import { useEditFormDirty } from "../hooks/useEditFormDirty"
 import { useToast } from "../contexts/ToastContext"
 import { ConfirmDialog } from "../components/common/ConfirmDialog"
 import { ZenodoPublishModal } from "../components/zenodo/ZenodoPublishModal"
@@ -384,6 +385,7 @@ export const RecordForm = () => {
       (recordFromLocation?.tipo as RecordType | undefined) ??
       "articulo"
   )
+  const effectiveRecordType = (parsedRecordKey?.type ?? recordType) as RecordType
   const [recordData, setRecordData] = useState<Registro | null>(recordFromLocation ?? null)
   const editPermissionReady = !isEditMode || recordData !== null
   const currentIntegrantId = (() => {
@@ -406,6 +408,9 @@ export const RecordForm = () => {
 
   const [recordLoading, setRecordLoading] = useState(false)
   const [recordLoadError, setRecordLoadError] = useState<string | null>(null)
+  const [recordEditBaselineReady, setRecordEditBaselineReady] = useState(false)
+  const [linkedEntitiesHydrated, setLinkedEntitiesHydrated] = useState(false)
+  const [zenodoHydrationDone, setZenodoHydrationDone] = useState(false)
   const [isSaved, setIsSaved] = useState(false)
   const [activeTab, setActiveTab] = useState("datos-basicos")
 
@@ -529,6 +534,9 @@ export const RecordForm = () => {
     projectSearch.setTerm("")
     setIsSaved(false)
     setRecordLoadError(null)
+    setRecordEditBaselineReady(false)
+    setLinkedEntitiesHydrated(false)
+    setZenodoHydrationDone(false)
   }, [parsedRecordKey?.id])
 
   useEffect(() => {
@@ -607,19 +615,22 @@ export const RecordForm = () => {
   }, [parsedRecordKey?.id, parsedRecordKey?.type, recordFromLocation])
 
   useEffect(() => {
-    const recordTypeForZenodo = (parsedRecordKey?.type ?? recordType) as RecordType
+    const recordTypeForZenodo = effectiveRecordType
     if (recordTypeForZenodo !== "articulo" || !recordNumericId) {
       setIsZenodoPublished(false)
+      setZenodoHydrationDone(true)
       return
     }
 
     const entityId = Number(recordNumericId)
     if (Number.isNaN(entityId)) {
       setIsZenodoPublished(false)
+      setZenodoHydrationDone(true)
       return
     }
 
     let isMounted = true
+    setZenodoHydrationDone(false)
 
     zenodoService
       .getPublication("article", entityId)
@@ -638,15 +649,25 @@ export const RecordForm = () => {
         if (!isMounted) return
         setIsZenodoPublished(false)
       })
+      .finally(() => {
+        if (!isMounted) return
+        setZenodoHydrationDone(true)
+      })
 
     return () => {
       isMounted = false
     }
-  }, [parsedRecordKey?.type, recordType, recordNumericId, recordData?.id])
+  }, [effectiveRecordType, recordNumericId, recordData?.id])
 
   useEffect(() => {
-    if (!recordData) return
+    if (!recordData) {
+      setRecordEditBaselineReady(false)
+      setLinkedEntitiesHydrated(false)
+      return
+    }
 
+    setRecordEditBaselineReady(false)
+    setLinkedEntitiesHydrated(false)
     setRecordLoadError(null)
     setRecordType(recordData.tipo as RecordType)
     setIsSaved(true)
@@ -743,10 +764,45 @@ export const RecordForm = () => {
         setSelectedProject(null)
         projectSearch.setTerm("")
       }
+
+      setLinkedEntitiesHydrated(true)
     }
 
-    loadLinkedGroupAndProject()
+    void loadLinkedGroupAndProject()
   }, [recordData])
+
+  useEffect(() => {
+    if (!isEditMode || !recordData || recordLoading || isMetadataLoading) {
+      setRecordEditBaselineReady(false)
+      return
+    }
+
+    if (!linkedEntitiesHydrated || !zenodoHydrationDone || countries.length === 0) {
+      setRecordEditBaselineReady(false)
+      return
+    }
+
+    if (selectedCountryId === null) {
+      const countryName = recordData.country?.name || formData.pais
+      const countryMatch = countries.find((country) => country.name === countryName)
+      if (countryMatch) {
+        setSelectedCountryId(countryMatch.id_country)
+        return
+      }
+    }
+
+    setRecordEditBaselineReady(true)
+  }, [
+    isEditMode,
+    recordData,
+    recordLoading,
+    isMetadataLoading,
+    linkedEntitiesHydrated,
+    zenodoHydrationDone,
+    countries,
+    selectedCountryId,
+    formData.pais,
+  ])
 
   useEffect(() => {
     if (!countries.length || selectedCountryId) {
@@ -757,6 +813,9 @@ export const RecordForm = () => {
       setSelectedCountryId(countryMatch.id_country)
       return
     }
+    if (isEditMode || isViewMode) {
+      return
+    }
     const fallbackCountry = countries[0]
     if (fallbackCountry) {
       setSelectedCountryId(fallbackCountry.id_country)
@@ -765,7 +824,7 @@ export const RecordForm = () => {
         pais: fallbackCountry.name,
       }))
     }
-  }, [countries, formData.pais, selectedCountryId])
+  }, [countries, formData.pais, selectedCountryId, isEditMode, isViewMode])
 
   useEffect(() => {
     if (isEditMode || isViewMode || isSaved) {
@@ -1451,15 +1510,84 @@ export const RecordForm = () => {
     scrollToFormError({ fieldKey: "titulo", setActiveTab, recordType })
   }
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    if (e.target.name === "doi" && isDoiLocked) {
+      return
+    }
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    })
+  }
+
+  const recordEditSnapshot = useMemo(
+    () => ({
+      recordType: effectiveRecordType,
+      formData,
+      selectedCountryId,
+      selectedArticleTypeId,
+      selectedNormTypeId,
+      selectedPrizeTypeId,
+      selectedThesisTypeId,
+      selectedEncounterTypeId,
+      id_group: selectedGroup?.id ?? null,
+      id_project: selectedProject?.id ?? null,
+      selectedAuthorIds: [...selectedAuthorIds].sort((a, b) => a - b),
+      selectedTutorIds: [...selectedTutorIds].sort((a, b) => a - b),
+      authors: authors.map((author, index) => ({
+        integrantId: author.integrantId ?? null,
+        nombre: author.nombre ?? author.usuario?.nombre ?? "",
+        apellidos: author.apellidos ?? author.usuario?.apellidos ?? "",
+        esPrincipal: author.esPrincipal ?? false,
+        orden: author.orden ?? index + 1,
+        esExterno: author.esExterno ?? author.usuario?.esExterno ?? false,
+        correo: author.usuario?.correoElectronico ?? "",
+        entidad: author.usuario?.lugarTrabajo ?? author.usuario?.entidad ?? "",
+      })),
+      tutors: tutors.map((tutor, index) => ({
+        integrantId: tutor.integrantId ?? null,
+        nombre: tutor.nombre ?? tutor.usuario?.nombre ?? "",
+        apellidos: tutor.apellidos ?? tutor.usuario?.apellidos ?? "",
+        orden: tutor.orden ?? index + 1,
+      })),
+    }),
+    [
+      effectiveRecordType,
+      formData,
+      selectedCountryId,
+      selectedArticleTypeId,
+      selectedNormTypeId,
+      selectedPrizeTypeId,
+      selectedThesisTypeId,
+      selectedEncounterTypeId,
+      selectedGroup,
+      selectedProject,
+      selectedAuthorIds,
+      selectedTutorIds,
+      authors,
+      tutors,
+    ],
+  )
+
+  const isRecordEditDirty = useEditFormDirty(
+    Boolean(isEditMode && recordEditBaselineReady),
+    recordEditSnapshot,
+  )
+
   const handleUpdateRecord = async () => {
-    const effectiveRecordType = (parsedRecordKey?.type ?? recordType) as RecordType
+    if (!isRecordEditDirty) {
+      showToast("No hay cambios para guardar", "info")
+      return
+    }
+
+    const effectiveRecordTypeForUpdate = effectiveRecordType
 
     if (!recordNumericId) {
       showToast("No se pudo identificar el registro a actualizar.", "error")
       return
     }
 
-    if (!isRecordTypeValue(effectiveRecordType)) {
+    if (!isRecordTypeValue(effectiveRecordTypeForUpdate)) {
       showToast("No se pudo determinar el tipo de registro para actualizar.", "error")
       return
     }
@@ -1482,9 +1610,9 @@ export const RecordForm = () => {
       setFieldErrors({})
 
       const authorIdsForUpdate = getAuthorIdsForUpdate()
-      const payloadContext = buildPayloadContext(effectiveRecordType, authorIdsForUpdate)
+      const payloadContext = buildPayloadContext(effectiveRecordTypeForUpdate, authorIdsForUpdate)
 
-      switch (effectiveRecordType) {
+      switch (effectiveRecordTypeForUpdate) {
         case "articulo":
           await recordService.updateArticle(
             entityId,
@@ -1536,16 +1664,6 @@ export const RecordForm = () => {
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    if (e.target.name === "doi" && isDoiLocked) {
-      return
-    }
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
   }
 
   const renderTypeSpecificFields = () => {
@@ -2667,7 +2785,12 @@ export const RecordForm = () => {
             <Button type="button" variant="secondary" onClick={() => navigate("/records")}>
               Cancelar
             </Button>
-            <Button type="button" onClick={() => void handleUpdateRecord()} disabled={isSubmitting}>
+            <Button
+              type="button"
+              onClick={() => void handleUpdateRecord()}
+              disabled={isSubmitting || !isRecordEditDirty}
+              title={!isRecordEditDirty ? "No hay cambios para guardar" : undefined}
+            >
               {isSubmitting ? "Actualizando..." : "Actualizar Registro"}
             </Button>
           </div>
