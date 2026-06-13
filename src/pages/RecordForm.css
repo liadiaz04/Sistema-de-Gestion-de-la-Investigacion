@@ -217,6 +217,20 @@
   font-size: 0.875rem;
 }
 
+/* —— Grupo / proyecto asociado al registro —— */
+.linked-entity-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.linked-entity-chip__label {
+  color: var(--color-primary-dark, #006847);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 /* —— Listas de asociación (autores, tutores, proyectos) —— */
 .record-list,
 .association-list {
