@@ -346,7 +346,7 @@ const ProjectList: React.FC = () => {
               checked={showOnlyMyProjects}
               onChange={(e) => setShowOnlyMyProjects(e.target.checked)}
             />
-            <span>Proyectos de los que soy responsable</span>
+            <span>Mis proyectos</span>
           </label>
         </div>
 

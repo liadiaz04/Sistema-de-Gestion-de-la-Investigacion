@@ -351,7 +351,7 @@ export const GroupList: React.FC = () => {
               checked={showOnlyMyGroups}
               onChange={(e) => setShowOnlyMyGroups(e.target.checked)}
             />
-            <span>Grupos de los que soy responsable</span>
+            <span>Mis grupos</span>
           </label>
         </div>
 
