@@ -670,6 +670,8 @@ export const GroupForm = () => {
 
   // Filtrar áreas por facultad seleccionada
   const filteredFacultyAreas = facultyAreas.filter((area) => area.id_faculty === selectedFacultyId)
+  const hasFacultyAreasAvailable =
+    selectedFacultyId > 0 && filteredFacultyAreas.length > 0
 
   const handleFacultyChange = (facultyId: string) => {
     const id = facultyId ? Number(facultyId) : null
@@ -677,6 +679,10 @@ export const GroupForm = () => {
     setSelectedFacultyAreaId(0)
     const faculty = faculties.find((f) => f.id_faculty === id)
     setFormData({ ...formData, facultad: faculty?.name || "", area: "" })
+    setFieldErrors((prev) => {
+      const { area, ...rest } = prev
+      return rest
+    })
   }
 
   const handleFacultyAreaChange = (areaId: string) => {
@@ -684,6 +690,12 @@ export const GroupForm = () => {
     setSelectedFacultyAreaId(id||0)
     const area = facultyAreas.find((a) => a.id_faculty_area === id)
     setFormData({ ...formData, area: area?.name || "" })
+    if (id) {
+      setFieldErrors((prev) => {
+        const { area: _area, ...rest } = prev
+        return rest
+      })
+    }
   }
 
   const handleSelectResponsableIntegrant = (integrant: IntegrantOption) => {
@@ -750,7 +762,7 @@ export const GroupForm = () => {
       errors.facultad = "Debe seleccionar una facultad"
     }
 
-    if (!selectedFacultyAreaId) {
+    if (hasFacultyAreasAvailable && !selectedFacultyAreaId) {
       errors.area = "Debe seleccionar un área"
     }
 
@@ -944,7 +956,7 @@ export const GroupForm = () => {
         problems: formData.descripcion || "",
         id_admin: selectedResponsableId,
         id_faculty: selectedFacultyId,
-        id_faculty_area: selectedFacultyAreaId,
+        id_faculty_area: selectedFacultyAreaId || null,
         update_date: now,
         /** Ver `GroupUpdate` en backend/modules/group/schemas.py */
         member_update_ids: selectedMemberIds,
@@ -1000,8 +1012,8 @@ export const GroupForm = () => {
       errors.facultad = "Debe seleccionar una facultad"
     }
 
-    // Validar área
-    if (!selectedFacultyAreaId) {
+    // Validar área (solo si la facultad tiene áreas configuradas)
+    if (hasFacultyAreasAvailable && !selectedFacultyAreaId) {
       errors.area = "Debe seleccionar un área"
     }
 
@@ -1052,7 +1064,7 @@ export const GroupForm = () => {
           id_faculty: selectedFacultyId,
           update_date: now,
           member_update_ids: selectedMemberIds,
-          id_faculty_area: selectedFacultyAreaId,
+          id_faculty_area: selectedFacultyAreaId || null,
         }
         await groupService.updateGroupWithPayload(parseInt(id), updatePayload)
         showToast("Grupo actualizado con éxito", "success")
@@ -1066,7 +1078,7 @@ export const GroupForm = () => {
           create_date: now,
           update_date: now,
           member_ids: selectedMemberIds,
-          id_faculty_area: selectedFacultyAreaId,
+          id_faculty_area: selectedFacultyAreaId || null,
         }
         await groupService.createGroup(createPayload)
         showToast("Grupo completado y guardado con éxito", "success")
@@ -1083,6 +1095,39 @@ export const GroupForm = () => {
       setIsSubmitting(false)
     }
   }
+
+  const renderFacultyAreaField = () => (
+    <div className="form-group">
+      <label htmlFor="group-faculty-area">
+        {hasFacultyAreasAvailable ? "Área *" : "Área"}
+      </label>
+      {isMetadataLoading ? (
+        <Input name="area" value="Cargando..." disabled />
+      ) : !selectedFacultyId ? (
+        <p className="form-hint">Seleccione primero una facultad</p>
+      ) : !hasFacultyAreasAvailable ? (
+        <p className="form-hint" role="status">
+          Esta facultad no tiene áreas configuradas
+        </p>
+      ) : (
+        <select
+          id="group-faculty-area"
+          name="area"
+          value={selectedFacultyAreaId || ""}
+          onChange={(e) => handleFacultyAreaChange(e.target.value)}
+          className="form-select"
+        >
+          <option value="">Seleccione un área</option>
+          {filteredFacultyAreas.map((area) => (
+            <option key={area.id_faculty_area} value={area.id_faculty_area}>
+              {area.name}
+            </option>
+          ))}
+        </select>
+      )}
+      {fieldErrors.area && <span className="field-error">{fieldErrors.area}</span>}
+    </div>
+  )
 
   return (
     <div className="form-page group-form">
@@ -1544,27 +1589,7 @@ export const GroupForm = () => {
                   )}
                   {fieldErrors.facultad && <span className="field-error">{fieldErrors.facultad}</span>}
                 </div>
-                <div className="form-group">
-                  <label>Área</label>
-                  {isMetadataLoading ? (
-                    <Input name="area" value="Cargando..." disabled />
-                  ) : (
-                    <select
-                      name="area"
-                      value={selectedFacultyAreaId ?? ""}
-                      onChange={(e) => handleFacultyAreaChange(e.target.value)}
-                      className="form-select"
-                      disabled={!selectedFacultyId || filteredFacultyAreas.length === 0}
-                    >
-                      <option value="">Seleccione un área</option>
-                      {filteredFacultyAreas.map((area) => (
-                        <option key={area.id_faculty_area} value={area.id_faculty_area}>
-                          {area.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                {renderFacultyAreaField()}
                 <div className="form-group">
                   <label>Departamento</label>
                   <Input
@@ -2060,28 +2085,7 @@ export const GroupForm = () => {
                     </select>
                   )}
                 </div>
-                <div className="form-group">
-                  <label>Área *</label>
-                  {isMetadataLoading ? (
-                    <Input name="area" value="Cargando..." disabled />
-                  ) : (
-                    <select
-                      name="area"
-                      value={selectedFacultyAreaId ?? ""}
-                      onChange={(e) => handleFacultyAreaChange(e.target.value)}
-                      className="form-select"
-                      required
-                      disabled={!selectedFacultyId || filteredFacultyAreas.length === 0}
-                    >
-                      <option value="">Seleccione un área</option>
-                      {filteredFacultyAreas.map((area) => (
-                        <option key={area.id_faculty_area} value={area.id_faculty_area}>
-                          {area.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                {renderFacultyAreaField()}
                 <div className="form-group">
                   <label>Departamento</label>
                   <Input
