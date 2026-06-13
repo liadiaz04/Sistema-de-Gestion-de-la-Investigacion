@@ -25,7 +25,7 @@
 
 .assistant-chat-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem 1.5rem;
   flex-wrap: wrap;
@@ -34,14 +34,16 @@
   background: linear-gradient(180deg, rgba(0, 131, 83, 0.04) 0%, transparent 100%);
 }
 
-.assistant-chat-header-text {
+.assistant-chat-header__hint {
   flex: 1;
-  min-width: min(100%, 20rem);
+  min-width: min(100%, 16rem);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
 }
 
 .assistant-chat-reset {
   flex-shrink: 0;
-  margin-top: 0.2rem;
   padding: 0.45rem 0.75rem;
   font-size: 0.8rem;
   font-weight: 600;
@@ -57,14 +59,6 @@
   color: var(--primary-green, var(--color-primary));
   border-color: var(--primary-green, var(--color-primary));
   background: rgba(0, 131, 83, 0.08);
-}
-
-.assistant-chat-header h2 {
-  margin: 0 0 0.35rem 0;
-  color: var(--primary-green);
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
 }
 
 .assistant-chat-header p {

@@ -1,28 +1,9 @@
 .user-management {
-  padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
 }
 
-/* Updated header with better layout for title, subtitle and button */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+.page-header.page-toolbar {
   margin-bottom: 1.5rem;
-}
-
-.header-content h1 {
-  font-size: 1.875rem;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem 0;
-  font-weight: 700;
-}
-
-.subtitle {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  margin: 0;
 }
 
 /* New search bar styling */
@@ -57,14 +38,14 @@
 
 .users-table thead th {
   text-align: left;
-  padding: 1rem 1.5rem;
-  font-size: 0.75rem;
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--color-primary-dark);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-bottom: 1px solid var(--border-color);
-  background: #fafafa;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--color-primary-light);
+  background: linear-gradient(180deg, #e8f5f0 0%, var(--color-bg-tertiary) 100%);
 }
 
 .users-table tbody tr {
@@ -541,7 +522,6 @@
   opacity: 1;
 }
 
-.user-management-loading,
 .user-management-denied {
   display: flex;
   flex-direction: column;
@@ -550,17 +530,6 @@
   gap: 1rem;
   padding: 2rem;
   min-height: 280px;
-}
-
-.user-management-error {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 1rem;
-  margin: 0 0 1rem;
-  background-color: #fee2e2;
-  color: #991b1b;
-  border-radius: 8px;
 }
 
 .modal-content-clean--wide {
@@ -576,7 +545,7 @@
   padding: 0;
 }
 
-.role-tag {
+.roles-tags-list .role-tag {
   display: inline-block;
   padding: 0.25rem 0.625rem;
   border-radius: 999px;
@@ -587,7 +556,7 @@
   border: 1px solid #b8e0d0;
 }
 
-.role-tag--locked {
+.roles-tags-list .role-tag--locked {
   background: #f3f4f6;
   color: #4b5563;
   border-color: #d1d5db;
@@ -610,12 +579,6 @@
 .roles-helper {
   margin-bottom: 1rem;
   line-height: 1.5;
-}
-
-.roles-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
 }
 
 .role-item__label {

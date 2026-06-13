@@ -14,6 +14,7 @@ import { GroupForm } from "./pages/GroupForm"
 import { ProjectForm } from "./pages/ProjectForm"
 import { RecordForm } from "./pages/RecordForm"
 import { AssistantChat } from "./pages/AssistantChat"
+import { ToastProvider } from "./contexts/ToastContext"
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -23,6 +24,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 function App() {
   return (
     <BrowserRouter>
+      <ToastProvider>
       <Routes>
         <Route path="/login" element={<AuthForm />} />
         <Route
@@ -53,6 +55,7 @@ function App() {
           <Route path="assistant" element={<AssistantChat />} />
         </Route>
       </Routes>
+      </ToastProvider>
     </BrowserRouter>
   )
 }

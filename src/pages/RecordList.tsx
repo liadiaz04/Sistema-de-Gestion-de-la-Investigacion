@@ -9,7 +9,8 @@ import { Input } from "../components/common/Input";
 import { Table } from "../components/common/Table";
 import { OptionsMenu } from "../components/common/OptionsMenu";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
-import { Plus, Search, Loader2, AlertCircle } from "lucide-react";
+import { Plus, Search, Loader2 } from "lucide-react";
+import { useToast } from "../contexts/ToastContext";
 import type { Registro } from "../types/recordList/Registros";
 import { RecordListService } from "../services/recordList/recordListService";
 import { useAuthStore } from "../stores/authStore";
@@ -27,16 +28,15 @@ import {
 import type { RecordType } from "../types";
 import type { ZenodoPublishTarget } from "../types/zenodo";
 import "../components/zenodo/ZenodoPublishModal.css";
-import "./GroupList.css";
 
 const RecordList: React.FC = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const { user } = useAuthStore();
   const { canCreateRecords, canModifyRecord, canDeleteRecord, isIntegrant, canPublishToZenodo } = usePermissions();
   const [searchTerm, setSearchTerm] = useState("");
   const [records, setRecords] = useState<Registro[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [recordFilter, setRecordFilter] = useState<"all" | "mine">("all");
   const [publishedZenodoKeys, setPublishedZenodoKeys] = useState<Set<string>>(new Set());
   const [zenodoStatusLoaded, setZenodoStatusLoaded] = useState(false);
@@ -58,7 +58,6 @@ const RecordList: React.FC = () => {
   useEffect(() => {
     const loadRecords = async () => {
       setLoading(true);
-      setError(null);
       try {
         let fetchedRecords: Registro[];
         
@@ -76,7 +75,7 @@ const RecordList: React.FC = () => {
         setRecords(fetchedRecords);
       } catch (err) {
         console.error("Error cargando registros:", err);
-        setError(err instanceof Error ? err.message : "Error al cargar los registros");
+        showToast(err instanceof Error ? err.message : "Error al cargar los registros", "error");
       } finally {
         setLoading(false);
       }
@@ -146,9 +145,10 @@ const RecordList: React.FC = () => {
         setRecords(updatedRecords);
       }
       setDeleteConfirm({ show: false, recordId: null, recordType: null });
+      showToast("Registro eliminado correctamente", "success");
     } catch (err) {
       console.error("Error eliminando registro:", err);
-      setError(err instanceof Error ? err.message : "Error al eliminar el registro");
+      showToast(err instanceof Error ? err.message : "Error al eliminar el registro", "error");
     }
   };
 
@@ -298,12 +298,9 @@ const RecordList: React.FC = () => {
   ];
 
   return (
-    <div className="group-list">
-      <div className="group-list-header">
-        <div>
-          <h1>Producción Científica</h1>
-          <p>Gestión de registros científicos (Códice)</p>
-        </div>
+    <div className="list-page">
+      <div className="page-toolbar list-page__toolbar">
+        <p className="page-toolbar__lead">Gestión de registros y producción científica.</p>
         {canCreateRecords() && (
           <Button onClick={() => navigate("/records/new")}>
             <Plus size={20} />
@@ -312,66 +309,63 @@ const RecordList: React.FC = () => {
         )}
       </div>
 
-      <Card>
-        <div className="group-list-filters">
-          <div className="group-list-search">
-            <Search size={20} />
+      <Card className="list-page__panel">
+        <div className="list-page__filters">
+          <div className="list-page__search">
+            <Search size={20} aria-hidden />
             <Input
               type="text"
               placeholder="Buscar por título..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Buscar registros"
             />
           </div>
-          {isIntegrant() && (
-            <div className="filter-group">
-              <label>Filtrar:</label>
+          {isIntegrant() ? (
+            <div className="list-page__filter-group list-page__filter-group--inline">
+              <label htmlFor="record-filter">Filtrar:</label>
               <select
+                id="record-filter"
                 value={recordFilter}
                 onChange={(e) => setRecordFilter(e.target.value as "all" | "mine")}
-                className="form-select"
+                className="list-page__select"
               >
                 <option value="all">Todos los registros</option>
                 <option value="mine">Mis registros</option>
               </select>
             </div>
+          ) : (
+            <label className="list-page__checkbox">
+              <input
+                type="checkbox"
+                checked={recordFilter === "mine"}
+                onChange={(e) => setRecordFilter(e.target.checked ? "mine" : "all")}
+              />
+              <span>Mis registros</span>
+            </label>
           )}
         </div>
 
-        {loading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-            <Loader2 className="animate-spin" size={32} />
-            <span style={{ marginLeft: '1rem' }}>Cargando registros...</span>
-          </div>
-        )}
-
-        {error && (
-          <div style={{ 
-            padding: '1rem', 
-            margin: '1rem', 
-            backgroundColor: '#fee', 
-            color: '#c33',
-            borderRadius: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}>
-            <AlertCircle size={20} />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {!loading && !error && (
-          <>
-            {filteredRecords.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center' }}>
-                <p>No se encontraron registros</p>
-              </div>
-            ) : (
+        <div className="list-page__body">
+          {loading ? (
+            <div className="list-page__loading" role="status" aria-live="polite">
+              <Loader2 className="animate-spin" size={32} aria-hidden />
+              <span>Cargando registros...</span>
+            </div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="list-page__empty">
+              <p>No se encontraron registros</p>
+            </div>
+          ) : (
+            <>
+              <p className="list-page__count">
+                {filteredRecords.length}{" "}
+                {filteredRecords.length === 1 ? "registro" : "registros"}
+              </p>
               <Table data={filteredRecords} columns={columns} />
-            )}
-          </>
-        )}
+            </>
+          )}
+        </div>
       </Card>
 
       {deleteConfirm.recordId && deleteConfirm.recordType && (

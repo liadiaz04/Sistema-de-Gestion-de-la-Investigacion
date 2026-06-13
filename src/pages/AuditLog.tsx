@@ -16,6 +16,7 @@ import { Input } from "../components/common/Input"
 import { Button } from "../components/common/Button"
 import { Table } from "../components/common/Table"
 import { Loader2 } from "lucide-react"
+import { useToast } from "../contexts/ToastContext"
 import "./AuditLog.css"
 
 const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
@@ -170,11 +171,11 @@ const buildApiFilters = (
 }
 
 export const AuditLog = () => {
+  const { showToast } = useToast()
   const [logs, setLogs] = useState<IAuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     tipoAccion: "",
     fechaInicio: "",
@@ -229,8 +230,6 @@ export const AuditLog = () => {
         setLoadingMore(true)
       }
 
-      setError(null)
-
       try {
         const apiFilters = buildApiFilters(pageSkip, filtersRef.current)
         const { items, hasMore: pageHasMore } =
@@ -247,8 +246,9 @@ export const AuditLog = () => {
         setHasMore(pageHasMore)
       } catch (err) {
         console.error("Error loading audit logs:", err)
-        setError(
+        showToast(
           err instanceof Error ? err.message : "Error al cargar las trazas",
+          "error",
         )
       } finally {
         if (replace) {
@@ -325,23 +325,24 @@ export const AuditLog = () => {
   ]
 
   return (
-    <div className="audit-log">
-      <div className="page-header">
-        <h1>Bitácora del Sistema</h1>
-        <p>Registro de todas las operaciones realizadas en el sistema</p>
+    <div className="list-page audit-log">
+      <div className="page-toolbar list-page__toolbar">
+        <p className="page-toolbar__lead">
+          Registro de todas las operaciones realizadas en el sistema.
+        </p>
       </div>
 
-      <Card>
-        <div className="filters">
-          <div className="filter-group">
-            <label htmlFor="audit-tipo-accion">Tipo de Acción</label>
+      <Card className="list-page__panel">
+        <div className="list-page__filters">
+          <div className="list-page__filter-group">
+            <label htmlFor="audit-tipo-accion">Tipo de acción</label>
             <select
               id="audit-tipo-accion"
               value={filters.tipoAccion}
               onChange={(e) =>
                 setFilters({ ...filters, tipoAccion: e.target.value })
               }
-              className="form-select"
+              className="list-page__select"
             >
               <option value="">Todas</option>
               <option value="crear">Crear</option>
@@ -350,8 +351,8 @@ export const AuditLog = () => {
               <option value="consultar">Consultar</option>
             </select>
           </div>
-          <div className="filter-group">
-            <label htmlFor="audit-fecha-inicio">Fecha Inicio</label>
+          <div className="list-page__filter-group">
+            <label htmlFor="audit-fecha-inicio">Fecha inicio</label>
             <Input
               id="audit-fecha-inicio"
               type="date"
@@ -361,8 +362,8 @@ export const AuditLog = () => {
               }
             />
           </div>
-          <div className="filter-group">
-            <label htmlFor="audit-fecha-fin">Fecha Fin</label>
+          <div className="list-page__filter-group">
+            <label htmlFor="audit-fecha-fin">Fecha fin</label>
             <Input
               id="audit-fecha-fin"
               type="date"
@@ -380,61 +381,57 @@ export const AuditLog = () => {
             )}
           </Button>
         </div>
-      </Card>
 
-      <Card>
-        {loading && (
-          <div className="audit-log-status">
-            <Loader2 className="animate-spin" size={32} />
-            <span>Cargando trazas...</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="audit-log-error" role="alert">
-            {error}
-          </div>
-        )}
-
-        {!loading && !error && (
-          <>
-            {logs.length === 0 ? (
-              <div className="audit-log-empty">
-                <p>No se encontraron trazas</p>
-              </div>
-            ) : (
-              <>
-                <Table data={logs} columns={columns} />
+        <div className="list-page__body">
+          {loading ? (
+            <div className="list-page__loading" role="status" aria-live="polite">
+              <Loader2 className="animate-spin" size={32} aria-hidden />
+              <span>Cargando trazas...</span>
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="list-page__empty">
+              <p>No se encontraron trazas</p>
+            </div>
+          ) : (
+            <>
+              <p className="list-page__count">
+                {logs.length} {logs.length === 1 ? "registro" : "registros"}
+                {hasMore ? " cargados" : " en la bitácora"}
+              </p>
+              <Table data={logs} columns={columns} />
+              <div
+                ref={loadMoreRef}
+                className="audit-log-sentinel"
+                aria-hidden="true"
+              />
+              {loadingMore && (
                 <div
-                  ref={loadMoreRef}
-                  className="audit-log-sentinel"
-                  aria-hidden="true"
-                />
-                {loadingMore && (
-                  <div className="audit-log-status audit-log-status--more">
-                    <Loader2 className="animate-spin" size={24} />
-                    <span>Cargando más registros...</span>
-                  </div>
-                )}
-                {!hasMore && logs.length > 0 && (
-                  <p className="audit-log-end">No hay más registros</p>
-                )}
-                {hasMore && !loadingMore && logs.length > 0 && (
-                  <div className="audit-log-load-more">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={handleLoadMore}
-                      aria-label="Cargar 20 registros más de la bitácora"
-                    >
-                      Cargar más
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
+                  className="audit-log-status audit-log-status--more"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Loader2 className="animate-spin" size={24} aria-hidden />
+                  <span>Cargando más registros...</span>
+                </div>
+              )}
+              {!hasMore && logs.length > 0 && (
+                <p className="audit-log-end">No hay más registros</p>
+              )}
+              {hasMore && !loadingMore && logs.length > 0 && (
+                <div className="audit-log-load-more">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleLoadMore}
+                    aria-label="Cargar 20 registros más de la bitácora"
+                  >
+                    Cargar más
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </Card>
     </div>
   )

@@ -1,17 +1,34 @@
 "use client"
 
 import React from "react"
-import { Outlet, useNavigate } from "react-router-dom"
+import { Outlet, useLocation, useNavigate } from "react-router-dom"
 import { useAuthStore } from "../../stores/authStore"
 import { usePermissions } from "../../hooks/usePermissions"
-import { Menu, LogOut, Users, FolderKanban, FileText, BarChart3, UserCog, ClipboardList, PieChart, MessageCircle } from 'lucide-react'
+import {
+  LogOut,
+  Users,
+  FolderKanban,
+  FileText,
+  BarChart3,
+  UserCog,
+  ClipboardList,
+  PieChart,
+  MessageCircle,
+  Menu,
+  X,
+} from "lucide-react"
+import { Breadcrumbs } from "./Breadcrumbs"
+import { buildBreadcrumbs, getActiveNavPath, getSectionTitle } from "./navigationConfig"
 import "./Layout.css"
+
+const CUJAE_LOGO_URL = "/images/logo-cujae.png"
 
 export const Layout: React.FC = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, logout } = useAuthStore()
-  const { isAdmin, hasRole, canViewStatistics, canManageUsers, canViewAuditLog } = usePermissions()
-  const [sidebarOpen, setSidebarOpen] = React.useState(true)
+  const { canViewStatistics, canManageUsers, canViewAuditLog } = usePermissions()
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false)
 
   const handleLogout = () => {
     logout()
@@ -24,62 +41,105 @@ export const Layout: React.FC = () => {
     { icon: FolderKanban, label: "Proyectos", path: "/projects" },
     { icon: FileText, label: "Registros", path: "/records" },
     { icon: MessageCircle, label: "Asistente", path: "/assistant" },
-    ...(canViewStatistics() ? [
-      { icon: PieChart, label: "Estadísticas", path: "/statistics" },
-    ] : []),
-    ...(canManageUsers() ? [
-      { icon: UserCog, label: "Usuarios", path: "/users" },
-    ] : []),
-    ...(canViewAuditLog() ? [
-      { icon: ClipboardList, label: "Bitácora", path: "/audit" },
-    ] : []),
+    ...(canViewStatistics()
+      ? [{ icon: PieChart, label: "Estadísticas", path: "/statistics" }]
+      : []),
+    ...(canManageUsers() ? [{ icon: UserCog, label: "Usuarios", path: "/users" }] : []),
+    ...(canViewAuditLog() ? [{ icon: ClipboardList, label: "Bitácora", path: "/audit" }] : []),
   ]
 
+  const activeNavPath = getActiveNavPath(location.pathname)
+  const breadcrumbs = buildBreadcrumbs(location.pathname)
+  const sectionTitle = getSectionTitle(location.pathname)
+  const isDashboard =
+    location.pathname === "/dashboard" || location.pathname === "/"
+
+  const handleNavigate = (path: string) => {
+    navigate(path)
+    setMobileNavOpen(false)
+  }
+
+  const handleToggleMobileNav = () => {
+    setMobileNavOpen((prev) => !prev)
+  }
+
+  const userRoleLabel = user?.roles?.[0]?.replace(/_/g, " ") ?? "usuario"
+
   return (
-    <div className="layout">
-      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
-        <div className="sidebar-header">
-          {sidebarOpen ? (
-            <h2 className="sidebar-brand-title">SGI</h2>
-          ) : null}
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="app-header__brand">
+          <img src={CUJAE_LOGO_URL} alt="Logo CUJAE" className="app-header__logo" width={40} height={40} />
+          <div className="app-header__brand-text">
+            <span className="app-header__brand-title">Sistema de Gestión de Investigación</span>
+            <span className="app-header__brand-subtitle">CUJAE</span>
+          </div>
+        </div>
+
+        <div className="app-header__actions">
+          <div className="app-header__user">
+            <p className="app-header__user-name">
+              {user?.nombre} {user?.apellidos}
+            </p>
+            <p className="app-header__user-role">{userRoleLabel}</p>
+          </div>
           <button
             type="button"
-            className="sidebar-toggle"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            aria-label={sidebarOpen ? "Contraer menú lateral" : "Expandir menú lateral"}
+            className="app-header__logout"
+            onClick={handleLogout}
+            aria-label="Cerrar sesión"
           >
-            <Menu size={20} aria-hidden />
+            <LogOut size={18} aria-hidden />
+            <span className="app-header__logout-label">Salir</span>
+          </button>
+          <button
+            type="button"
+            className="app-header__menu-toggle"
+            onClick={handleToggleMobileNav}
+            aria-label={mobileNavOpen ? "Cerrar menú" : "Abrir menú"}
+            aria-expanded={mobileNavOpen}
+          >
+            {mobileNavOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
+      </header>
 
-        <nav className="sidebar-nav">
-          {menuItems.map((item) => (
-            <button key={item.path} className="sidebar-nav-item" onClick={() => navigate(item.path)}>
-              <item.icon size={20} />
-              {sidebarOpen && <span>{item.label}</span>}
-            </button>
-          ))}
-        </nav>
+      <nav
+        className={`app-nav ${mobileNavOpen ? "app-nav--open" : ""}`}
+        aria-label="Navegación principal"
+      >
+        <ul className="app-nav__list">
+          {menuItems.map((item) => {
+            const isActive =
+              activeNavPath === item.path ||
+              (item.path !== "/dashboard" && location.pathname.startsWith(item.path))
 
-        <div className="sidebar-footer">
-          <div className="sidebar-user">
-            {sidebarOpen && (
-              <div className="sidebar-user-info">
-                <p className="sidebar-user-name">
-                  {user?.nombre} {user?.apellidos}
-                </p>
-                <p className="sidebar-user-role">{user?.roles[0]}</p>
-              </div>
-            )}
-          </div>
-          <button className="sidebar-logout" onClick={handleLogout}>
-            <LogOut size={20} />
-            {sidebarOpen && <span>Cerrar Sesión</span>}
-          </button>
+            return (
+              <li key={item.path} className="app-nav__item">
+                <button
+                  type="button"
+                  className={`app-nav__link ${isActive ? "app-nav__link--active" : ""}`}
+                  onClick={() => handleNavigate(item.path)}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  <item.icon size={18} aria-hidden />
+                  <span>{item.label}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
+
+      <Breadcrumbs items={breadcrumbs} />
+
+      {!isDashboard ? (
+        <div className="app-section-banner" role="region" aria-label="Sección actual">
+          <h1 className="app-section-banner__title">{sectionTitle}</h1>
         </div>
-      </aside>
+      ) : null}
 
-      <main className="main-content">
+      <main className="app-main">
         <Outlet />
       </main>
     </div>

@@ -1,6 +1,7 @@
 import React from "react"
 import { Bot, Loader2, Send, User } from "lucide-react"
 import { chatService } from "../services/chatService"
+import { useToast } from "../contexts/ToastContext"
 import "./AssistantChat.css"
 
 type Message = {
@@ -49,10 +50,10 @@ const readInitialMessages = (): Message[] => {
 }
 
 export const AssistantChat: React.FC = () => {
+  const { showToast } = useToast()
   const [messages, setMessages] = React.useState<Message[]>(readInitialMessages)
   const [input, setInput] = React.useState("")
   const [loading, setLoading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
   const endRef = React.useRef<HTMLDivElement | null>(null)
 
   React.useEffect(() => {
@@ -75,8 +76,6 @@ export const AssistantChat: React.FC = () => {
     const trimmed = input.trim()
     if (!trimmed || loading) return
 
-    setError(null)
-
     const userMsg: Message = { role: "user", content: trimmed }
     setMessages((prev) => [...prev, userMsg])
     setInput("")
@@ -87,8 +86,8 @@ export const AssistantChat: React.FC = () => {
       const assistantText =
         response?.answer?.trim() || "No se recibió contenido de respuesta."
       setMessages((prev) => [...prev, { role: "assistant", content: assistantText }])
-    } catch (e) {
-      setError("No se pudo enviar el mensaje. Inténtalo nuevamente.")
+    } catch {
+      showToast("No se pudo enviar el mensaje. Inténtalo nuevamente.", "error")
     } finally {
       setLoading(false)
     }
@@ -111,7 +110,6 @@ export const AssistantChat: React.FC = () => {
     }
     const fresh = getDefaultMessages()
     setMessages(fresh)
-    setError(null)
     setInput("")
     try {
       localStorage.setItem(ASSISTANT_CHAT_STORAGE_KEY, JSON.stringify(fresh))
@@ -121,13 +119,13 @@ export const AssistantChat: React.FC = () => {
   }
 
   return (
-    <div className="assistant-chat-page">
+    <div className="assistant-chat-page form-page">
+      <p className="page-toolbar__lead form-page__toolbar-intro">
+        Haz preguntas sobre los datos; el asistente consultará la base y te responderá.
+      </p>
       <div className="assistant-chat-card">
         <div className="assistant-chat-header">
-          <div className="assistant-chat-header-text">
-            <h2>Asistente Virtual</h2>
-            <p>Haz preguntas sobre los datos; el asistente consultará la base y te responderá.</p>
-          </div>
+          <p className="assistant-chat-header__hint">Escribe tu consulta y pulsa Enviar o Enter.</p>
           <button
             type="button"
             className="assistant-chat-reset"
@@ -187,12 +185,6 @@ export const AssistantChat: React.FC = () => {
 
           <div ref={endRef} />
         </div>
-
-        {error && (
-          <div className="assistant-chat-error" role="alert">
-            {error}
-          </div>
-        )}
 
         <div className="assistant-chat-input">
           <label htmlFor="assistant-chat-message" className="visually-hidden">

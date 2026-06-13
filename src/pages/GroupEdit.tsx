@@ -18,6 +18,7 @@ import {
   type IntegrantOption,
 } from "../services/record/recordMetadataService"
 import { groupService } from "../services/groupService"
+import { useToast } from "../contexts/ToastContext"
 import { validateEmailRequired, validateNameRequired, validateRequired } from "../utils/validation"
 import {
   IdentityDocumentField,
@@ -85,14 +86,13 @@ const useIntegrantSearch = (): IntegrantSearchHook => {
 }
 
 export const GroupEdit = () => {
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const { id } = useParams()
   const { user: currentUser } = useAuthStore()
   const { isAutor } = usePermissions()
 
   const isAutorUser = isAutor()
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false)
-  const [successMessage, setSuccessMessage] = useState("")
   const [activeTab, setActiveTab] = useState<"datos" | "integrantes">("datos")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -284,19 +284,16 @@ export const GroupEdit = () => {
     removeIntegrantFromMembers(integrant.id_integrant)
     setShowResponsableModal(false)
     responsableSearch.setTerm("")
-    setSuccessMessage("Responsable seleccionado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Responsable seleccionado con éxito", "success")
   }
 
   const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
     if (isGroupResponsableIntegrant(integrant.id_integrant, selectedResponsableId)) {
-      setSuccessMessage("El responsable del grupo no puede agregarse como integrante")
-      setShowSuccessDialog(true)
+      showToast("El responsable del grupo no puede agregarse como integrante", "error")
       return
     }
     if (selectedMemberIds.includes(integrant.id_integrant)) {
-      setSuccessMessage("Este integrante ya está agregado")
-      setShowSuccessDialog(true)
+      showToast("Este integrante ya está agregado", "error")
       return
     }
     const newMember = {
@@ -321,8 +318,7 @@ export const GroupEdit = () => {
     setSelectedMemberIds([...selectedMemberIds, integrant.id_integrant])
     memberSearch.setTerm("")
     setShowDirectoryModal(false)
-    setSuccessMessage("Integrante agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante agregado con éxito", "success")
   }
 
   const handleAddExternalMember = (e: React.FormEvent) => {
@@ -379,8 +375,7 @@ export const GroupEdit = () => {
     setExternalMemberEmailError(null)
     setExternalMemberCountryError(null)
     setExternalMemberIdentityError(null)
-    setSuccessMessage("Integrante externo agregado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante externo agregado con éxito", "success")
   }
 
   const handleModifyMember = (member: any) => {
@@ -393,8 +388,7 @@ export const GroupEdit = () => {
     setMembers(members.map((m) => (m.id === selectedMember.id ? selectedMember : m)))
     setShowModifyMemberModal(false)
     setSelectedMember(null)
-    setSuccessMessage("Integrante modificado con éxito")
-    setShowSuccessDialog(true)
+    showToast("Integrante modificado con éxito", "success")
   }
 
   const handleRemoveMember = (memberId: string) => {
@@ -416,8 +410,7 @@ export const GroupEdit = () => {
     }
 
     if (!selectedResponsableId || !selectedFacultyId || !selectedFacultyAreaId) {
-      setSuccessMessage("Por favor, complete todos los campos requeridos (responsable, facultad y área)")
-      setShowSuccessDialog(true)
+      showToast("Por favor, complete todos los campos requeridos (responsable, facultad y área)", "error")
       return
     }
 
@@ -426,8 +419,7 @@ export const GroupEdit = () => {
         isGroupResponsableIntegrant(memberId, selectedResponsableId),
       )
     ) {
-      setSuccessMessage("El responsable del grupo no puede figurar como integrante")
-      setShowSuccessDialog(true)
+      showToast("El responsable del grupo no puede figurar como integrante", "error")
       return
     }
 
@@ -452,35 +444,22 @@ export const GroupEdit = () => {
 
       await groupService.updateGroupWithPayload(parseInt(id), payload)
 
-      setSuccessMessage("Grupo actualizado con éxito")
-      setShowSuccessDialog(true)
+      showToast("Grupo actualizado con éxito", "success")
       setTimeout(() => {
         navigate("/groups")
       }, 1500)
     } catch (error) {
       console.error("Error actualizando grupo:", error)
-      setSuccessMessage("Error al actualizar el grupo")
-      setShowSuccessDialog(true)
+      showToast("Error al actualizar el grupo", "error")
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <div className="group-form">
-      {showSuccessDialog && (
-        <div className="success-dialog-overlay">
-          <div className="success-dialog">
-            <div className="success-icon">✓</div>
-            <h2>{successMessage}</h2>
-            <Button onClick={() => setShowSuccessDialog(false)}>Aceptar</Button>
-          </div>
-        </div>
-      )}
-
-      <div className="form-header">
-        <h1>Editar Grupo de Investigación</h1>
-        <p>Modifique la información del grupo</p>
+    <div className="form-page group-form">
+      <div className="page-toolbar form-page__toolbar">
+        <p className="page-toolbar__lead">Modifique la información del grupo</p>
       </div>
 
       <div className="tabs">
@@ -812,7 +791,14 @@ export const GroupEdit = () => {
         onClose={() => {
           setShowExternalModal(false)
           setExternalMemberEmailError(null)
-          setExternalMember({ nombre: "", apellidos: "", numeroIdentidad: "", entidad: "", email: "" })
+          setExternalMember({
+            nombre: "",
+            apellidos: "",
+            numeroIdentidad: "",
+            entidad: "",
+            email: "",
+            id_country: null,
+          })
         }}
         title="Agregar Integrante Externo"
       >

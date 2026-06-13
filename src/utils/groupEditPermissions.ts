@@ -29,3 +29,23 @@ export const canEditGroupDetails = (
 
   return currentId === responsableId;
 };
+
+/**
+ * Puede reasignar el responsable: administrador del sistema o el responsable actual.
+ * En creación (isCreateMode) quien crea el grupo/proyecto puede asignar el responsable inicial.
+ */
+export const canChangeEntityResponsable = (
+  user: IUser | null | undefined,
+  responsableIntegrantId: number | null | undefined,
+  isSystemAdmin: boolean,
+  isCreateMode: boolean,
+): boolean => {
+  if (isCreateMode) return true;
+  if (isSystemAdmin) return true;
+
+  const currentId = getCurrentIntegrantId(user);
+  const responsableId = responsableIntegrantId ?? 0;
+  if (currentId === null || responsableId <= 0) return false;
+
+  return currentId === responsableId;
+};
