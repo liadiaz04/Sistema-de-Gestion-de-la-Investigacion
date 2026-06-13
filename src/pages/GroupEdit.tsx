@@ -24,6 +24,10 @@ import {
   validateIdentityField,
   type IdentityCountryOption,
 } from "../components/common/IdentityDocumentField"
+import {
+  filterMemberIdsExcludingResponsable,
+  isGroupResponsableIntegrant,
+} from "../utils/groupMemberUtils"
 import "./GroupForm.css"
 
 type IntegrantSearchHook = {
@@ -103,7 +107,6 @@ export const GroupEdit = () => {
     descripcion: "",
     facultad: "",
     area: "",
-    departamento: "",
     tematicas: "",
   })
 
@@ -172,7 +175,6 @@ export const GroupEdit = () => {
             descripcion: group.problems || "",
             facultad: group.faculty?.name || "",
             area: group.faculty_area?.name || "",
-            departamento: "",
             tematicas: group.subjects || "",
           })
           
@@ -196,10 +198,15 @@ export const GroupEdit = () => {
           
           // Cargar miembros
           if (group.members) {
-            const memberIds = group.members.map(m => m.id_integrant)
+            const responsableIntegrantId =
+              group.id_admin ?? group.leader?.id_integrant ?? group.id_integrant ?? null
+            const membersWithoutResponsable = group.members.filter(
+              (m) => !isGroupResponsableIntegrant(m.id_integrant, responsableIntegrantId),
+            )
+            const memberIds = membersWithoutResponsable.map((m) => m.id_integrant)
             setSelectedMemberIds(memberIds)
             // Mapear miembros a formato del formulario
-            const mappedMembers = group.members.map((m, idx) => ({
+            const mappedMembers = membersWithoutResponsable.map((m, idx) => ({
               id: `member-${m.id_integrant || idx}`,
               integrantId: m.id_integrant,
               usuario: m.integrant ? {
@@ -256,6 +263,11 @@ export const GroupEdit = () => {
     setFormData({ ...formData, area: area?.name || "" })
   }
 
+  const removeIntegrantFromMembers = (integrantId: number) => {
+    setMembers((prev) => prev.filter((m) => m.integrantId !== integrantId))
+    setSelectedMemberIds((prev) => prev.filter((id) => id !== integrantId))
+  }
+
   const handleSelectResponsableIntegrant = (integrant: IntegrantOption) => {
     setSelectedResponsableId(integrant.id_integrant)
     setSelectedResponsable({
@@ -269,6 +281,7 @@ export const GroupEdit = () => {
       esExterno: false,
       esAdministrador: false,
     } as IUser)
+    removeIntegrantFromMembers(integrant.id_integrant)
     setShowResponsableModal(false)
     responsableSearch.setTerm("")
     setSuccessMessage("Responsable seleccionado con éxito")
@@ -276,6 +289,11 @@ export const GroupEdit = () => {
   }
 
   const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
+    if (isGroupResponsableIntegrant(integrant.id_integrant, selectedResponsableId)) {
+      setSuccessMessage("El responsable del grupo no puede agregarse como integrante")
+      setShowSuccessDialog(true)
+      return
+    }
     if (selectedMemberIds.includes(integrant.id_integrant)) {
       setSuccessMessage("Este integrante ya está agregado")
       setShowSuccessDialog(true)
@@ -403,10 +421,24 @@ export const GroupEdit = () => {
       return
     }
 
+    if (
+      selectedMemberIds.some((memberId) =>
+        isGroupResponsableIntegrant(memberId, selectedResponsableId),
+      )
+    ) {
+      setSuccessMessage("El responsable del grupo no puede figurar como integrante")
+      setShowSuccessDialog(true)
+      return
+    }
+
     try {
       setIsSubmitting(true)
 
       const now = new Date().toISOString()
+      const memberIds = filterMemberIdsExcludingResponsable(
+        selectedMemberIds,
+        selectedResponsableId,
+      )
       const payload = {
         name: formData.nombre,
         subjects: formData.tematicas || "",
@@ -415,7 +447,7 @@ export const GroupEdit = () => {
         id_faculty: selectedFacultyId,
         id_faculty_area: selectedFacultyAreaId,
         update_date: now,
-        member_update_ids: selectedMemberIds,
+        member_update_ids: memberIds,
       }
 
       await groupService.updateGroupWithPayload(parseInt(id), payload)
@@ -738,22 +770,37 @@ export const GroupEdit = () => {
             ) : memberSearch.results.length === 0 ? (
               <p className="empty-state">Escribe al menos 2 caracteres para obtener coincidencias</p>
             ) : (
-              memberSearch.results.map((integrant) => (
+              memberSearch.results.map((integrant) => {
+                const isResponsable = isGroupResponsableIntegrant(
+                  integrant.id_integrant,
+                  selectedResponsableId,
+                )
+
+                return (
                 <div key={integrant.id_integrant} className="record-item">
                   <div className="record-item-info">
                     <strong>{integrant.name}</strong>
                     <span>{integrant.email || "Sin correo"}</span>
                     <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                    {isResponsable && (
+                      <span className="form-hint">Ya es responsable del grupo</span>
+                    )}
                   </div>
                   <Button
                     size="sm"
-                    aria-label={`Agregar ${integrant.name} como integrante`}
+                    aria-label={
+                      isResponsable
+                        ? `${integrant.name} es responsable del grupo`
+                        : `Agregar ${integrant.name} como integrante`
+                    }
                     onClick={() => handleSelectMemberIntegrant(integrant)}
+                    disabled={isResponsable}
                   >
-                    Agregar
+                    {isResponsable ? "Responsable" : "Agregar"}
                   </Button>
                 </div>
-              ))
+                )
+              })
             )}
           </div>
         </div>

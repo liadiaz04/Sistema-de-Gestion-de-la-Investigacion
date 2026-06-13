@@ -94,10 +94,6 @@ export const GroupDetails = () => {
                   <label>Área</label>
                   <p className="data-value">{group.area || "No especificada"}</p>
                 </div>
-                <div className="data-item">
-                  <label>Departamento</label>
-                  <p className="data-value">{group.departamento || "No especificado"}</p>
-                </div>
                 <div className="data-item full-width">
                   <label>Temáticas</label>
                   <p className="data-value">{group.tematicas.join(", ") || "No especificadas"}</p>

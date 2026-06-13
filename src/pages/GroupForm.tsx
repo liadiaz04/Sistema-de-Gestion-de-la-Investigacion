@@ -20,6 +20,10 @@ import type { Evaluation } from "../types/api/evaluation"
 import type { IntegrantGroupEvaluation } from "../types/api/integrantGroupEvaluation"
 import type { IUser } from "../types/index"
 import { canEditGroupDetails } from "../utils/groupEditPermissions"
+import {
+  filterMemberIdsExcludingResponsable,
+  isGroupResponsableIntegrant,
+} from "../utils/groupMemberUtils"
 
 const readUserFromLocalStorage = (): IUser | null => {
   if (typeof window === "undefined") return null
@@ -151,7 +155,6 @@ export const GroupForm = () => {
     descripcion: "",
     facultad: "",
     area: "",
-    departamento: "",
     tematicas: "",
   })
 
@@ -560,7 +563,6 @@ export const GroupForm = () => {
             descripcion: group.problems || "",
             facultad: group.faculty?.name || "",
             area: group.faculty_area?.name || "",
-            departamento: "",
             tematicas: group.subjects || "",
           })
           
@@ -601,7 +603,12 @@ export const GroupForm = () => {
           
           // Cargar miembros (con datos completos para distinguir externos)
           if (group.members) {
-            const memberIds = group.members.map((m) => m.id_integrant)
+            const responsableIntegrantId =
+              group.id_admin ?? group.leader?.id_integrant ?? group.id_integrant ?? null
+            const membersWithoutResponsable = group.members.filter(
+              (m) => !isGroupResponsableIntegrant(m.id_integrant, responsableIntegrantId),
+            )
+            const memberIds = membersWithoutResponsable.map((m) => m.id_integrant)
             setSelectedMemberIds(memberIds)
 
             const integrantCache = new Map<
@@ -636,7 +643,7 @@ export const GroupForm = () => {
             }
 
             const mappedMembers = await Promise.all(
-              group.members.map(async (m, idx) => {
+              membersWithoutResponsable.map(async (m, idx) => {
                 const integrantInfo = await resolveMemberIntegrant(m.id_integrant)
                 const fullName = integrantInfo?.name?.trim() || m.name?.trim() || ""
                 return {
@@ -695,6 +702,11 @@ export const GroupForm = () => {
     setFormData({ ...formData, area: area?.name || "" })
   }
 
+  const removeIntegrantFromMembers = (integrantId: number) => {
+    setMembers((prev) => prev.filter((m) => m.integrantId !== integrantId))
+    setSelectedMemberIds((prev) => prev.filter((id) => id !== integrantId))
+  }
+
   const handleSelectResponsableIntegrant = (integrant: IntegrantOption) => {
     setSelectedResponsableId(integrant.id_integrant)
     setSelectedResponsable({
@@ -708,6 +720,7 @@ export const GroupForm = () => {
       esExterno: false,
       esAdministrador: false,
     } as IUser)
+    removeIntegrantFromMembers(integrant.id_integrant)
     setShowResponsableModal(false)
     responsableSearch.setTerm("")
     setSuccessMessage("Responsable seleccionado con éxito")
@@ -715,6 +728,11 @@ export const GroupForm = () => {
   }
 
   const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
+    if (isGroupResponsableIntegrant(integrant.id_integrant, selectedResponsableId)) {
+      setSuccessMessage("El responsable del grupo no puede agregarse como integrante")
+      setShowSuccessDialog(true)
+      return
+    }
     if (selectedMemberIds.includes(integrant.id_integrant)) {
       setSuccessMessage("Este integrante ya está agregado")
       setShowSuccessDialog(true)
@@ -784,7 +802,6 @@ export const GroupForm = () => {
           descripcion: formData.descripcion,
           facultad: formData.facultad,
           area: formData.area,
-          departamento: formData.departamento,
           tematicas: formData.tematicas.split(",").map((t) => t.trim()),
           responsable: selectedResponsable,
           fechaActualizacion: new Date().toISOString(),
@@ -956,6 +973,10 @@ export const GroupForm = () => {
       setIsSubmitting(true)
 
       const now = new Date().toISOString()
+      const memberIds = filterMemberIdsExcludingResponsable(
+        selectedMemberIds,
+        selectedResponsableId,
+      )
       const payload = {
         name: formData.nombre,
         subjects: formData.tematicas || "",
@@ -965,7 +986,7 @@ export const GroupForm = () => {
         id_faculty_area: selectedFacultyAreaId,
         update_date: now,
         /** Ver `GroupUpdate` en backend/modules/group/schemas.py */
-        member_update_ids: selectedMemberIds,
+        member_update_ids: memberIds,
       }
 
       await groupService.updateGroupWithPayload(parseInt(id), payload)
@@ -1025,6 +1046,14 @@ export const GroupForm = () => {
       errors.area = "Debe seleccionar un área"
     }
 
+    if (
+      selectedMemberIds.some((memberId) =>
+        isGroupResponsableIntegrant(memberId, selectedResponsableId),
+      )
+    ) {
+      errors.members = "El responsable del grupo no puede figurar como integrante"
+    }
+
     // Validar emails e identidad de miembros externos
     externalMembers.forEach((member, index) => {
       const emailError = validateEmailRequired(
@@ -1064,6 +1093,11 @@ export const GroupForm = () => {
 
       const now = new Date().toISOString()
 
+      const memberIds = filterMemberIdsExcludingResponsable(
+        selectedMemberIds,
+        selectedResponsableId,
+      )
+
       if (isEditMode && id) {
         const updatePayload = {
           name: formData.nombre,
@@ -1072,7 +1106,7 @@ export const GroupForm = () => {
           id_admin: selectedResponsableId,
           id_faculty: selectedFacultyId,
           update_date: now,
-          member_update_ids: selectedMemberIds,
+          member_update_ids: memberIds,
           id_faculty_area: selectedFacultyAreaId,
         }
         await groupService.updateGroupWithPayload(parseInt(id), updatePayload)
@@ -1086,7 +1120,7 @@ export const GroupForm = () => {
           id_faculty: selectedFacultyId,
           create_date: now,
           update_date: now,
-          member_ids: selectedMemberIds,
+          member_ids: memberIds,
           id_faculty_area: selectedFacultyAreaId,
         }
         await groupService.createGroup(createPayload)
@@ -1198,22 +1232,37 @@ export const GroupForm = () => {
             ) : memberSearch.results.length === 0 ? (
               <p className="empty-state">Escribe al menos 2 caracteres para obtener coincidencias</p>
             ) : (
-              memberSearch.results.map((integrant) => (
+              memberSearch.results.map((integrant) => {
+                const isResponsable = isGroupResponsableIntegrant(
+                  integrant.id_integrant,
+                  selectedResponsableId,
+                )
+
+                return (
                 <div key={integrant.id_integrant} className="record-item">
                   <div className="record-item-info">
                     <strong>{integrant.name}</strong>
                     <span>{integrant.email || "Sin correo"}</span>
                     <span>{integrant.work_center || "Sin centro de trabajo"}</span>
+                    {isResponsable && (
+                      <span className="form-hint">Ya es responsable del grupo</span>
+                    )}
                   </div>
                   <Button
                     size="sm"
-                    aria-label={`Agregar ${integrant.name} como integrante`}
+                    aria-label={
+                      isResponsable
+                        ? `${integrant.name} es responsable del grupo`
+                        : `Agregar ${integrant.name} como integrante`
+                    }
                     onClick={() => handleSelectMemberIntegrant(integrant)}
+                    disabled={isResponsable}
                   >
-                    Agregar
+                    {isResponsable ? "Responsable" : "Agregar"}
                   </Button>
                 </div>
-              ))
+                )
+              })
             )}
           </div>
         </div>
@@ -1600,15 +1649,6 @@ export const GroupForm = () => {
                   )}
                 </div>
                 <div className="form-group">
-                  <label>Departamento</label>
-                  <Input
-                    name="departamento"
-                    value={formData.departamento}
-                    onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
-                    placeholder="Departamento"
-                  />
-                </div>
-                <div className="form-group">
                   <label>Temáticas (separadas por comas)</label>
                   <Input
                     name="tematicas"
@@ -1725,10 +1765,6 @@ export const GroupForm = () => {
                   <div className="data-item">
                     <label>Área</label>
                     <p className="data-value">{formData.area || "No especificada"}</p>
-                  </div>
-                  <div className="data-item">
-                    <label>Departamento</label>
-                    <p className="data-value">{formData.departamento || "No especificado"}</p>
                   </div>
                   <div className="data-item full-width">
                     <label>Temáticas</label>
@@ -1938,10 +1974,6 @@ export const GroupForm = () => {
                       <label>Área</label>
                       <p className="data-value">{formData.area || "No especificada"}</p>
                     </div>
-                    <div className="data-item">
-                      <label>Departamento</label>
-                      <p className="data-value">{formData.departamento || "No especificado"}</p>
-                    </div>
                     <div className="data-item full-width">
                       <label>Temáticas</label>
                       <p className="data-value">{formData.tematicas || "No especificadas"}</p>
@@ -2115,15 +2147,6 @@ export const GroupForm = () => {
                       ))}
                     </select>
                   )}
-                </div>
-                <div className="form-group">
-                  <label>Departamento</label>
-                  <Input
-                    name="departamento"
-                    value={formData.departamento}
-                    onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
-                    placeholder="Departamento"
-                  />
                 </div>
                 <div className="form-group">
                   <label>Temáticas</label>
