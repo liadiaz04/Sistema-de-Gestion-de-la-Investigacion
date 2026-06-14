@@ -7,23 +7,23 @@ export interface IntegrantSummary {
   email?: string;
 }
 
-// Clasificación de proyecto
-export interface ProjectClassification {
-  id_classification: number;
-  name: string;
-  code?: string;
-}
-
 // Estado de proyecto
 export interface ProjectState {
-  id_state: number;
+  id_project_state: number;
   name: string;
 }
 
 // Tipo de proyecto
 export interface ProjectType {
-  id_type: number;
+  id_project_type: number;
   name: string;
+}
+
+// Clasificación de proyecto
+export interface ProjectClassification {
+  id_project_classification: number;
+  name: string | null;
+  code?: string | null;
 }
 
 // Proyecto básico (respuesta de GET /projects/)

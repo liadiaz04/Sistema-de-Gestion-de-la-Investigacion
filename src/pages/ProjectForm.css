@@ -118,6 +118,12 @@
   flex: 1;
 }
 
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 /* Added modal styles for directory list */
 .modal-content {
   padding: 1rem 0;

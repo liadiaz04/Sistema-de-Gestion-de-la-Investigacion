@@ -144,6 +144,7 @@ export interface IProject {
   esPriorizado: boolean
   estaAprobado: boolean
   estado: "propuesta" | "activo" | "finalizado" | "cancelado"
+  estadoNombre: string
   fechaInicio: string
   fechaFin?: string
   objetivos?: string
@@ -162,6 +163,7 @@ export interface IProjectData {
   tipoProyecto?: string // New field for project type
   esPriorizado: boolean
   estado: "propuesta" | "activo" | "finalizado" | "cancelado"
+  estadoNombre: string
   fechaInicio: string
   fechaFin?: string
   objetivos?: string

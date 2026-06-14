@@ -20,8 +20,6 @@ export interface NewIntegrantPayload {
 export interface CreateProjectPayload {
   title: string
   code: string
-  objectives?: string | null
-  tasks?: string | null
   scientific_details?: string | null
   other_data?: string | null
   keywords: string

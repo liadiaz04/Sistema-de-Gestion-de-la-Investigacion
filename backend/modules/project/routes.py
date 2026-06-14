@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from database import SessionLocal
 from . import crud, schemas
+from modules.research_task import crud as research_task_crud
+from modules.research_task import schemas as research_task_schemas
 
 def get_db():
     db = SessionLocal()
@@ -46,6 +48,27 @@ def get_project_count_by_faculty_endpoint(db: Session = Depends(get_db)):
     """
     return crud.get_project_count_by_faculty(db)
 
+
+@router.get("/{project_id}/research-tasks", response_model=List[research_task_schemas.ResearchTask])
+def read_project_research_tasks(
+    project_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    db_project = crud.get_project(db, project_id)
+    if db_project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        return research_task_crud.get_research_tasks(
+            db,
+            skip=skip,
+            limit=limit,
+            project_id=project_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{project_id}", response_model=schemas.ProjectWithMembers)
 def read_project(project_id: int, db: Session = Depends(get_db)):

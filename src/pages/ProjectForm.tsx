@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
@@ -21,14 +21,35 @@ import {
   type ProjectStateOption,
   type ProjectClassificationOption,
   type IntegrantOption,
+  type FacultyOption,
 } from "../services/record/recordMetadataService"
 import { projectService, type CreateProjectPayload } from "../services/projectService"
+import { researchTaskService } from "../services/researchTaskService"
 import { useToast } from "../contexts/ToastContext"
 import { integrantService } from "../services/integrantService"
 import {
   syncProjectMembersToIntegrants,
   type ProjectFormMember,
 } from "../utils/projectMemberSync"
+import {
+  filterMemberIdsExcludingResponsable,
+  isGroupResponsableIntegrant,
+} from "../utils/groupMemberUtils"
+import {
+  deletePersistedProjectResearchTask,
+  enrichProjectTaskRowsWithMembers,
+  mapResearchTaskToFormRow,
+  persistProjectResearchTaskRow,
+  syncProjectResearchTasks,
+  type ProjectTaskFormRow,
+} from "../utils/projectResearchTaskSync"
+import type { ResearchTaskState } from "../types/api/researchTask"
+import { ResearchTaskFormModal, type ProjectMemberOption } from "../components/project/ResearchTaskFormModal"
+import {
+  focusProjectFormField,
+  getFirstProjectFormErrorEntry,
+  resolveProjectFormErrorTarget,
+} from "../utils/projectFormValidationNavigation"
 import {
   validateRequired,
   validateEmailRequired,
@@ -126,9 +147,11 @@ export const ProjectForm = () => {
   const [projectTypes, setProjectTypes] = useState<ProjectTypeOption[]>([])
   const [projectStates, setProjectStates] = useState<ProjectStateOption[]>([])
   const [projectClassifications, setProjectClassifications] = useState<ProjectClassificationOption[]>([])
+  const [faculties, setFaculties] = useState<FacultyOption[]>([])
   const [selectedProjectTypeId, setSelectedProjectTypeId] = useState<number | null>(null)
   const [selectedProjectStateId, setSelectedProjectStateId] = useState<number | null>(null)
   const [selectedProjectClassificationId, setSelectedProjectClassificationId] = useState<number | null>(null)
+  const [selectedFacultyId, setSelectedFacultyId] = useState<number | null>(null)
   const [isMetadataLoading, setIsMetadataLoading] = useState(true)
   const [metadataError, setMetadataError] = useState<string | null>(null)
 
@@ -162,6 +185,9 @@ export const ProjectForm = () => {
       parseInt(currentUser.id) === selectedResponsableId,
   )
 
+  const canManageProjectTasks = !isViewMode
+  const persistedProjectId = id ? parseInt(id, 10) : null
+
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showExternalModal, setShowExternalModal] = useState(false)
   const [showRecordModal, setShowRecordModal] = useState(false)
@@ -188,18 +214,20 @@ export const ProjectForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [projectDetailsLoaded, setProjectDetailsLoaded] = useState(false)
+  const [researchTaskStates, setResearchTaskStates] = useState<ResearchTaskState[]>([])
+  const [projectTasks, setProjectTasks] = useState<ProjectTaskFormRow[]>([])
+  const [loadedTaskIds, setLoadedTaskIds] = useState<number[]>([])
+  const [showResearchTaskModal, setShowResearchTaskModal] = useState(false)
+  const [editingTaskClientId, setEditingTaskClientId] = useState<string | null>(null)
+  const [viewingTaskReadOnly, setViewingTaskReadOnly] = useState(false)
 
   const [formData, setFormData] = useState({
     nombre: "",
     codigo: "",
     tematica: "",
-    programa: "",
     tipoProyecto: "",
     estado: "",
-    objetivos: "",
-    tareas: "",
     detallesCientificos: "",
-    otrosDatos: "",
     criterioConsejo: "",
     palabrasClave: "",
     artState: "",
@@ -218,6 +246,9 @@ export const ProjectForm = () => {
     codigoMINVEC: "",
     fechaInicio: "",
     fechaFin: "",
+    fechaAprobacion: "",
+    aprobado: false,
+    concluido: false,
     presupuestoEconomico: "",
     necesidadesEconomicas: "",
     presupuestoGeneralCUP: "",
@@ -228,22 +259,50 @@ export const ProjectForm = () => {
     is_cujae: false,
   })
 
+  const formDataRef = useRef(formData)
+  const pendingFocusFieldRef = useRef<string | null>(null)
   useEffect(() => {
+    formDataRef.current = formData
+  }, [formData])
+
+  useEffect(() => {
+    if (!pendingFocusFieldRef.current) return
+
+    const fieldId = pendingFocusFieldRef.current
+    pendingFocusFieldRef.current = null
+    focusProjectFormField(fieldId)
+  }, [activeTab, isSaved])
+
+  useEffect(() => {
+    const loadResearchTaskStatesCatalog = async (): Promise<void> => {
+      try {
+        const taskStatesResponse = await researchTaskService.getResearchTaskStates()
+        setResearchTaskStates(taskStatesResponse)
+      } catch (error) {
+        console.warn("Estados de tareas de investigación no disponibles:", error)
+        setResearchTaskStates([])
+      }
+    }
+
     const loadMetadata = async () => {
       try {
         setIsMetadataLoading(true)
         setMetadataError(null)
-        const [typesResponse, statesResponse, classificationsResponse, countriesResponse] =
+        const [typesResponse, statesResponse, classificationsResponse, countriesResponse, facultiesResponse] =
           await Promise.all([
-          recordMetadataService.getProjectTypes(),
-          recordMetadataService.getProjectStates(),
-          recordMetadataService.getProjectClassifications(),
-          recordMetadataService.getCountries(),
-        ])
+            recordMetadataService.getProjectTypes(),
+            recordMetadataService.getProjectStates(),
+            recordMetadataService.getProjectClassifications(),
+            recordMetadataService.getCountries(),
+            recordMetadataService.getFaculties(),
+          ])
         setProjectTypes(typesResponse)
         setProjectStates(statesResponse)
         setProjectClassifications(classificationsResponse)
         setCountries(countriesResponse)
+        setFaculties(facultiesResponse)
+
+        await loadResearchTaskStatesCatalog()
       } catch (error) {
         const message = (error as Error).message || "No se pudieron cargar los catálogos"
         setMetadataError(message)
@@ -267,47 +326,59 @@ export const ProjectForm = () => {
         try {
           const project = await projectService.getProjectById(parseInt(id))
           
-          // Type assertion para acceder a todos los campos del proyecto
-          const projectData = project as any
-          
           setFormData({
             nombre: project.title || "",
             codigo: project.code || "",
-            tematica: project.thematic || project.classification?.name || "",
-            programa: project.national_group || project.international_group || project.type?.name || "",
-            tipoProyecto: project.type?.name || "",
-            estado: project.state?.name || "propuesta",
-            objetivos: project.objectives || "",
-            tareas: project.tasks || "",
+            tematica: project.thematic || "",
+            tipoProyecto: project.project_type?.name || project.type?.name || "",
+            estado: project.project_state?.name || project.state?.name || "",
             detallesCientificos: project.scientific_details || "",
-            otrosDatos: project.other_data || "",
-            criterioConsejo: project.council_criteria || project.conseil_criteria || "",
-            palabrasClave: projectData.keywords || "",
-            artState: projectData.art_state || "",
+            criterioConsejo: project.conseil_criteria || project.council_criteria || "",
+            palabrasClave: project.keywords || "",
+            artState: project.art_state || "",
             problemaCientifico: project.cientific_problem || "",
-            objetoEstudio: projectData.study_object || "",
-            campoEstudio: projectData.study_field || "",
-            hipotesis: projectData.hypothesis || "",
+            objetoEstudio: project.study_object || "",
+            campoEstudio: project.study_field || "",
+            hipotesis: project.hypothesis || "",
             objetivoPrincipal: project.main_objective || "",
-            metodosInvestigacion: projectData.research_methods || "",
-            terceroInteresado: projectData.interested_third_party || "",
+            metodosInvestigacion: project.research_methods || "",
+            terceroInteresado: project.interested_third_party || "",
             grupoNacional: project.national_group || "",
             grupoInternacional: project.international_group || "",
-            publicarRevista: projectData.publish_magazine || "",
-            participarEventos: projectData.participate_events || "",
-            codigoCITMA: projectData.citma_code || "",
-            codigoMINVEC: projectData.minvec_code || "",
-            fechaInicio: project.start_date || project.initial_date || "",
-            fechaFin: project.end_date || project.final_date || "",
-            presupuestoEconomico: projectData.economic_budget || "",
-            necesidadesEconomicas: projectData.economic_needs || "",
-            presupuestoGeneralCUP: projectData.general_budget_cup || "",
-            presupuestoAnualCUP: projectData.year_budget_cup || "",
-            is_international: projectData.is_international || false,
-            is_national: projectData.is_national || false,
-            is_territorial: projectData.is_territorial || false,
-            is_cujae: projectData.is_cujae || false,
+            publicarRevista: project.publish_magazine || "",
+            participarEventos: project.participate_events || "",
+            codigoCITMA: project.citma_code || "",
+            codigoMINVEC: project.minvec_code || "",
+            fechaInicio: project.initial_date || project.start_date || "",
+            fechaFin: project.final_date || project.end_date || "",
+            fechaAprobacion: project.approved_date || "",
+            aprobado: project.approved ?? false,
+            concluido: project.concluded ?? false,
+            presupuestoEconomico: project.economic_budget || "",
+            necesidadesEconomicas: project.economic_needs || "",
+            presupuestoGeneralCUP: project.general_budget_cup != null ? String(project.general_budget_cup) : "",
+            presupuestoAnualCUP: project.year_budget_cup != null ? String(project.year_budget_cup) : "",
+            is_international: project.is_international ?? false,
+            is_national: project.is_national ?? false,
+            is_territorial: project.is_territorial ?? false,
+            is_cujae: project.is_cujae ?? false,
           })
+          
+          let loadedResearchTasks: ProjectTaskFormRow[] = []
+
+          try {
+            const projectResearchTasks = await researchTaskService.getResearchTasksByProjectId(
+              parseInt(id),
+              { limit: 200 },
+            )
+            loadedResearchTasks = projectResearchTasks.map(mapResearchTaskToFormRow)
+            setLoadedTaskIds(projectResearchTasks.map((task) => task.id_research_task))
+          } catch (taskError) {
+            console.error("Error cargando tareas del proyecto:", taskError)
+            loadedResearchTasks = []
+            setLoadedTaskIds([])
+            showToast("No se pudieron cargar las tareas del proyecto", "error")
+          }
           
           if (project.responsible) {
             setSelectedResponsableId(project.responsible.id_integrant)
@@ -328,18 +399,26 @@ export const ProjectForm = () => {
             setLoadedResponsableId(project.id_responsible)
           }
           
-          setSelectedProjectTypeId(project.id_type || project.id_project_type || null)
-          setSelectedProjectStateId(project.id_state || project.id_project_state || null)
-          setSelectedProjectClassificationId(project.id_classification || projectData.id_project_classification || null)
+          setSelectedProjectTypeId(project.id_project_type ?? project.project_type?.id_project_type ?? null)
+          setSelectedProjectStateId(project.id_project_state ?? project.project_state?.id_project_state ?? null)
+          setSelectedProjectClassificationId(
+            project.id_project_classification ?? project.project_classification?.id_project_classification ?? null,
+          )
+          setSelectedFacultyId(project.id_faculty ?? project.faculty?.id_faculty ?? null)
           
           // Guardar fecha de creación original
           if (project.initial_date) {
             setOriginalInitialDate(project.initial_date)
           }
           
-          // Cargar miembros
+          // Cargar miembros (excluyendo al responsable del proyecto)
           if (project.members) {
-            const memberIds = project.members.map((m) => m.id_integrant)
+            const responsableIntegrantId =
+              project.id_responsible ?? project.responsible?.id_integrant ?? null
+            const membersWithoutResponsable = project.members.filter(
+              (member) => !isGroupResponsableIntegrant(member.id_integrant, responsableIntegrantId),
+            )
+            const memberIds = membersWithoutResponsable.map((member) => member.id_integrant)
             setSelectedMemberIds(memberIds)
 
             const integrantCache = new Map<
@@ -387,7 +466,7 @@ export const ProjectForm = () => {
             }
 
             const mappedMembers = await Promise.all(
-              project.members.map(async (m, idx) => {
+              membersWithoutResponsable.map(async (m, idx) => {
                 const integrantInfo = await resolveMemberIntegrant(m)
                 const fullName = integrantInfo?.name?.trim() || ""
                 const [firstName, ...rest] = fullName.length > 0 ? fullName.split(" ") : ["Integrante", ""]
@@ -407,12 +486,15 @@ export const ProjectForm = () => {
                     esExterno: integrantInfo?.external ?? false,
                     esAdministrador: false,
                   },
-                  rol: m.has_administrative_permission ? "responsable_proyecto" : "integrante_proyecto",
+                  rol: (m as { admin?: boolean }).admin ? "responsable_proyecto" : "integrante_proyecto",
                 }
               }),
             )
             setMembers(mappedMembers)
             setExternalMembers(mappedMembers.filter((m) => m.usuario.esExterno))
+            setProjectTasks(enrichProjectTaskRowsWithMembers(loadedResearchTasks, mappedMembers))
+          } else {
+            setProjectTasks(loadedResearchTasks)
           }
           
           setIsSaved(true)
@@ -436,6 +518,7 @@ export const ProjectForm = () => {
       selectedProjectTypeId,
       selectedProjectStateId,
       selectedProjectClassificationId,
+      selectedFacultyId,
       selectedResponsableId: responsableIdForPayload,
       members: members.map((member) => ({
         integrantId: member.integrantId,
@@ -447,14 +530,29 @@ export const ProjectForm = () => {
         entidad: member.usuario.entidad,
         esExterno: member.usuario.esExterno,
       })),
+      projectTasks: projectTasks.map((task) => ({
+        id_research_task: task.id_research_task,
+        name: task.name,
+        description: task.description,
+        id_responsible: task.id_responsible,
+        initial_date: task.initial_date,
+        final_date: task.final_date,
+        id_research_task_state: task.id_research_task_state,
+        compliance_report: task.compliance_report,
+        remote_task: task.remote_task,
+        estimation_time: task.estimation_time,
+        execution_time: task.execution_time,
+      })),
     }),
     [
       formData,
       selectedProjectTypeId,
       selectedProjectStateId,
       selectedProjectClassificationId,
+      selectedFacultyId,
       members,
       responsableIdForPayload,
+      projectTasks,
     ],
   )
 
@@ -516,6 +614,21 @@ export const ProjectForm = () => {
     projectEditSnapshot,
   )
 
+  const navigateToFirstFieldError = (errors: Record<string, string>) => {
+    const firstError = getFirstProjectFormErrorEntry(errors)
+    if (!firstError) return
+
+    const target = resolveProjectFormErrorTarget(firstError.key)
+
+    if (!isEditMode && !isViewMode && target.tabId !== "datos-iniciales") {
+      setIsSaved(true)
+    }
+
+    pendingFocusFieldRef.current = target.fieldId
+    setActiveTab(target.tabId)
+    showToast(firstError.message, "error")
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -527,13 +640,24 @@ export const ProjectForm = () => {
     const tematicaError = validateRequired(formData.tematica, "Temática")
     if (tematicaError) errors.tematica = tematicaError
 
+    const codigoError = validateRequired(formData.codigo, "Código del proyecto")
+    if (codigoError) errors.codigo = codigoError
+
+    if (!selectedProjectStateId) {
+      errors.estado = "Debe seleccionar un estado del proyecto"
+    }
+
+    if (!selectedProjectTypeId) {
+      errors.tipoProyecto = "Debe seleccionar un tipo de proyecto"
+    }
+
     if (!selectedResponsable) {
       errors.responsable = "Debe seleccionar un responsable para el proyecto"
     }
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
-      showToast("Por favor, complete todos los campos requeridos", "error")
+      navigateToFirstFieldError(errors)
       return
     }
 
@@ -553,16 +677,222 @@ export const ProjectForm = () => {
     const { name, value, type } = e.target
     if (type === "checkbox") {
       const checked = (e.target as HTMLInputElement).checked
-      setFormData({
-        ...formData,
-        [name]: checked,
+      setFormData((prev) => {
+        const next = { ...prev, [name]: checked }
+        formDataRef.current = next
+        return next
       })
-    } else {
-      setFormData({
-        ...formData,
-        [name]: value,
-      })
+      return
     }
+
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value }
+      formDataRef.current = next
+      return next
+    })
+  }
+
+  const projectMemberOptions = useMemo((): ProjectMemberOption[] => {
+    return members
+      .filter((member) => member.integrantId != null)
+      .map((member) => ({
+        id_integrant: member.integrantId as number,
+        name: `${member.usuario.nombre} ${member.usuario.apellidos}`.trim(),
+        email: member.usuario.correoElectronico || null,
+      }))
+  }, [members])
+
+  const hasProjectMembers = projectMemberOptions.length > 0
+
+  const ensureResearchTaskStatesLoaded = async (): Promise<boolean> => {
+    if (researchTaskStates.length > 0) return true
+
+    try {
+      const states = await researchTaskService.getResearchTaskStates()
+      setResearchTaskStates(states)
+      return states.length > 0
+    } catch (error) {
+      showToast(
+        (error as Error).message ||
+          "No se pudieron cargar los estados de tareas. Verifique que el backend exponga /research-task-states/",
+        "error",
+      )
+      return false
+    }
+  }
+
+  const handleOpenCreateTaskModal = async () => {
+    if (!hasProjectMembers) {
+      showToast("Agregue integrantes al proyecto antes de definir las tareas", "error")
+      pendingFocusFieldRef.current = "project-integrantes-section"
+      if (!isEditMode && !isViewMode) {
+        setIsSaved(true)
+      }
+      setActiveTab("integrantes")
+      return
+    }
+
+    const statesReady = await ensureResearchTaskStatesLoaded()
+    if (!statesReady) return
+
+    setEditingTaskClientId(null)
+    setViewingTaskReadOnly(false)
+    setShowResearchTaskModal(true)
+  }
+
+  const handleOpenEditTaskModal = async (clientId: string) => {
+    if (!hasProjectMembers) {
+      showToast("Agregue integrantes al proyecto antes de editar las tareas", "error")
+      pendingFocusFieldRef.current = "project-integrantes-section"
+      if (!isEditMode && !isViewMode) {
+        setIsSaved(true)
+      }
+      setActiveTab("integrantes")
+      return
+    }
+
+    const statesReady = await ensureResearchTaskStatesLoaded()
+    if (!statesReady) return
+
+    setEditingTaskClientId(clientId)
+    setViewingTaskReadOnly(false)
+    setShowResearchTaskModal(true)
+  }
+
+  const handleOpenViewTaskModal = (clientId: string) => {
+    setEditingTaskClientId(clientId)
+    setViewingTaskReadOnly(true)
+    setShowResearchTaskModal(true)
+  }
+
+  const handleCloseResearchTaskModal = () => {
+    setShowResearchTaskModal(false)
+    setEditingTaskClientId(null)
+    setViewingTaskReadOnly(false)
+  }
+
+  const handleSaveResearchTask = async (task: ProjectTaskFormRow) => {
+    const isEditingExistingTask = Boolean(editingTaskClientId)
+    const taskSortOrder = isEditingExistingTask
+      ? (projectTasks.find((existingTask) => existingTask.clientId === editingTaskClientId)?.sort_order ??
+        projectTasks.length)
+      : projectTasks.length
+
+    const nextTask: ProjectTaskFormRow = isEditingExistingTask
+      ? {
+          ...task,
+          clientId: editingTaskClientId as string,
+          id_research_task:
+            projectTasks.find((existingTask) => existingTask.clientId === editingTaskClientId)
+              ?.id_research_task ?? null,
+          sort_order: taskSortOrder,
+        }
+      : { ...task, sort_order: taskSortOrder }
+
+    if (persistedProjectId && !Number.isNaN(persistedProjectId)) {
+      try {
+        const persistedTask = await persistProjectResearchTaskRow(
+          nextTask,
+          persistedProjectId,
+          taskSortOrder,
+        )
+        const enrichedTask = {
+          ...enrichProjectTaskRowsWithMembers([persistedTask], members)[0],
+          clientId: isEditingExistingTask
+            ? (editingTaskClientId as string)
+            : `task-${persistedTask.id_research_task}`,
+        }
+
+        if (isEditingExistingTask) {
+          setProjectTasks((prev) =>
+            prev.map((existingTask) =>
+              existingTask.clientId === editingTaskClientId ? enrichedTask : existingTask,
+            ),
+          )
+        } else {
+          setProjectTasks((prev) => [...prev, enrichedTask])
+        }
+
+        setLoadedTaskIds((prev) => {
+          const nextIds = prev.filter((taskId) => taskId !== enrichedTask.id_research_task)
+          if (enrichedTask.id_research_task != null) {
+            nextIds.push(enrichedTask.id_research_task)
+          }
+          return nextIds
+        })
+
+        handleCloseResearchTaskModal()
+        showToast(
+          isEditingExistingTask ? "Tarea actualizada correctamente" : "Tarea creada correctamente",
+          "success",
+        )
+        return
+      } catch (error) {
+        showToast(
+          (error as Error).message || "No se pudo guardar la tarea en el servidor",
+          "error",
+        )
+        return
+      }
+    }
+
+    const enrichedNextTask = enrichProjectTaskRowsWithMembers([nextTask], members)[0]
+
+    if (isEditingExistingTask) {
+      setProjectTasks((prev) =>
+        prev.map((existingTask) =>
+          existingTask.clientId === editingTaskClientId ? enrichedNextTask : existingTask,
+        ),
+      )
+    } else {
+      setProjectTasks((prev) => [...prev, enrichedNextTask])
+    }
+
+    handleCloseResearchTaskModal()
+    showToast(
+      isEditingExistingTask ? "Tarea actualizada en el proyecto" : "Tarea agregada al proyecto",
+      "success",
+    )
+  }
+
+  const handleRemoveProjectTask = async (clientId: string) => {
+    const taskToRemove = projectTasks.find((task) => task.clientId === clientId)
+    if (!taskToRemove) return
+
+    if (persistedProjectId && taskToRemove.id_research_task != null) {
+      try {
+        await deletePersistedProjectResearchTask(taskToRemove.id_research_task)
+        setLoadedTaskIds((prev) =>
+          prev.filter((taskId) => taskId !== taskToRemove.id_research_task),
+        )
+        setProjectTasks((prev) => prev.filter((task) => task.clientId !== clientId))
+        showToast("Tarea eliminada correctamente", "success")
+        return
+      } catch (error) {
+        showToast(
+          (error as Error).message || "No se pudo eliminar la tarea del servidor",
+          "error",
+        )
+        return
+      }
+    }
+
+    setProjectTasks((prev) => prev.filter((task) => task.clientId !== clientId))
+    showToast("Tarea eliminada del proyecto", "success")
+  }
+
+  const editingTask = editingTaskClientId
+    ? projectTasks.find((task) => task.clientId === editingTaskClientId) ?? null
+    : null
+
+  const getResearchTaskStateName = (stateId: number | null): string => {
+    if (stateId == null) return "—"
+    return researchTaskStates.find((state) => state.id_research_task_state === stateId)?.name ?? "—"
+  }
+
+  const removeIntegrantFromMembers = (integrantId: number) => {
+    setMembers((prev) => prev.filter((member) => member.integrantId !== integrantId))
+    setSelectedMemberIds((prev) => prev.filter((id) => id !== integrantId))
   }
 
   const handleSelectResponsableIntegrant = (integrant: IntegrantOption) => {
@@ -578,12 +908,17 @@ export const ProjectForm = () => {
       esExterno: false,
       esAdministrador: false,
     } as IUser)
+    removeIntegrantFromMembers(integrant.id_integrant)
     setShowResponsableModal(false)
     responsableSearch.setTerm("")
     showToast("Responsable seleccionado con éxito", "success")
   }
 
   const handleSelectMemberIntegrant = (integrant: IntegrantOption) => {
+    if (isGroupResponsableIntegrant(integrant.id_integrant, selectedResponsableId)) {
+      showToast("El responsable del proyecto no puede agregarse como integrante", "error")
+      return
+    }
     if (selectedMemberIds.includes(integrant.id_integrant)) {
       showToast("Este integrante ya está agregado", "error")
       return
@@ -701,77 +1036,95 @@ export const ProjectForm = () => {
     )
   }
 
-  const buildProjectPayload = (memberIds: number[]): CreateProjectPayload => {
+  const buildProjectPayload = (
+    memberIds: number[],
+    data: typeof formData = formDataRef.current,
+  ): CreateProjectPayload => {
     const now = new Date().toISOString().split("T")[0]
     const initialDate =
       isEditMode && originalInitialDate
         ? originalInitialDate
-        : formData.fechaInicio
-          ? new Date(formData.fechaInicio).toISOString().split("T")[0]
+        : data.fechaInicio
+          ? new Date(data.fechaInicio).toISOString().split("T")[0]
           : now
-    const finalDate = formData.fechaFin ? new Date(formData.fechaFin).toISOString().split("T")[0] : null
+    const finalDate = data.fechaFin ? new Date(data.fechaFin).toISOString().split("T")[0] : null
+    const approvedDate = data.fechaAprobacion
+      ? new Date(data.fechaAprobacion).toISOString().split("T")[0]
+      : null
 
     return {
-      title: formData.nombre,
-      code: formData.codigo || "",
-      objectives: toNullIfEmpty(formData.objetivos),
-      tasks: toNullIfEmpty(formData.tareas),
-      scientific_details: toNullIfEmpty(formData.detallesCientificos),
-      other_data: toNullIfEmpty(formData.otrosDatos),
-      keywords: formData.palabrasClave || "",
+      title: data.nombre,
+      code: data.codigo || "",
+      scientific_details: toNullIfEmpty(data.detallesCientificos),
+      keywords: data.palabrasClave || "",
       member_ids: memberIds,
       id_responsible: responsableIdForPayload,
-      thematic: formData.tematica || "",
+      thematic: data.tematica || "",
       id_project_type: selectedProjectTypeId,
-      art_state: formData.artState || "",
-      cientific_problem: toNullIfEmpty(formData.problemaCientifico),
-      study_object: toNullIfEmpty(formData.objetoEstudio),
-      study_field: formData.campoEstudio || "",
-      hypothesis: formData.hipotesis || "",
-      main_objective: toNullIfEmpty(formData.objetivoPrincipal),
-      research_methods: formData.metodosInvestigacion || "",
-      interested_third_party: toNullIfEmpty(formData.terceroInteresado),
-      national_group: formData.grupoNacional || "",
-      international_group: toNullIfEmpty(formData.grupoInternacional),
-      publish_magazine: toNullIfEmpty(formData.publicarRevista),
-      participate_events: toNullIfEmpty(formData.participarEventos),
-      citma_code: toNullIfEmpty(formData.codigoCITMA),
-      minvec_code: toNullIfEmpty(formData.codigoMINVEC),
-      approved: false,
-      conseil_criteria: formData.criterioConsejo || "",
+      art_state: data.artState || "",
+      cientific_problem: toNullIfEmpty(data.problemaCientifico),
+      study_object: toNullIfEmpty(data.objetoEstudio),
+      study_field: data.campoEstudio || "",
+      hypothesis: data.hipotesis || "",
+      main_objective: toNullIfEmpty(data.objetivoPrincipal),
+      research_methods: data.metodosInvestigacion || "",
+      interested_third_party: toNullIfEmpty(data.terceroInteresado),
+      national_group: data.grupoNacional || "",
+      international_group: toNullIfEmpty(data.grupoInternacional),
+      publish_magazine: toNullIfEmpty(data.publicarRevista),
+      participate_events: toNullIfEmpty(data.participarEventos),
+      citma_code: toNullIfEmpty(data.codigoCITMA),
+      minvec_code: toNullIfEmpty(data.codigoMINVEC),
+      approved: data.aprobado,
+      conseil_criteria: data.criterioConsejo || "",
       initial_date: initialDate,
       final_date: finalDate,
       update_date: now,
       id_project_state: selectedProjectStateId,
       id_project_classification: selectedProjectClassificationId,
-      economic_budget: formData.presupuestoEconomico || "",
-      economic_needs: toNullIfEmpty(formData.necesidadesEconomicas),
-      id_faculty: null,
-      concluded: false,
-      approved_date: null,
-      general_budget_cup: toNullIfEmpty(formData.presupuestoGeneralCUP),
-      year_budget_cup: toNullIfEmpty(formData.presupuestoAnualCUP),
-      is_international: formData.is_international,
-      is_national: formData.is_national,
-      is_territorial: formData.is_territorial,
-      is_cujae: formData.is_cujae,
+      economic_budget: data.presupuestoEconomico || "",
+      economic_needs: toNullIfEmpty(data.necesidadesEconomicas),
+      id_faculty: selectedFacultyId,
+      concluded: data.concluido,
+      approved_date: approvedDate,
+      general_budget_cup: toNullIfEmpty(data.presupuestoGeneralCUP),
+      year_budget_cup: toNullIfEmpty(data.presupuestoAnualCUP),
+      is_international: data.is_international,
+      is_national: data.is_national,
+      is_territorial: data.is_territorial,
+      is_cujae: data.is_cujae,
     }
   }
 
   const persistProject = async () => {
     const { memberIds, updatedMembers } = await syncProjectMembersToIntegrants(members)
     setMembers(updatedMembers)
-    setExternalMembers(updatedMembers.filter((m) => m.usuario.esExterno))
-    setSelectedMemberIds(memberIds)
+    setExternalMembers(updatedMembers.filter((member) => member.usuario.esExterno))
 
-    const payload = buildProjectPayload(memberIds)
+    const filteredMemberIds = filterMemberIdsExcludingResponsable(
+      memberIds,
+      responsableIdForPayload,
+    )
+    setSelectedMemberIds(filteredMemberIds)
 
+    const payload = buildProjectPayload(filteredMemberIds)
+
+    let projectId: number
     if (isEditMode && id) {
-      await projectService.updateProjectWithPayload(parseInt(id), payload)
-      return
+      const updated = await projectService.updateProjectWithPayload(parseInt(id), payload)
+      projectId = updated.id_project
+    } else {
+      const created = await projectService.createProject(payload)
+      projectId = created.id_project
     }
 
-    await projectService.createProject(payload)
+    const { persistedIds, updatedRows } = await syncProjectResearchTasks(
+      projectId,
+      projectTasks,
+      loadedTaskIds,
+    )
+    setProjectTasks(updatedRows)
+    setLoadedTaskIds(persistedIds)
   }
 
   const handleAssociateRecord = (record: any) => {
@@ -809,6 +1162,17 @@ export const ProjectForm = () => {
     const tematicaError = validateRequired(formData.tematica, "Temática")
     if (tematicaError) errors.tematica = tematicaError
 
+    const codigoError = validateRequired(formData.codigo, "Código del proyecto")
+    if (codigoError) errors.codigo = codigoError
+
+    if (!selectedProjectStateId) {
+      errors.estado = "Debe seleccionar un estado del proyecto"
+    }
+
+    if (!selectedProjectTypeId) {
+      errors.tipoProyecto = "Debe seleccionar un tipo de proyecto"
+    }
+
     // Validar palabras clave si están presentes
     if (formData.palabrasClave) {
       const keywordsError = validateKeywords(formData.palabrasClave)
@@ -819,6 +1183,42 @@ export const ProjectForm = () => {
     if (!selectedResponsableId) {
       errors.responsable = "Debe seleccionar un responsable para el proyecto"
     }
+
+    if (
+      selectedMemberIds.some((memberId) =>
+        isGroupResponsableIntegrant(memberId, responsableIdForPayload),
+      )
+    ) {
+      errors.members = "El responsable del proyecto no puede figurar como integrante"
+    }
+
+    const memberIntegrantIds = new Set(
+      members
+        .map((member) => member.integrantId)
+        .filter((integrantId): integrantId is number => integrantId != null),
+    )
+
+    projectTasks.forEach((task, index) => {
+      if (!task.name.trim()) {
+        errors[`taskName_${index}`] = `La tarea ${index + 1} debe tener un nombre`
+      }
+
+      if (!task.id_research_task_state) {
+        errors[`taskState_${index}`] = `La tarea ${index + 1} debe tener un estado`
+      }
+
+      if (task.id_responsible != null && !memberIntegrantIds.has(task.id_responsible)) {
+        errors[`taskResponsible_${index}`] =
+          `La tarea ${index + 1} debe tener un responsable integrante del proyecto`
+      }
+
+      if (task.initial_date && task.final_date) {
+        const dateError = validateDateRange(task.initial_date, task.final_date)
+        if (dateError) {
+          errors[`taskDates_${index}`] = `Tarea ${index + 1}: ${dateError}`
+        }
+      }
+    })
 
     // Validar fechas
     if (formData.fechaInicio && formData.fechaFin) {
@@ -852,7 +1252,7 @@ export const ProjectForm = () => {
   const handleSaveCompleteProject = async () => {
     const projectValidationErrors = validateProjectForm()
     if (Object.keys(projectValidationErrors).length > 0) {
-      showToast(Object.values(projectValidationErrors).join(" · "), "error")
+      navigateToFirstFieldError(projectValidationErrors)
       return
     }
 
@@ -882,7 +1282,7 @@ export const ProjectForm = () => {
 
     const projectValidationErrors = validateProjectForm()
     if (Object.keys(projectValidationErrors).length > 0) {
-      showToast(Object.values(projectValidationErrors).join(" · "), "error")
+      navigateToFirstFieldError(projectValidationErrors)
       return
     }
 
@@ -913,9 +1313,8 @@ export const ProjectForm = () => {
   const tabs = [
     { id: "datos-iniciales", label: "Datos Iniciales" },
     { id: "detalles-cientificos", label: "Detalles Científicos" },
-    { id: "otros-datos", label: "Otros Datos de Interés" },
-    { id: "objetivos-tareas", label: "Objetivos y Tareas" },
     { id: "integrantes", label: "Integrantes" },
+    { id: "tareas", label: "Tareas" },
     { id: "presupuesto", label: "Presupuesto" },
     { id: "criterio-consejo", label: "Criterio del Consejo" },
   ]
@@ -993,18 +1392,37 @@ export const ProjectForm = () => {
             <p className="empty-state">No se encontraron integrantes</p>
           )}
           <div className="directory-list">
-            {memberSearch.results.map((integrant) => (
-              <div key={integrant.id_integrant} className="directory-item">
-                <div className="directory-item-info">
-                  <strong>{integrant.name}</strong>
-                  {integrant.email && <span>{integrant.email}</span>}
-                  {integrant.work_center && <span>{integrant.work_center}</span>}
+            {memberSearch.results.map((integrant) => {
+              const isResponsable = isGroupResponsableIntegrant(
+                integrant.id_integrant,
+                selectedResponsableId,
+              )
+
+              return (
+                <div key={integrant.id_integrant} className="directory-item">
+                  <div className="directory-item-info">
+                    <strong>{integrant.name}</strong>
+                    {integrant.email && <span>{integrant.email}</span>}
+                    {integrant.work_center && <span>{integrant.work_center}</span>}
+                    {isResponsable && (
+                      <span className="form-hint">Responsable del proyecto</span>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSelectMemberIntegrant(integrant)}
+                    disabled={isResponsable}
+                    title={
+                      isResponsable
+                        ? "El responsable del proyecto no puede agregarse como integrante"
+                        : undefined
+                    }
+                  >
+                    Agregar
+                  </Button>
                 </div>
-                <Button size="sm" onClick={() => handleSelectMemberIntegrant(integrant)}>
-                  Agregar
-                </Button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </Modal>
@@ -1122,6 +1540,16 @@ export const ProjectForm = () => {
         </div>
       </Modal>
 
+      <ResearchTaskFormModal
+        isOpen={showResearchTaskModal}
+        onClose={handleCloseResearchTaskModal}
+        onSave={handleSaveResearchTask}
+        initialTask={editingTask}
+        researchTaskStates={researchTaskStates}
+        projectMembers={projectMemberOptions}
+        readOnly={viewingTaskReadOnly}
+      />
+
       <div className="page-toolbar form-page__toolbar">
         <p className="page-toolbar__lead">
           {isViewMode ? "Información del proyecto" : "Complete la información del proyecto"}
@@ -1168,7 +1596,7 @@ export const ProjectForm = () => {
 
                 <div className="form-group">
                   <label htmlFor="codigo">
-                    Código del Proyecto
+                    Código del Proyecto <span className="required">*</span>
                   </label>
                   <Input
                     type="text"
@@ -1177,8 +1605,10 @@ export const ProjectForm = () => {
                     value={formData.codigo}
                     onChange={handleChange}
                     placeholder="Ej: PROJ-2024-001"
+                    required
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
+                  {fieldErrors.codigo && <span className="field-error">{fieldErrors.codigo}</span>}
                 </div>
 
                 <div className="form-group full-width">
@@ -1194,6 +1624,9 @@ export const ProjectForm = () => {
                     placeholder="Ej: inteligencia artificial, machine learning, deep learning"
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
+                  {fieldErrors.palabrasClave && (
+                    <span className="field-error">{fieldErrors.palabrasClave}</span>
+                  )}
                 </div>
 
                 {/* <div className="form-group full-width">
@@ -1227,22 +1660,6 @@ export const ProjectForm = () => {
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
                   {fieldErrors.tematica && <span className="field-error">{fieldErrors.tematica}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="programa">
-                    Programa <span className="required">*</span>
-                  </label>
-                  <Input
-                    type="text"
-                    id="programa"
-                    name="programa"
-                    value={formData.programa}
-                    onChange={handleChange}
-                    placeholder="Ej: Programa Nacional de Informatización"
-                    required
-                    disabled={isViewMode || isCurrentUserResponsable}
-                  />
                 </div>
 
                 {isMetadataLoading && (
@@ -1281,7 +1698,7 @@ export const ProjectForm = () => {
                           }}
                           required
                           className="form-select"
-                          disabled={!!isViewMode}
+                          disabled={isViewMode || isCurrentUserResponsable}
                         >
                           <option value="">Seleccione un tipo</option>
                           {projectTypes.map((type) => (
@@ -1291,11 +1708,14 @@ export const ProjectForm = () => {
                           ))}
                         </select>
                       )}
+                      {fieldErrors.tipoProyecto && (
+                        <span className="field-error">{fieldErrors.tipoProyecto}</span>
+                      )}
                     </div>
 
                     <div className="form-group">
                       <label htmlFor="estado">
-                        Estado <span className="required">*</span>
+                        Estado del Proyecto <span className="required">*</span>
                       </label>
                       {isViewMode ? (
                         <Input
@@ -1317,7 +1737,7 @@ export const ProjectForm = () => {
                           }}
                           required
                           className="form-select"
-                          disabled={!!isViewMode}
+                          disabled={isViewMode || isCurrentUserResponsable}
                         >
                           <option value="">Seleccione un estado</option>
                           {projectStates.map((state) => (
@@ -1327,6 +1747,7 @@ export const ProjectForm = () => {
                           ))}
                         </select>
                       )}
+                      {fieldErrors.estado && <span className="field-error">{fieldErrors.estado}</span>}
                     </div>
 
                     <div className="form-group">
@@ -1351,7 +1772,7 @@ export const ProjectForm = () => {
                             setSelectedProjectClassificationId(value)
                           }}
                           className="form-select"
-                          disabled={!!isViewMode}
+                          disabled={isViewMode || isCurrentUserResponsable}
                         >
                           <option value="">Seleccione una clasificación</option>
                           {projectClassifications.map((classification) => (
@@ -1361,6 +1782,101 @@ export const ProjectForm = () => {
                           ))}
                         </select>
                       )}
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="facultad">Facultad</label>
+                      {isViewMode ? (
+                        <Input
+                          type="text"
+                          id="facultad"
+                          name="facultad"
+                          value={faculties.find((f) => f.id_faculty === selectedFacultyId)?.name || "No especificada"}
+                          disabled
+                        />
+                      ) : (
+                        <select
+                          id="facultad"
+                          name="facultad"
+                          value={selectedFacultyId || ""}
+                          onChange={(e) => {
+                            const value = e.target.value ? Number(e.target.value) : null
+                            setSelectedFacultyId(value)
+                          }}
+                          className="form-select"
+                          disabled={isViewMode || isCurrentUserResponsable}
+                        >
+                          <option value="">Seleccione una facultad</option>
+                          {faculties.map((faculty) => (
+                            <option key={faculty.id_faculty} value={faculty.id_faculty}>
+                              {faculty.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="fechaInicio">Fecha de Inicio</label>
+                      <Input
+                        type="date"
+                        id="fechaInicio"
+                        name="fechaInicio"
+                        value={formData.fechaInicio}
+                        onChange={handleChange}
+                        disabled={isViewMode || isCurrentUserResponsable}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="fechaFin">Fecha de Fin</label>
+                      <Input
+                        type="date"
+                        id="fechaFin"
+                        name="fechaFin"
+                        value={formData.fechaFin}
+                        onChange={handleChange}
+                        disabled={isViewMode || isCurrentUserResponsable}
+                      />
+                      {fieldErrors.fechaFin && <span className="field-error">{fieldErrors.fechaFin}</span>}
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="fechaAprobacion">Fecha de Aprobación</label>
+                      <Input
+                        type="date"
+                        id="fechaAprobacion"
+                        name="fechaAprobacion"
+                        value={formData.fechaAprobacion}
+                        onChange={handleChange}
+                        disabled={isViewMode || isCurrentUserResponsable}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          name="aprobado"
+                          checked={formData.aprobado}
+                          onChange={handleChange}
+                          disabled={isViewMode || isCurrentUserResponsable}
+                        />
+                        Proyecto aprobado
+                      </label>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          name="concluido"
+                          checked={formData.concluido}
+                          onChange={handleChange}
+                          disabled={isViewMode || isCurrentUserResponsable}
+                        />
+                        Proyecto concluido
+                      </label>
                     </div>
                   </>
                 )}
@@ -1569,29 +2085,6 @@ export const ProjectForm = () => {
                     disabled={isViewMode || isCurrentUserResponsable}
                   />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="fechaInicio">Fecha de Inicio</label>
-                  <Input
-                    type="date"
-                    id="fechaInicio"
-                    name="fechaInicio"
-                    value={formData.fechaInicio}
-                    onChange={handleChange}
-                    disabled={isViewMode || isCurrentUserResponsable}
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="fechaFin">Fecha de Fin</label>
-                  <Input
-                    type="date"
-                    id="fechaFin"
-                    name="fechaFin"
-                    value={formData.fechaFin}
-                    onChange={handleChange}
-                    disabled={isViewMode || isCurrentUserResponsable}
-                  />
-                  {fieldErrors.fechaFin && <span className="field-error">{fieldErrors.fechaFin}</span>}
-                </div>
                 <div className="form-group full-width">
                   <label>Clasificación del Proyecto</label>
                   <div className="checkbox-group">
@@ -1641,65 +2134,114 @@ export const ProjectForm = () => {
             </div>
           )}
 
-          {(isSaved || isViewMode || isEditMode) && activeTab === "otros-datos" && (
-            <div className="form-section">
-              <h3>Otros Datos de Interés</h3>
+          {(isSaved || isViewMode || isEditMode) && activeTab === "tareas" && (
+            <div className="form-section" id="project-tasks-section">
+              <h3>Tareas de investigación</h3>
               <div className="form-grid">
                 <div className="form-group full-width">
-                  <label htmlFor="otrosDatos">Otros Datos</label>
-                  <textarea
-                    id="otrosDatos"
-                    name="otrosDatos"
-                    value={formData.otrosDatos}
-                    onChange={handleChange}
-                    placeholder="Información adicional relevante"
-                    rows={6}
-                    className="form-textarea"
-                    disabled={isViewMode || isCurrentUserResponsable}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {(isSaved || isViewMode || isEditMode) && activeTab === "objetivos-tareas" && (
-            <div className="form-section">
-              <h3>Objetivos y Tareas</h3>
-              <div className="form-grid">
-                <div className="form-group full-width">
-                  <label htmlFor="objetivos">Objetivos</label>
-                  <textarea
-                    id="objetivos"
-                    name="objetivos"
-                    value={formData.objetivos}
-                    onChange={handleChange}
-                    placeholder="Describa los objetivos del proyecto"
-                    rows={4}
-                    className="form-textarea"
-                    disabled={isViewMode || isCurrentUserResponsable}
-                  />
-                </div>
-
-                <div className="form-group full-width">
-                  <label htmlFor="tareas">Tareas</label>
-                  <textarea
-                    id="tareas"
-                    name="tareas"
-                    value={formData.tareas}
-                    onChange={handleChange}
-                    placeholder="Describa las tareas principales del proyecto"
-                    rows={4}
-                    className="form-textarea"
-                    disabled={isViewMode || isCurrentUserResponsable}
-                  />
+                  <div className="section-actions">
+                    <label>Listado de tareas</label>
+                    {!canManageProjectTasks ? null : (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleOpenCreateTaskModal}
+                        disabled={!hasProjectMembers}
+                        title={
+                          !hasProjectMembers
+                            ? "Agregue integrantes al proyecto antes de crear tareas"
+                            : undefined
+                        }
+                      >
+                        Crear tarea
+                      </Button>
+                    )}
+                  </div>
+                  {!hasProjectMembers && canManageProjectTasks && (
+                    <p className="form-hint">
+                      Debe agregar integrantes en la pestaña «Integrantes» antes de definir las tareas.
+                    </p>
+                  )}
+                  {projectTasks.length === 0 ? (
+                    <p className="empty-state">No hay tareas asociadas al proyecto</p>
+                  ) : (
+                    <div className="members-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Nombre</th>
+                            <th>Estado</th>
+                            <th>Responsable</th>
+                            <th>Fechas</th>
+                            <th>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {projectTasks.map((task, index) => (
+                            <tr key={task.clientId}>
+                              <td>
+                                {task.name || "—"}
+                                {fieldErrors[`taskName_${index}`] && (
+                                  <small className="field-error">{fieldErrors[`taskName_${index}`]}</small>
+                                )}
+                              </td>
+                              <td>
+                                {getResearchTaskStateName(task.id_research_task_state)}
+                                {fieldErrors[`taskState_${index}`] && (
+                                  <small className="field-error">{fieldErrors[`taskState_${index}`]}</small>
+                                )}
+                              </td>
+                              <td>{task.responsableName || "—"}</td>
+                              <td>
+                                {task.initial_date || task.final_date
+                                  ? `${task.initial_date || "—"} / ${task.final_date || "—"}`
+                                  : "—"}
+                                {fieldErrors[`taskDates_${index}`] && (
+                                  <small className="field-error">{fieldErrors[`taskDates_${index}`]}</small>
+                                )}
+                              </td>
+                              <td>
+                                <div className="table-actions">
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() =>
+                                      canManageProjectTasks
+                                        ? handleOpenEditTaskModal(task.clientId)
+                                        : handleOpenViewTaskModal(task.clientId)
+                                    }
+                                  >
+                                    {canManageProjectTasks ? "Editar" : "Ver"}
+                                  </Button>
+                                  {canManageProjectTasks && (
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => handleRemoveProjectTask(task.clientId)}
+                                    >
+                                      Quitar
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
           {(isSaved || isViewMode || isEditMode) && activeTab === "integrantes" && (
-            <div className="form-section">
+            <div className="form-section" id="project-integrantes-section">
               <h3>Integrantes del Proyecto</h3>
+              {fieldErrors.members && <p className="field-error">{fieldErrors.members}</p>}
               {!isViewMode && (
                 <div className="section-actions">
                   <Button type="button" variant="secondary" onClick={handleOpenDirectoryModal}>

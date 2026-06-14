@@ -15,7 +15,7 @@ import { projectService } from "../services/projectService"
 import { integrantService } from "../services/integrantService"
 import { usePermissions } from "../hooks/usePermissions"
 import type { IProject, IUser } from "../types"
-import type { Project } from "../types/api/project"
+import type { Project, ProjectState } from "../types/api/project"
 import type { IntegrantWithRoles } from "../types/api/integrant"
 
 // Función para mapear IntegrantWithRoles a IUser
@@ -43,8 +43,31 @@ const mapIntegrantToIUser = (integrant: IntegrantWithRoles): IUser => {
   }
 }
 
+const resolveProjectStateName = (
+  project: Project,
+  statesById: Map<number, ProjectState>,
+): string => {
+  if (project.project_state?.name) {
+    return project.project_state.name
+  }
+
+  if (project.state?.name) {
+    return project.state.name
+  }
+
+  const stateId = project.id_project_state ?? project.id_state
+  if (stateId != null) {
+    return statesById.get(stateId)?.name ?? "Sin estado"
+  }
+
+  return "Sin estado"
+}
+
 // Función para mapear Project (API) a IProject (Frontend)
-const mapProjectToIProject = (project: Project): IProject => {
+const mapProjectToIProject = (
+  project: Project,
+  statesById: Map<number, ProjectState>,
+): IProject => {
   // Mapear responsable
   let responsable: IUser = {
     id: '',
@@ -82,9 +105,9 @@ const mapProjectToIProject = (project: Project): IProject => {
   // Mapear tipo de proyecto
   const tipoProyecto = project.project_type?.name || project.type?.name || undefined
   
-  // Mapear estado
-  const stateName = project.project_state?.name || project.state?.name || 'propuesta'
-  const estado = mapStateToFrontend(stateName)
+  // Mapear estado desde catálogo o relación embebida
+  const estadoNombre = resolveProjectStateName(project, statesById)
+  const estado = mapStateToFrontend(estadoNombre)
   
   // Mapear fechas
   const fechaInicio = project.initial_date || project.start_date || ''
@@ -104,6 +127,7 @@ const mapProjectToIProject = (project: Project): IProject => {
     esPriorizado: project.is_prioritized || false,
     estaAprobado,
     estado,
+    estadoNombre,
     fechaInicio,
     fechaFin,
     objetivos: project.objectives || project.main_objective || undefined,
@@ -114,16 +138,48 @@ const mapProjectToIProject = (project: Project): IProject => {
   }
 }
 
-// Función para mapear el estado del backend al formato del frontend
+// Función para mapear el estado del backend al slug de badge del frontend
 const mapStateToFrontend = (state: string): "propuesta" | "activo" | "finalizado" | "cancelado" => {
-  const stateMap: Record<string, "propuesta" | "activo" | "finalizado" | "cancelado"> = {
-    'propuesta': 'propuesta',
-    'activo': 'activo',
-    'en_progreso': 'activo',
-    'finalizado': 'finalizado',
-    'cancelado': 'cancelado',
+  const normalized = state
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+
+  if (
+    normalized.includes("propuesta") ||
+    normalized.includes("pendiente") ||
+    normalized.includes("borrador")
+  ) {
+    return "propuesta"
   }
-  return stateMap[state.toLowerCase()] || 'propuesta'
+
+  if (
+    normalized.includes("activo") ||
+    normalized.includes("progreso") ||
+    normalized.includes("ejecuc") ||
+    normalized.includes("aprobado")
+  ) {
+    return "activo"
+  }
+
+  if (
+    normalized.includes("finaliz") ||
+    normalized.includes("conclu") ||
+    normalized.includes("terminad")
+  ) {
+    return "finalizado"
+  }
+
+  if (
+    normalized.includes("cancel") ||
+    normalized.includes("rechaz") ||
+    normalized.includes("suspend")
+  ) {
+    return "cancelado"
+  }
+
+  return "propuesta"
 }
 
 const ProjectList: React.FC = () => {
@@ -132,6 +188,7 @@ const ProjectList: React.FC = () => {
   const { canCreateProjects, canManageAllProjects } = usePermissions()
   const [searchTerm, setSearchTerm] = useState("")
   const [projects, setProjects] = useState<IProject[]>([])
+  const [projectStatesById, setProjectStatesById] = useState<Map<number, ProjectState>>(new Map())
   const [loading, setLoading] = useState(true)
   const [showOnlyMyProjects, setShowOnlyMyProjects] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; projectId: string | null }>({
@@ -141,6 +198,20 @@ const ProjectList: React.FC = () => {
   
   // Obtener user_id del localStorage
   const userId = localStorage.getItem('user_id') ? parseInt(localStorage.getItem('user_id')!) : null
+
+  // Cargar catálogo de estados al montar
+  useEffect(() => {
+    const loadProjectStates = async () => {
+      try {
+        const states = await projectService.getProjectStates()
+        setProjectStatesById(new Map(states.map((state) => [state.id_project_state, state])))
+      } catch (err) {
+        console.error("Error cargando estados de proyecto:", err)
+      }
+    }
+
+    loadProjectStates()
+  }, [])
 
   // Cargar proyectos al montar el componente o cambiar el filtro
   useEffect(() => {
@@ -197,8 +268,8 @@ const ProjectList: React.FC = () => {
         }
         
         // Mapear proyectos y usar los responsables cargados cuando sea necesario
-        const mappedProjects = fetchedProjects.map(project => {
-          const mapped = mapProjectToIProject(project)
+        const mappedProjects = fetchedProjects.map((project) => {
+          const mapped = mapProjectToIProject(project, projectStatesById)
           
           // Si el responsable no tiene nombre completo, intentar obtenerlo del mapa
           if (mapped.responsable && (!mapped.responsable.nombre || mapped.responsable.nombre.trim() === '')) {
@@ -232,7 +303,7 @@ const ProjectList: React.FC = () => {
     }, 500)
 
     return () => clearTimeout(timeoutId)
-  }, [showOnlyMyProjects, userId, searchTerm])
+  }, [showOnlyMyProjects, userId, searchTerm, projectStatesById])
 
   const filteredProjects = projects.filter((project) => {
     // La búsqueda ya se hace en el backend, pero podemos filtrar localmente también
@@ -268,7 +339,9 @@ const ProjectList: React.FC = () => {
         filters.search = searchTerm.trim()
       }
       const fetchedProjects = await projectService.getAllProjects(filters)
-      const mappedProjects = fetchedProjects.map(mapProjectToIProject)
+      const mappedProjects = fetchedProjects.map((project) =>
+        mapProjectToIProject(project, projectStatesById),
+      )
       setProjects(mappedProjects)
       setDeleteConfirm({ show: false, projectId: null })
       showToast("Proyecto eliminado correctamente", "success")
@@ -294,7 +367,7 @@ const ProjectList: React.FC = () => {
       key: "estado",
       header: "Estado",
       render: (project: IProject) => (
-        <span className={`badge badge-${project.estado}`}>{project.estado}</span>
+        <span className={`badge badge-${project.estado}`}>{project.estadoNombre}</span>
       ),
     },
     {
