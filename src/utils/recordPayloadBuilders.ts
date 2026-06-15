@@ -122,20 +122,24 @@ export const buildArticlePayload = (
   }
 }
 
-export const buildBookPayload = (ctx: RecordPayloadContext): BookPayload => ({
-  title: ctx.formData.titulo,
-  chapter_title: ctx.formData.tituloCapitulo || "",
-  editor: ctx.formData.editorial || "",
-  voulume: ctx.formData.volumen || "",
-  number: toNullIfEmpty(ctx.formData.numero),
-  series: null,
-  pages: toNullIfEmpty(ctx.formData.paginas),
-  publisher: ctx.formData.editorial || "",
-  isbn: toNullIfEmpty(ctx.formData.isbn),
-  is_chapter: false,
-  author_ids: ctx.authorIds,
-  ...commonFields(ctx),
-})
+export const buildBookPayload = (ctx: RecordPayloadContext): BookPayload => {
+  const publisher = toNullIfEmpty(ctx.formData.editorial)
+
+  return {
+    title: ctx.formData.titulo,
+    chapter_title: ctx.formData.tituloCapitulo || "",
+    editor: null,
+    voulume: ctx.formData.volumen || "",
+    number: toNullIfEmpty(ctx.formData.numero),
+    series: null,
+    pages: toNullIfEmpty(ctx.formData.paginas),
+    publisher,
+    isbn: toNullIfEmpty(ctx.formData.isbn),
+    is_chapter: false,
+    author_ids: ctx.authorIds,
+    ...commonFields(ctx),
+  }
+}
 
 export const buildMonographPayload = (ctx: RecordPayloadContext): MonographPayload => ({
   title: ctx.formData.titulo,

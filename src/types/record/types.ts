@@ -59,12 +59,12 @@ export interface BookPayload {
   title: string;
   chapter_title: string;
   author_ids: AuthorId[];
-  editor: string;
+  editor: string | null;
   voulume: string;
   number: string | null;
   series: string | null;
   pages: string | null;
-  publisher: string;
+  publisher: string | null;
   keywords: string | null;
   resume: string | null;
   isbn: string | null;

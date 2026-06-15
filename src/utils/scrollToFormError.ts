@@ -9,7 +9,11 @@ export const getTabIdForFieldError = (
   fieldKey: string,
   recordType: RecordType,
 ): string => {
-  if (fieldKey === 'authors' || fieldKey.startsWith('externalAuthorEmail_')) {
+  if (
+    fieldKey === 'authors' ||
+    fieldKey.startsWith('externalAuthorEmail_') ||
+    fieldKey.startsWith('externalAuthorIdentity_')
+  ) {
     return TAB_AUTORES;
   }
   if (fieldKey.startsWith('externalTutorEmail_')) {
@@ -24,6 +28,7 @@ export const getTabIdForFieldError = (
 /** Resuelve el id del elemento DOM al que hacer scroll/focus. */
 export const getDomIdForFieldError = (fieldKey: string): string => {
   if (fieldKey === 'authors') return 'authors-section';
+  if (fieldKey === 'tutors') return 'tutores-section';
   if (fieldKey.startsWith('externalAuthorEmail_')) return 'authorSearch';
   if (fieldKey.startsWith('externalTutorEmail_')) return 'tutorSearch';
   return fieldKey;

@@ -182,6 +182,104 @@ export const validateAuthors = (authors: any[]): string | null => {
   return null
 }
 
+type ThesisPersonRef = {
+  integrantId?: number | null
+  nombre?: string | null
+  apellidos?: string | null
+  usuario?: {
+    nombre?: string | null
+    apellidos?: string | null
+    correoElectronico?: string | null
+    numeroIdentidad?: string | null
+    id_country?: number | null
+  }
+}
+
+export const formatThesisPersonLabel = (person: ThesisPersonRef): string => {
+  const nombre = person.nombre?.trim() || person.usuario?.nombre?.trim() || ""
+  const apellidos = person.apellidos?.trim() || person.usuario?.apellidos?.trim() || ""
+  const fullName = `${nombre} ${apellidos}`.trim()
+  return fullName || "Esta persona"
+}
+
+/**
+ * Mensaje cuando se intenta agregar un rol incompatible en una tesis.
+ */
+export const buildThesisRoleConflictMessage = (
+  personLabel: string,
+  roleBeingAdded: "author" | "tutor",
+): string => {
+  const existingRole = roleBeingAdded === "author" ? "tutor" : "autor"
+  const newRole = roleBeingAdded === "author" ? "autor" : "tutor"
+  return `"${personLabel}" ya está registrado como ${existingRole} de la tesis. No puede agregarse también como ${newRole}.`
+}
+
+const normalizeThesisPersonEmail = (email?: string | null): string =>
+  email?.trim().toLowerCase() ?? ""
+
+const buildThesisExternalPersonKey = (person: ThesisPersonRef): string | null => {
+  const email = normalizeThesisPersonEmail(person.usuario?.correoElectronico)
+  if (email) return `email:${email}`
+
+  const identity = person.usuario?.numeroIdentidad?.trim()
+  const countryId = person.usuario?.id_country
+  if (identity && countryId != null) {
+    return `id:${countryId}:${identity.toLowerCase()}`
+  }
+
+  return null
+}
+
+/**
+ * Valida que ningún tutor de tesis figure también como autor.
+ */
+export const validateThesisAuthorsNotTutors = (
+  authors: ThesisPersonRef[],
+  tutors: ThesisPersonRef[],
+  options?: { roleBeingAdded?: "author" | "tutor" },
+): string | null => {
+  const roleBeingAdded = options?.roleBeingAdded
+
+  for (const tutor of tutors) {
+    if (tutor.integrantId == null) continue
+    const isAlsoAuthor = authors.some((author) => author.integrantId === tutor.integrantId)
+    if (!isAlsoAuthor) continue
+    return buildThesisRoleConflictMessage(
+      formatThesisPersonLabel(tutor),
+      roleBeingAdded ?? "tutor",
+    )
+  }
+
+  for (const author of authors) {
+    if (author.integrantId == null) continue
+    const isAlsoTutor = tutors.some((tutor) => tutor.integrantId === author.integrantId)
+    if (!isAlsoTutor) continue
+    return buildThesisRoleConflictMessage(
+      formatThesisPersonLabel(author),
+      roleBeingAdded ?? "author",
+    )
+  }
+
+  for (const author of authors) {
+    if (author.integrantId != null) continue
+    const authorKey = buildThesisExternalPersonKey(author)
+    if (!authorKey) continue
+
+    const matchingTutor = tutors.find(
+      (tutor) =>
+        tutor.integrantId == null && buildThesisExternalPersonKey(tutor) === authorKey,
+    )
+    if (!matchingTutor) continue
+
+    return buildThesisRoleConflictMessage(
+      formatThesisPersonLabel(author),
+      roleBeingAdded ?? "author",
+    )
+  }
+
+  return null
+}
+
 /**
  * Valida palabras clave (mínimo 3, máximo 10)
  */

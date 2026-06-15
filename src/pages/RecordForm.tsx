@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { Card } from "../components/common/Card"
 import { Button } from "../components/common/Button"
@@ -27,7 +27,12 @@ import {
   type NamedOption,
 } from "../services/record/recordMetadataService"
 import { recordService } from "../services/record/recordService"
-import type { ExternalAuthor, AuthorId } from "../types/record/types"
+import { integrantService } from "../services/integrantService"
+import {
+  buildAuthorIdsFromAuthors,
+  isExternalRecordAuthor,
+  resolveArticleAuthorIdsForUpdate,
+} from "../utils/articleAuthorSync"
 import type { UserRole } from "../types"
 import type {
   Registro,
@@ -63,6 +68,8 @@ import {
   validateISBN,
   validateYear,
   validateAuthors,
+  validateThesisAuthorsNotTutors,
+  buildThesisRoleConflictMessage,
   validateKeywords,
   validateNameRequired,
   validateLength,
@@ -143,7 +150,6 @@ const createInitialFormData = () => ({
   tipoArticulo: "",
   tipoNorma: "",
   revista: "",
-  baseDatos: "",
   issn: "",
   volumen: "",
   numero: "",
@@ -175,30 +181,53 @@ const splitFullName = (fullName: string) => {
   }
 }
 
-const mapAuthorsFromRecord = (record: Registro) => {
-  return (record.autores || []).map((author, index) => {
-    const { firstName, lastName } = splitFullName(author.name || "")
-    return {
-      id: `author-${author.id_integrant ?? index}`,
-      integrantId: author.id_integrant,
-      usuario: {
-        id: author.id_integrant ? String(author.id_integrant) : `author-${index}`,
+const mapAuthorsFromRecord = async (record: Registro) => {
+  const authorsList = record.autores || []
+
+  return Promise.all(
+    authorsList.map(async (author, index) => {
+      const { firstName, lastName } = splitFullName(author.name || "")
+      let external = false
+      let entidad = ""
+      let numeroIdentidad = ""
+      let id_country: number | null = null
+
+      if (author.id_integrant) {
+        try {
+          const integrant = await integrantService.getIntegrantById(author.id_integrant)
+          external = integrant.external === true
+          entidad = integrant.work_center || ""
+          numeroIdentidad = integrant.identity || ""
+          id_country = integrant.id_country ?? null
+        } catch (error) {
+          console.error("Error cargando integrante del autor:", error)
+        }
+      }
+
+      return {
+        id: `author-${author.id_integrant ?? index}`,
+        integrantId: author.id_integrant,
+        usuario: {
+          id: author.id_integrant ? String(author.id_integrant) : `author-${index}`,
+          nombre: firstName || "Autor",
+          apellidos: lastName,
+          correoElectronico: author.email || "",
+          nombreUsuario: "",
+          numeroIdentidad,
+          entidad,
+          id_country,
+          roles: [],
+          esExterno: external,
+          esAdministrador: false,
+        },
         nombre: firstName || "Autor",
         apellidos: lastName,
-        correoElectronico: author.email || "",
-        nombreUsuario: "",
-        numeroIdentidad: "",
-        roles: [],
-        esExterno: false,
-        esAdministrador: false,
-      },
-      nombre: firstName || "Autor",
-      apellidos: lastName,
-      esExterno: false,
-      esPrincipal: index === 0,
-      orden: index + 1,
-    }
-  })
+        esExterno: external,
+        esPrincipal: index === 0,
+        orden: index + 1,
+      }
+    }),
+  )
 }
 
 const mapTutorsFromRecord = (record: TesisRegistro) => {
@@ -446,7 +475,6 @@ export const RecordForm = () => {
   const [metadataError, setMetadataError] = useState<string | null>(null)
   const [isMetadataLoading, setIsMetadataLoading] = useState(true)
   const [metadataReloadKey, setMetadataReloadKey] = useState(0)
-  const [externalAuthors, setExternalAuthors] = useState<any[]>([])
   const [editingExternalId, setEditingExternalId] = useState<string | null>(null)
   const [selectedAuthorIds, setSelectedAuthorIds] = useState<number[]>([])
   const [selectedTutorIds, setSelectedTutorIds] = useState<number[]>([])
@@ -464,6 +492,11 @@ export const RecordForm = () => {
   const projectSearch = useProjectSearch()
 
   const [formData, setFormData] = useState<RecordFormState>(createInitialFormData)
+  const formDataRef = useRef(formData)
+
+  useEffect(() => {
+    formDataRef.current = formData
+  }, [formData])
 
   const isEditingExistingArticle =
     recordType === "articulo" && recordNumericId !== null
@@ -675,13 +708,17 @@ export const RecordForm = () => {
     const hydratedForm = mapRecordToFormData(recordData)
     setFormData(hydratedForm)
 
-    const mappedAuthors = mapAuthorsFromRecord(recordData)
-    setAuthors(mappedAuthors)
-    setSelectedAuthorIds(
-      mappedAuthors
-        .map((author) => author.integrantId)
-        .filter((value): value is number => typeof value === "number")
-    )
+    const loadAuthors = async () => {
+      const mappedAuthors = await mapAuthorsFromRecord(recordData)
+      setAuthors(mappedAuthors)
+      setSelectedAuthorIds(
+        mappedAuthors
+          .map((author) => author.integrantId)
+          .filter((value): value is number => typeof value === "number"),
+      )
+    }
+
+    void loadAuthors()
 
     if (recordData.tipo === "tesis") {
       const thesisTutors = mapTutorsFromRecord(recordData as TesisRegistro)
@@ -862,7 +899,7 @@ export const RecordForm = () => {
   ): RecordPayloadContext => {
     const resolvedTypes = resolveTypeIds(
       recordTypeForPayload,
-      formData,
+      formDataRef.current,
       {
         selectedArticleTypeId,
         selectedNormTypeId,
@@ -880,7 +917,7 @@ export const RecordForm = () => {
     )
 
     return {
-      formData,
+      formData: formDataRef.current,
       authorIds,
       tutorIds: selectedTutorIds,
       selectedCountryId,
@@ -889,6 +926,12 @@ export const RecordForm = () => {
       id_project: selectedProject?.id ?? null,
       includeDoi: options?.includeDoi ?? !isDoiLocked,
     }
+  }
+
+  const notifyThesisRoleConflict = (message: string, fieldKey: "authors" | "tutors") => {
+    showToast(message, "error")
+    setFieldErrors((prev) => ({ ...prev, [fieldKey]: message }))
+    scrollToFormError({ fieldKey, setActiveTab, recordType })
   }
 
   const handleSelectIntegrant = (integrant: IntegrantOption, type: "author" | "tutor") => {
@@ -905,6 +948,23 @@ export const RecordForm = () => {
         "error",
       )
       return
+    }
+
+    if (recordType === "tesis") {
+      if (type === "tutor" && selectedAuthorIds.includes(integrant.id_integrant)) {
+        notifyThesisRoleConflict(
+          buildThesisRoleConflictMessage(integrant.name, "tutor"),
+          "tutors",
+        )
+        return
+      }
+      if (type === "author" && selectedTutorIds.includes(integrant.id_integrant)) {
+        notifyThesisRoleConflict(
+          buildThesisRoleConflictMessage(integrant.name, "author"),
+          "authors",
+        )
+        return
+      }
     }
 
     const { firstName, lastName } = splitFullName(integrant.name)
@@ -929,9 +989,19 @@ export const RecordForm = () => {
     if (type === "author") {
       setAuthors([...authors, newPerson])
       setSelectedAuthorIds([...selectedAuthorIds, integrant.id_integrant])
+      setFieldErrors((prev) => {
+        const next = { ...prev }
+        delete next.authors
+        return next
+      })
     } else {
       setTutors([...tutors, newPerson])
       setSelectedTutorIds([...selectedTutorIds, integrant.id_integrant])
+      setFieldErrors((prev) => {
+        const next = { ...prev }
+        delete next.tutors
+        return next
+      })
     }
 
     showToast(type === "author" ? "Autor agregado con éxito" : "Tutor agregado con éxito", "success")
@@ -952,6 +1022,16 @@ export const RecordForm = () => {
     setFormData((prev) => ({
       ...prev,
       pais: selectedCountry ? selectedCountry.name : "",
+    }))
+  }
+
+  const handleArticleTypeChange = (value: string) => {
+    const parsedId = value ? Number(value) : null
+    setSelectedArticleTypeId(parsedId)
+    const selectedType = articleTypes.find((type) => type.id === parsedId)
+    setFormData((prev) => ({
+      ...prev,
+      tipoArticulo: selectedType ? selectedType.name : "",
     }))
   }
 
@@ -985,53 +1065,14 @@ export const RecordForm = () => {
     }))
   }
 
-  const handleSelectArticleType = (option: NamedOption) => {
-    setSelectedArticleTypeId(option.id)
+  const handleNormTypeChange = (value: string) => {
+    const parsedId = value ? Number(value) : null
+    setSelectedNormTypeId(parsedId)
+    const selectedType = normTypes.find((type) => type.id === parsedId)
     setFormData((prev) => ({
       ...prev,
-      tipoArticulo: option.name,
+      tipoNorma: selectedType ? selectedType.name : "",
     }))
-  }
-
-  const handleSelectNormType = (option: NamedOption) => {
-    setSelectedNormTypeId(option.id)
-    setFormData((prev) => ({
-      ...prev,
-      tipoNorma: option.name,
-    }))
-  }
-
-  const renderAutocompleteList = (
-    inputValue: string,
-    options: NamedOption[],
-    onSelect: (option: NamedOption) => void
-  ) => {
-    if (!inputValue.trim() || isViewMode) {
-      return null
-    }
-    const matches = options
-      .filter((option) => option.name.toLowerCase().includes(inputValue.toLowerCase()))
-      .slice(0, 6)
-
-    if (!matches.length) {
-      return null
-    }
-
-    return (
-      <ul className="absolute left-0 top-full z-10 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg">
-        {matches.map((option) => (
-          <li key={option.id}>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100"
-              onMouseDown={() => onSelect(option)}
-            >
-              {option.name}
-            </button>
-          </li>
-        ))}
-      </ul>
-    )
   }
 
   const clearExternalModalErrors = () => {
@@ -1114,6 +1155,12 @@ export const RecordForm = () => {
       id_country: externalPerson.id_country,
     }
 
+    const handleThesisRoleConflict = (message: string) => {
+      const fieldKey = modalType === "author" ? "authors" : "tutors"
+      showToast(message, "error")
+      setFieldErrors((prev) => ({ ...prev, [fieldKey]: message }))
+    }
+
     if (editingExternalId) {
       const updatePerson = (person: (typeof authors)[number]) => {
         if (person.id !== editingExternalId) return person
@@ -1134,11 +1181,40 @@ export const RecordForm = () => {
       }
 
       if (modalType === "author") {
-        setAuthors((prev) => prev.map(updatePerson))
-        setExternalAuthors((prev) => prev.map(updatePerson))
+        const nextAuthors = authors.map(updatePerson)
+        if (recordType === "tesis") {
+          const thesisRoleError = validateThesisAuthorsNotTutors(nextAuthors, tutors, {
+            roleBeingAdded: "author",
+          })
+          if (thesisRoleError) {
+            handleThesisRoleConflict(thesisRoleError)
+            return
+          }
+        }
+        setAuthors(nextAuthors)
+        setFieldErrors((prev) => {
+          const next = { ...prev }
+          delete next.authors
+          return next
+        })
         showToast("Autor externo modificado con éxito", "success")
       } else {
-        setTutors((prev) => prev.map(updatePerson))
+        const nextTutors = tutors.map(updatePerson)
+        if (recordType === "tesis") {
+          const thesisRoleError = validateThesisAuthorsNotTutors(authors, nextTutors, {
+            roleBeingAdded: "tutor",
+          })
+          if (thesisRoleError) {
+            handleThesisRoleConflict(thesisRoleError)
+            return
+          }
+        }
+        setTutors(nextTutors)
+        setFieldErrors((prev) => {
+          const next = { ...prev }
+          delete next.tutors
+          return next
+        })
         showToast("Tutor externo modificado con éxito", "success")
       }
     } else {
@@ -1159,14 +1235,43 @@ export const RecordForm = () => {
         apellidos: trimmedPerson.apellidos,
         esExterno: true,
         esPrincipal: false,
-        orden: (modalType === "author" ? authors.length : tutors.length) + 1,
+        orden: 0,
       }
       if (modalType === "author") {
-        setAuthors([...authors, newPerson])
-        setExternalAuthors([...externalAuthors, newPerson])
+        const nextAuthors = [...authors, { ...newPerson, orden: authors.length + 1 }]
+        if (recordType === "tesis") {
+          const thesisRoleError = validateThesisAuthorsNotTutors(nextAuthors, tutors, {
+            roleBeingAdded: "author",
+          })
+          if (thesisRoleError) {
+            handleThesisRoleConflict(thesisRoleError)
+            return
+          }
+        }
+        setAuthors(nextAuthors)
+        setFieldErrors((prev) => {
+          const next = { ...prev }
+          delete next.authors
+          return next
+        })
         showToast("Autor externo agregado con éxito", "success")
       } else {
-        setTutors([...tutors, newPerson])
+        const nextTutors = [...tutors, { ...newPerson, orden: tutors.length + 1 }]
+        if (recordType === "tesis") {
+          const thesisRoleError = validateThesisAuthorsNotTutors(authors, nextTutors, {
+            roleBeingAdded: "tutor",
+          })
+          if (thesisRoleError) {
+            handleThesisRoleConflict(thesisRoleError)
+            return
+          }
+        }
+        setTutors(nextTutors)
+        setFieldErrors((prev) => {
+          const next = { ...prev }
+          delete next.tutors
+          return next
+        })
         showToast("Tutor externo agregado con éxito", "success")
       }
     }
@@ -1184,15 +1289,12 @@ export const RecordForm = () => {
       return
     }
     
-    setAuthors(authors.filter((a) => a.id !== authorId))
+    setAuthors((prev) => prev.filter((a) => a.id !== authorId))
     if (editingExternalId === authorId) {
       resetExternalModal()
     }
     if (authorToRemove?.integrantId) {
       setSelectedAuthorIds((prev) => prev.filter((value) => value !== authorToRemove.integrantId))
-    }
-    if (authorToRemove?.esExterno) {
-      setExternalAuthors((prev) => prev.filter((external) => external.id !== authorId))
     }
   }
 
@@ -1227,28 +1329,7 @@ export const RecordForm = () => {
     projectSearch.setTerm("")
   }
 
-  // Helper para construir author_ids (IDs de integrantes + objetos de autores externos)
-  const buildAuthorIds = (): AuthorId[] => {
-    const authorIds: AuthorId[] = []
-    
-    // Agregar IDs de integrantes CUJAE
-    selectedAuthorIds.forEach((id) => {
-      authorIds.push(id)
-    })
-    
-    // Agregar objetos de autores externos
-    externalAuthors.forEach((external) => {
-      const externalAuthor: ExternalAuthor = {
-        name: `${external.nombre} ${external.apellidos}`,
-        work_center: external.usuario?.entidad || "",
-        email: external.usuario?.correoElectronico || "",
-        id_country: external.usuario?.id_country ?? selectedCountryId ?? countries[0]?.id_country ?? 1,
-      }
-      authorIds.push(externalAuthor)
-    })
-    
-    return authorIds
-  }
+  const buildAuthorIds = () => buildAuthorIdsFromAuthors(authors, selectedCountryId)
 
   // Función para validar todos los campos antes de enviar
   const validateForm = (): Record<string, string> => {
@@ -1293,23 +1374,44 @@ export const RecordForm = () => {
           const doiError = validateDOINormalized(formData.doi)
           if (doiError) errors.doi = doiError
         }
+        if (!selectedArticleTypeId) {
+          errors.tipoArticulo = "Debe seleccionar un tipo de artículo"
+        }
         break
       }
-      case "libro":
+      case "libro": {
+        const editorialError = validateRequired(formData.editorial, "Editorial")
+        if (editorialError) errors.editorial = editorialError
         if (formData.isbn) {
           const isbnError = validateISBN(formData.isbn)
           if (isbnError) errors.isbn = isbnError
         }
         break
+      }
       case "monografia":
         if (formData.isbn) {
           const isbnError = validateISBN(formData.isbn)
           if (isbnError) errors.isbn = isbnError
         }
         break
+      case "norma":
+        if (!selectedNormTypeId) {
+          errors.tipoNorma = "Debe seleccionar un tipo de norma"
+        }
+        break
+      case "tesis": {
+        const thesisRoleError = validateThesisAuthorsNotTutors(authors, tutors)
+        if (thesisRoleError) {
+          errors.authors = thesisRoleError
+          errors.tutors = thesisRoleError
+        }
+        break
+      }
     }
 
-    externalAuthors.forEach((author, index) => {
+    authors.forEach((author, index) => {
+      if (!isExternalRecordAuthor(author)) return
+
       const emailError = validateEmailRequired(
         author.usuario?.correoElectronico,
         `Correo electrónico (autor externo ${index + 1})`,
@@ -1514,10 +1616,10 @@ export const RecordForm = () => {
     if (e.target.name === "doi" && isDoiLocked) {
       return
     }
-    setFormData({
-      ...formData,
+    setFormData((prev) => ({
+      ...prev,
       [e.target.name]: e.target.value,
-    })
+    }))
   }
 
   const recordEditSnapshot = useMemo(
@@ -1609,7 +1711,10 @@ export const RecordForm = () => {
       setIsSubmitting(true)
       setFieldErrors({})
 
-      const authorIdsForUpdate = getAuthorIdsForUpdate()
+      const authorIdsForUpdate =
+        effectiveRecordTypeForUpdate === "articulo"
+          ? await resolveArticleAuthorIdsForUpdate(authors)
+          : getAuthorIdsForUpdate()
       const payloadContext = buildPayloadContext(effectiveRecordTypeForUpdate, authorIdsForUpdate)
 
       switch (effectiveRecordTypeForUpdate) {
@@ -1687,33 +1792,37 @@ export const RecordForm = () => {
                 error={fieldErrors.revista}
               />
             </div>
-            <div className="form-group relative">
-              <label htmlFor="tipoArticulo">Tipo de Artículo</label>
-              <Input
-                id="tipoArticulo"
-                name="tipoArticulo"
-                type="text"
-                value={formData.tipoArticulo}
-                onChange={(event) => {
-                  setSelectedArticleTypeId(null)
-                  handleChange(event)
-                }}
-                placeholder="Ej: Investigativo, Opinión..."
-                disabled={isViewMode}
-              />
-              {renderAutocompleteList(formData.tipoArticulo, articleTypes, handleSelectArticleType)}
-            </div>
             <div className="form-group">
-              <label htmlFor="baseDatos">Base de Datos</label>
-              <Input
-                id="baseDatos"
-                name="baseDatos"
-                type="text"
-                value={formData.baseDatos}
-                onChange={handleChange}
-                placeholder="Ej: IEEE Xplore, Scopus"
-                disabled={isViewMode ? true : false}
-              />
+              <label htmlFor="tipoArticulo">Tipo de Artículo</label>
+              {isViewMode ? (
+                <Input
+                  id="tipoArticulo"
+                  name="tipoArticulo"
+                  type="text"
+                  value={formData.tipoArticulo}
+                  onChange={handleChange}
+                  disabled={true}
+                />
+              ) : (
+                <select
+                  id="tipoArticulo"
+                  name="tipoArticulo"
+                  value={selectedArticleTypeId ?? ""}
+                  onChange={(event) => handleArticleTypeChange(event.target.value)}
+                  className="form-select"
+                  aria-label="Tipo de artículo"
+                >
+                  <option value="">Seleccione tipo</option>
+                  {articleTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {fieldErrors.tipoArticulo && (
+                <span className="field-error">{fieldErrors.tipoArticulo}</span>
+              )}
             </div>
             <div className="form-group">
               <label htmlFor="issn">ISSN</label>
@@ -1817,6 +1926,9 @@ export const RecordForm = () => {
                 required
                 disabled={isViewMode ? true : false}
               />
+              {fieldErrors.editorial && (
+                <span className="field-error">{fieldErrors.editorial}</span>
+              )}
             </div>
             <div className="form-group">
               <label htmlFor="isbn">ISBN</label>
@@ -1913,21 +2025,37 @@ export const RecordForm = () => {
                 disabled={isViewMode}
               />
             </div>
-            <div className="form-group relative">
+            <div className="form-group">
               <label htmlFor="tipoNorma">Tipo de Norma</label>
-              <Input
-                id="tipoNorma"
-                name="tipoNorma"
-                type="text"
-                value={formData.tipoNorma}
-                onChange={(event) => {
-                  setSelectedNormTypeId(null)
-                  handleChange(event)
-                }}
-                placeholder="Seleccione desde la lista sugerida"
-                disabled={isViewMode}
-              />
-              {renderAutocompleteList(formData.tipoNorma, normTypes, handleSelectNormType)}
+              {isViewMode ? (
+                <Input
+                  id="tipoNorma"
+                  name="tipoNorma"
+                  type="text"
+                  value={formData.tipoNorma}
+                  onChange={handleChange}
+                  disabled={true}
+                />
+              ) : (
+                <select
+                  id="tipoNorma"
+                  name="tipoNorma"
+                  value={selectedNormTypeId ?? ""}
+                  onChange={(event) => handleNormTypeChange(event.target.value)}
+                  className="form-select"
+                  aria-label="Tipo de norma"
+                >
+                  <option value="">Seleccione tipo</option>
+                  {normTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {fieldErrors.tipoNorma && (
+                <span className="field-error">{fieldErrors.tipoNorma}</span>
+              )}
             </div>
           </>
         )
@@ -2601,7 +2729,7 @@ export const RecordForm = () => {
                     </thead>
                     <tbody>
                       {authors.map((author) => {
-                        const isExternal = author.usuario?.esExterno === true
+                        const isExternal = isExternalRecordAuthor(author)
                         const userId = currentUser?.id ? parseInt(currentUser.id) : null
                         const isCurrentUser =
                           author.integrantId && userId && author.integrantId === userId
@@ -2706,6 +2834,12 @@ export const RecordForm = () => {
                     ))
                   )}
                 </div>
+              )}
+
+              {fieldErrors.tutors && (
+                <p className="field-error" role="alert">
+                  {fieldErrors.tutors}
+                </p>
               )}
 
               {tutors.length === 0 ? (
